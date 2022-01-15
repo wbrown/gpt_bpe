@@ -14,8 +14,8 @@ import (
 	"strings"
 )
 
-//go:embed encoder.json
-//go:embed vocab.bpe
+//go:embed resources/encoder.json
+//go:embed resources/vocab.bpe
 
 var f embed.FS
 
@@ -61,7 +61,7 @@ func (bs BGERanks) Less(i, j int) bool {
 
 func NewEncoder() GPTEncoder {
 	// Read encoder mappings and also generate reverse mappings.
-	encoderFile, _ := f.ReadFile("encoder.json")
+	encoderFile, _ := f.ReadFile("resources/encoder.json")
 	encoderTokens := make(map[string]Token)
 	json.Unmarshal(encoderFile, &encoderTokens)
 	tokensEncoder := make(map[Token][]byte)
@@ -70,7 +70,7 @@ func NewEncoder() GPTEncoder {
 	}
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
-	bpeMergesFile, _ := f.ReadFile("vocab.bpe")
+	bpeMergesFile, _ := f.ReadFile("resources/vocab.bpe")
 	scanner := bufio.NewScanner(bytes.NewBuffer(bpeMergesFile))
 	idx := uint16(0)
 	firstLine := true
@@ -291,7 +291,7 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 	words := make([]string, 0, len(*text)/3)
 	for lineIdx := 0; lineIdx < len(splitLines); lineIdx++ {
 		line := splitLines[lineIdx]
-		for ; lineIdx < len(splitLines)-1; {
+		for lineIdx < len(splitLines)-1 {
 			if splitLines[lineIdx+1] == "\n" {
 				line = line + "\n"
 				lineIdx += 1

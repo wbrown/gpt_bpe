@@ -115,7 +115,7 @@ func (encoder GPTEncoder) TrimIncompleteSentence(tokens *Tokens) (*Tokens, error
 		}
 	}
 	text = strings.TrimSpace(text)
-	if float32(len(text)) < float32(len(doc.Text)) * 0.8 {
+	if float32(len(text)) < float32(len(doc.Text))*0.8 {
 		return tokens, nil
 	}
 	encoded := encoder.Encode(&text)
