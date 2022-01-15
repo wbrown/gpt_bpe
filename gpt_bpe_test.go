@@ -12,6 +12,7 @@ import (
 
 var encoder = NewEncoder()
 var corpus string
+
 // var corpus2 string
 var encoded *Tokens
 
@@ -188,7 +189,6 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	}
 
 }
-
 
 func TestGPTEncoder_Decode2(t *testing.T) {
 	encodedCorprus := "NrGIEOQBRzFfAQEBCAE5GeADPCFGAQhdBgFhBkcHXwEBATM5HgGilUYBpAdDEaUheR8iAQEBmgSnbyQpRgHIjaYBiSQYLfoHYwHogg0A0AHsGFUmpgEGAcd0qApjAzwa7hscAeHAYwEGAbYRB3UiAax0PQPjAgoXpgEGAZgE6G2gAWMExy5GAb5szQdGAXUBAR2gAVQBRgG8CdYBYbCgAe4QAxg/NA0AdyoiAZMGOXL8AWlmAQGgFXknNlIGAdADLiciAT4B6lk="
