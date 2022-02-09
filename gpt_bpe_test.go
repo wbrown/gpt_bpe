@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var encoder = NewEncoder()
+var encoder = NewGPT2Encoder()
 var corpus string
 
 // var corpus2 string
@@ -25,7 +25,7 @@ func AssertEqual(t *testing.T, a interface{}, b interface{}) {
 }
 
 func TestMain(m *testing.M) {
-	encoder = NewEncoder()
+	encoder = NewGPT2Encoder()
 	if textBytes, err := os.ReadFile("resources/frankenstein.txt"); err != nil {
 		log.Fatal("Error opening `resources/frankenstein.txt`")
 	} else {
@@ -213,6 +213,21 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
 		len(*encoded), tokenNumBytes, duration))
 	AssertEqual(t, corpus, decoded)
+}
+
+func TestGPTEncoder_TokensReady(t *testing.T) {
+	multiTokenAsterism := "⁂"
+	tokens := encoder.Encode(&multiTokenAsterism)
+	var idx int
+	for idx = range *tokens {
+		if encoder.TokensReady((*tokens)[0 : idx+1]) {
+			break
+		}
+	}
+	if idx < len(*tokens)-1 {
+		t.Errorf("Expected TokensReady on idx: %d for `%s`", idx,
+			multiTokenAsterism)
+	}
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {
