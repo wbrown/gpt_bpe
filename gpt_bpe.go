@@ -3,21 +3,14 @@ package gpt_bpe
 import (
 	"bufio"
 	"bytes"
-	"embed"
 	"encoding/json"
 	lru "github.com/hashicorp/golang-lru"
 	"log"
 	"math"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
 )
-
-//go:embed resources/encoder.json
-//go:embed resources/vocab.bpe
-
-var f embed.FS
 
 const BPE_LRU_SZ = 8192
 
@@ -28,6 +21,7 @@ type GPTEncoder struct {
 	encoder    map[string]Token
 	decoder    map[Token][]byte
 	bpe_ranks  map[GPTPair]float64
+	unitrim    []int
 	pattern    *regexp.Regexp
 	puncPat    *regexp.Regexp
 	byteToRune [256]rune
@@ -59,18 +53,43 @@ func (bs BGERanks) Less(i, j int) bool {
 	return bs[i].rank < bs[j].rank
 }
 
-func NewEncoder() GPTEncoder {
+const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L" +
+	"}\\p{N}]+|\\s+(\\S){0}|\\s+"
+const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
+const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
+
+func NewGPT2Encoder() GPTEncoder {
+	return NewEncoder("resources/gpt-2-unitrim.json",
+		"resources/encoder.json",
+		"resources/vocab.bpe")
+}
+
+func NewEncoder(unitrimPath string, encoderPath string,
+	ranksPath string) GPTEncoder {
+	// Read token unicode trimming definitions
+	unitrimFile, _ := f.ReadFile(unitrimPath)
+	unitrimArr := make([]int, 0)
+	if json.Unmarshal(unitrimFile, &unitrimArr) != nil {
+		log.Fatalf("Error unmarshalling unitrim `%s`", unitrimPath)
+	}
+
 	// Read encoder mappings and also generate reverse mappings.
-	encoderFile, _ := f.ReadFile("resources/encoder.json")
+	encoderFile, _ := f.ReadFile(encoderPath)
 	encoderTokens := make(map[string]Token)
-	json.Unmarshal(encoderFile, &encoderTokens)
+	if json.Unmarshal(encoderFile, &encoderTokens) != nil {
+		log.Fatalf("Error unmarshalling encoder `%s`", encoderPath)
+	}
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
 		tokensEncoder[token] = []byte(text)
 	}
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
-	bpeMergesFile, _ := f.ReadFile("resources/vocab.bpe")
+	var bpeMergesFile []byte
+	var mergesErr error
+	if bpeMergesFile, mergesErr = f.ReadFile(ranksPath); mergesErr != nil {
+		log.Fatalf("Error unmarshaling BPE ranks file `%s`", ranksPath)
+	}
 	scanner := bufio.NewScanner(bytes.NewBuffer(bpeMergesFile))
 	idx := uint16(0)
 	firstLine := true
@@ -83,15 +102,13 @@ func NewEncoder() GPTEncoder {
 		bpeRanks[GPTPair{left_right[0], left_right[1]}] = float64(idx)
 		idx += 1
 	}
-	pat, err := regexp.Compile("'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(\\S){0}|\\s+")
+	pat, err := regexp.Compile(SPLIT_REGEX)
 	if err != nil {
-		log.Printf("gpt_bpe: Fatal error compiling regular expression: %v", err)
-		os.Exit(1)
+		log.Fatalf(REGEX_ERROR, err)
 	}
-	puncPat, err := regexp.Compile("\\p{L}[.!?;]\\p{L}")
+	puncPat, err := regexp.Compile(PUNC_REGEX)
 	if err != nil {
-		log.Printf("gpt_bpe: Fatal error compiling regular expression: %v", err)
-		os.Exit(1)
+		log.Fatalf(REGEX_ERROR, err)
 	}
 	// Build the bytes to unicode tables.
 	bytesUnicodeMap := make(map[byte]rune)
@@ -124,6 +141,7 @@ func NewEncoder() GPTEncoder {
 		encoderTokens,
 		tokensEncoder,
 		bpeRanks,
+		unitrimArr,
 		pat,
 		puncPat,
 		bytesUnicode,
@@ -190,7 +208,8 @@ func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 		if !ok {
 			bpe = math.Inf(1)
 		}
-		rankedPairs = insertSortedNoDups(rankedPairs, BGERank{bpe, pair})
+		rankedPairs = insertSortedNoDups(rankedPairs,
+			BGERank{bpe, pair})
 		prev = present
 	}
 	return rankedPairs
@@ -203,7 +222,8 @@ func (encoder *GPTEncoder) rankPairs(pairs []GPTPair) BGERanks {
 		if !ok {
 			bpe = math.Inf(1)
 		}
-		rankedPairs = insertSortedNoDups(rankedPairs, BGERank{bpe, pairs[idx]})
+		rankedPairs = insertSortedNoDups(rankedPairs,
+			BGERank{bpe, pairs[idx]})
 	}
 	sort.Sort(rankedPairs)
 	return rankedPairs
@@ -341,6 +361,23 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	return text
 }
 
-var Encoder = NewEncoder()
+// Determine if the sequence of Tokens given is ready to be serialized
+// to string.
+func (encoder *GPTEncoder) TokensReady(tokens Tokens) bool {
+	good := 0
+	need := 0
+	for tokenIdx := range tokens {
+		req := encoder.unitrim[tokens[tokenIdx]]
+		if !(need+req < 0) {
+			need += req
+		}
+		if need == 0 {
+			good = tokenIdx + 1
+		}
+	}
+	return good == len(tokens)
+}
+
+var Encoder = NewGPT2Encoder()
 var blankString = ""
 var _ = Encoder.Encode(&blankString)
