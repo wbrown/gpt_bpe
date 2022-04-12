@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	lru "github.com/hashicorp/golang-lru"
 	"log"
 	"math"
@@ -59,14 +61,21 @@ const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
 func NewGPT2Encoder() GPTEncoder {
-	return NewEncoder("gpt2")
+	encoder, _ := NewEncoder("gpt2")
+	return *encoder
 }
 
 func NewPileEncoder() GPTEncoder {
-	return NewEncoder("pile")
+	encoder, _ := NewEncoder("pile")
+	return *encoder
 }
 
-func NewEncoder(vocabId string) GPTEncoder {
+func NewEncoder(vocabId string) (*GPTEncoder, error) {
+	if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr != nil {
+		return nil, errors.New(fmt.Sprintf(
+			"Unknown tokenizer vocabulary '%s", vocabId))
+	}
+
 	unitrimPath := "resources/" + vocabId + "/unitrim.json"
 	encoderPath := "resources/" + vocabId + "/encoder.json"
 	ranksPath := "resources/" + vocabId + "/vocab.bpe"
@@ -142,7 +151,7 @@ func NewEncoder(vocabId string) GPTEncoder {
 	}
 	cache, _ := lru.New(BPE_LRU_SZ)
 
-	return GPTEncoder{
+	return &GPTEncoder{
 		encoderTokens,
 		tokensEncoder,
 		bpeRanks,
@@ -152,7 +161,7 @@ func NewEncoder(vocabId string) GPTEncoder {
 		bytesUnicode,
 		unicodeBytes,
 		cache,
-	}
+	}, nil
 }
 
 // insertAt inserts v into s at index i and returns the new slice.
@@ -341,6 +350,14 @@ func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 		encoded = append(encoded, encoder.encodeTokens(&token)...)
 	}
 	return &encoded
+}
+
+func (encoder *GPTEncoder) Get(text string) *Token {
+	if token, ok := encoder.encoder[text]; !ok {
+		return nil
+	} else {
+		return &token
+	}
 }
 
 func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
