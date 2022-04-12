@@ -361,13 +361,14 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	return text
 }
 
+// TokensReady
 // Determine if the sequence of Tokens given is ready to be serialized
-// to string.
-func (encoder *GPTEncoder) TokensReady(tokens Tokens) bool {
+// to string, based on if the sequence will produce valid Unicode runes.
+func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 	good := 0
 	need := 0
-	for tokenIdx := range tokens {
-		req := encoder.unitrim[tokens[tokenIdx]]
+	for tokenIdx := range *tokens {
+		req := encoder.unitrim[(*tokens)[tokenIdx]]
 		if !(need+req < 0) {
 			need += req
 		}
@@ -375,7 +376,24 @@ func (encoder *GPTEncoder) TokensReady(tokens Tokens) bool {
 			good = tokenIdx + 1
 		}
 	}
-	return good == len(tokens)
+	return good == len(*tokens)
+}
+
+// TrimTokens
+// Trims the given Tokens to tokens that produce valid unicode.
+func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
+	trimmed = tokens
+	for {
+		if len(*trimmed) == 0 {
+			return trimmed
+		}
+		if encoder.TokensReady(trimmed) {
+			return trimmed
+		} else {
+			newTrimmed := (*trimmed)[0 : len(*trimmed)-1]
+			trimmed = &newTrimmed
+		}
+	}
 }
 
 var Encoder = NewGPT2Encoder()
