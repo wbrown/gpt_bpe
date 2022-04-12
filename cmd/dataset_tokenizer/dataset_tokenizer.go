@@ -51,6 +51,7 @@ type TextsTokenizer struct {
 	Boundary    string
 	PadToken    string
 	EndOfText   string
+	Unitrim     bool
 }
 
 func NewTextsTokenizer() TextsTokenizer {
@@ -60,6 +61,7 @@ func NewTextsTokenizer() TextsTokenizer {
 		"\n",
 		"<|endoftext|>",
 		"<|endoftext|>",
+		true,
 	}
 }
 
@@ -87,20 +89,21 @@ type ContextsIterator func() *gpt_bpe.Tokens
 // `contextSize`.
 func (tt TextsTokenizer) TokenizeTexts(
 	nextText TextsIterator) (ContextsIterator, error) {
-	tokenizer, ok := tokenizers[tt.TokenizerId]
+	tokenizerPtr, ok := tokenizers[tt.TokenizerId]
 	if !ok {
 		var tokErr error
-		tokenizer, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
+		tokenizerPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
 		if tokErr != nil {
 			return nil, tokErr
 		}
 	}
-	padToken, padErr := getAndCheckToken(tokenizer, tt.PadToken,
+	tokenizer := *tokenizerPtr
+	padToken, padErr := getAndCheckToken(&tokenizer, tt.PadToken,
 		"PadToken")
 	if padErr != nil {
 		return nil, padErr
 	}
-	endOfText, eotErr := getAndCheckToken(tokenizer, tt.EndOfText,
+	endOfText, eotErr := getAndCheckToken(&tokenizer, tt.EndOfText,
 		"EndOfText")
 	if eotErr != nil {
 		return nil, eotErr
@@ -110,13 +113,14 @@ func (tt TextsTokenizer) TokenizeTexts(
 		boundary = 65535
 	} else {
 		var boundaryErr error
-		boundary, boundaryErr = getAndCheckToken(tokenizer, tt.Boundary,
+		boundary, boundaryErr = getAndCheckToken(&tokenizer, tt.Boundary,
 			"Boundary")
 		if boundaryErr != nil {
 			return nil, boundaryErr
 		}
 	}
 	contextSize := tt.ContextSize
+	doUnitrim := tt.Unitrim
 
 	prior := make(gpt_bpe.Tokens, 0)
 
@@ -142,12 +146,12 @@ func (tt TextsTokenizer) TokenizeTexts(
 
 	// Consumes tokenized texts and resets closured states for token blocks.
 	nextInput := func() {
-		var ok bool
-		tokens, ok = <-tokenizedTexts
+		var more bool
+		tokens, more = <-tokenizedTexts
 		idx = 0
 		begin = 0
 		boundaryIdx = 0
-		if ok {
+		if more {
 			done = false
 			numTokens = len(*tokens)
 		} else {
@@ -193,53 +197,61 @@ func (tt TextsTokenizer) TokenizeTexts(
 				// we do the finalization of this context.
 				if idx-begin+len(prior) >= contextSize {
 					chunk := (*tokens)[begin:idx]
-					// We trim to valid tokens, as we don't want partials that
-					// are truncated multi-tokens.
-					trimmed := tokenizer.TrimTokens(&chunk)
-					trimmedLength := len(*trimmed)
-					idx = begin + trimmedLength
-					// If we have `prior` from a prior text, we append the
+					// If we have `prior` from a prior text, we prepend the
 					// beginning of this text.
 					if len(prior) > 0 {
-						prior = append(prior, *trimmed...)
+						prior = append(prior, chunk...)
 						chunk = prior
 						prior = make(gpt_bpe.Tokens, 0)
 					}
+					var isTrimmed bool
+					if doUnitrim {
+						// We trim to valid tokens, as we don't want partials
+						// that are truncated multi-tokens.
+						trimmed := tokenizer.TrimTokens(&chunk)
+						trimmedLength := len(*trimmed)
+						isTrimmed = len(*trimmed) != len(chunk)
+						chunk = *trimmed
+						idx = begin + trimmedLength
+					}
 					// We do a decode and reencode pass, as this can affect
 					// the size after a trim.
-					decodedChunk := tokenizer.Decode(&chunk)
-					reencodedChunk := tokenizer.Encode(&decodedChunk)
-					chunk = *reencodedChunk
-					// See if there's any change in size that causes it to
-					// be smaller than the `contextSize`.
-					roundtripRemainder := contextSize - len(chunk)
-					if roundtripRemainder > 0 {
-						addlTokens := (*tokens)[idx : idx+roundtripRemainder]
-						trimmedAddl := tokenizer.TrimTokens(&addlTokens)
-						chunk = append(chunk, *trimmedAddl...)
-						idx += len(*trimmedAddl)
-						// Another decode/re-encode pass.
-						decodedChunk = tokenizer.Decode(&chunk)
-						reencodedChunk = tokenizer.Encode(&decodedChunk)
-						// Loop, dropping tokens one by one until we have valid
-						// tokens and we fit within `contextSize`.
-						for {
-							chunk = *reencodedChunk
-							if len(chunk) <= contextSize &&
-								tokenizer.TokensReady(&chunk) {
-								break
-							}
-							chunk = chunk[:len(chunk)-1]
-							idx -= 1
+					if isTrimmed {
+						decodedChunk := tokenizer.Decode(&chunk)
+						reencodedChunk := tokenizer.Encode(&decodedChunk)
+						chunk = *reencodedChunk
+						// See if there's any change in size that causes it to
+						// be smaller than the `contextSize`.
+						roundtripRemainder := contextSize - len(chunk)
+						if roundtripRemainder > 0 {
+							addlEnd := idx + roundtripRemainder
+							addlTokens := (*tokens)[idx:addlEnd]
+							trimmedAddl := tokenizer.TrimTokens(&addlTokens)
+							chunk = append(chunk, *trimmedAddl...)
+							idx += len(*trimmedAddl)
+							// Another decode/re-encode pass.
 							decodedChunk = tokenizer.Decode(&chunk)
 							reencodedChunk = tokenizer.Encode(&decodedChunk)
+							// Loop, dropping tokens one by one until we have
+							// valid tokens and we fit within `contextSize`.
+							for {
+								chunk = *reencodedChunk
+								if len(chunk) <= contextSize &&
+									tokenizer.TokensReady(&chunk) {
+									break
+								}
+								chunk = chunk[:len(chunk)-1]
+								idx -= 1
+								decodedChunk = tokenizer.Decode(&chunk)
+								reencodedChunk = tokenizer.Encode(&decodedChunk)
+							}
 						}
 					}
 					// If we have less than `contextSize`, we need to pad out
 					// the tokens in this context.
 					padSize := contextSize - len(chunk)
 					if padSize > 0 {
-						for padIdx := 0; padIdx <= padSize; padIdx += 1 {
+						for padIdx := 0; padIdx < padSize; padIdx += 1 {
 							chunk = append(chunk, padToken)
 						}
 					}
@@ -328,6 +340,8 @@ func main() {
 		"tokenized output file")
 	inputDir := flag.String("input", "",
 		"input directory")
+	unitrimBool := flag.Bool("unitrim", true,
+		"trim contexts to valid unicode")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -340,6 +354,7 @@ func main() {
 	textsTokenizer.EndOfText = *endOfText
 	textsTokenizer.PadToken = *padToken
 	textsTokenizer.Boundary = *boundaryToken
+	textsTokenizer.Unitrim = *unitrimBool
 
 	if nextText, err := ReadTexts(*inputDir); err != nil {
 		log.Fatal(err)
