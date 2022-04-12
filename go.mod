@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jdkato/prose/v2 v2.0.0
+	github.com/yargevad/filepathx v1.0.0
 )
 
 require (
