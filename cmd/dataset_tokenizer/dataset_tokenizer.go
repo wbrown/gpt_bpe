@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"flag"
+	"fmt"
 	"github.com/wbrown/gpt_bpe"
 	"github.com/yargevad/filepathx"
 	"log"
@@ -8,13 +11,24 @@ import (
 	"time"
 )
 
-func readTexts(dirPath string) (func() *string, error) {
+var tokenizers map[string]*gpt_bpe.GPTEncoder
+
+type TextsIterator func() *string
+
+// ReadTexts
+// Consumes a directory path and recursively scans for `.txt` files, producing
+// a TextsIterator function that yields the text file contents.
+func ReadTexts(dirPath string) (TextsIterator, error) {
 	matches, err := filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
 	}
 	matchIdx := 0
 	numMatches := len(matches)
+	if numMatches == 0 {
+		return nil, errors.New(fmt.Sprintf(
+			"%s does not contain any .txt files", dirPath))
+	}
 	return func() *string {
 		if matchIdx < numMatches {
 			path := matches[matchIdx]
@@ -31,16 +45,79 @@ func readTexts(dirPath string) (func() *string, error) {
 	}, nil
 }
 
-// Consumes `nextText`, an iterator function that returns corpus texts, and
-// returns a closured `nextContext` iterator function that returns tokenized
-// contexts that are fixed to `contextSize` in length. The contexts overlap
-// at boundaries set to `boundary` tokens.
-func tokenizeTexts(nextText func() *string, contextSize int,
-	boundary gpt_bpe.Token) func() *gpt_bpe.Tokens {
-	tokenizer := gpt_bpe.NewGPT2Encoder()
-	// endoftext := "<|endoftext|>"
-	padToken := gpt_bpe.Token(50256)
-	endOfText := gpt_bpe.Token(50256)
+type TextsTokenizer struct {
+	TokenizerId string
+	ContextSize int
+	Boundary    string
+	PadToken    string
+	EndOfText   string
+}
+
+func NewTextsTokenizer() TextsTokenizer {
+	return TextsTokenizer{
+		"gpt2",
+		2048,
+		"\n",
+		"<|endoftext|>",
+		"<|endoftext|>",
+	}
+}
+
+func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
+	id string) (gpt_bpe.Token, error) {
+	token := t.Get(s)
+	if token == nil {
+		tokens := t.Encode(&s)
+		if len(*tokens) != 1 {
+			return 0, errors.New(fmt.Sprintf(
+				"'%s' is not a valid token for %s", s, id))
+		} else {
+			return (*tokens)[0], nil
+		}
+	} else {
+		return *token, nil
+	}
+}
+
+type ContextsIterator func() *gpt_bpe.Tokens
+
+// TokenizeTexts
+// Consumes a TextsIterator and produces a ContextsIterator iterator function
+// that returns tokenized contexts that are fixed and padded out to
+// `contextSize`.
+func (tt TextsTokenizer) TokenizeTexts(
+	nextText TextsIterator) (ContextsIterator, error) {
+	tokenizer, ok := tokenizers[tt.TokenizerId]
+	if !ok {
+		var tokErr error
+		tokenizer, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
+		if tokErr != nil {
+			return nil, tokErr
+		}
+	}
+	padToken, padErr := getAndCheckToken(tokenizer, tt.PadToken,
+		"PadToken")
+	if padErr != nil {
+		return nil, padErr
+	}
+	endOfText, eotErr := getAndCheckToken(tokenizer, tt.EndOfText,
+		"EndOfText")
+	if eotErr != nil {
+		return nil, eotErr
+	}
+	var boundary gpt_bpe.Token
+	if tt.Boundary == "" {
+		boundary = 65535
+	} else {
+		var boundaryErr error
+		boundary, boundaryErr = getAndCheckToken(tokenizer, tt.Boundary,
+			"Boundary")
+		if boundaryErr != nil {
+			return nil, boundaryErr
+		}
+	}
+	contextSize := tt.ContextSize
+
 	prior := make(gpt_bpe.Tokens, 0)
 
 	var tokens *gpt_bpe.Tokens
@@ -83,7 +160,7 @@ func tokenizeTexts(nextText func() *string, contextSize int,
 
 	// Return an iterator function that returns token chunks that are always
 	// `contextSize` tokens.
-	return func() *gpt_bpe.Tokens {
+	nextContext := func() *gpt_bpe.Tokens {
 		// Loop until we get a full token chunk.
 		for {
 			if done {
@@ -203,16 +280,18 @@ func tokenizeTexts(nextText func() *string, contextSize int,
 			nextInput()
 		}
 	}
+	return nextContext, nil
 }
 
-// Consumes a closured `nextContext` iterator and produces a binary file that
-// contains serialized and aligned contexts.
-func writeContexts(outPath string, nextContext func() *gpt_bpe.Tokens) int {
+// WriteContexts
+// Consumes a ContextsIterator function and serializes the contexts to an
+// aligned binary file.
+func WriteContexts(outPath string, nextContext ContextsIterator) (int, error) {
 	totalTokens := 0
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE,
 		755)
 	if err != nil {
-		log.Fatal(err)
+		return 0, err
 	}
 	for {
 		context := nextContext()
@@ -222,23 +301,59 @@ func writeContexts(outPath string, nextContext func() *gpt_bpe.Tokens) int {
 
 		binContext := context.ToBin()
 		if _, writeErr := outFile.Write(*binContext); writeErr != nil {
-			log.Fatal(writeErr)
+			return totalTokens, writeErr
 		}
 		totalTokens += len(*context)
 	}
-	return totalTokens
+	return totalTokens, nil
+}
+
+func init() {
+	tokenizers = make(map[string]*gpt_bpe.GPTEncoder, 0)
+	tokenizers["gpt2"], _ = gpt_bpe.NewEncoder("gpt2")
+	tokenizers["pile"], _ = gpt_bpe.NewEncoder("pile")
 }
 
 func main() {
-	dir := os.Args[1]
-	output := os.Args[2]
+	tokenizerId := flag.String("tokenizer", "gpt2",
+		"tokenizer to use [gpt2, pile]")
+	contextSize := flag.Int("context", 2048, "context size")
+	endOfText := flag.String("eot", "<|endoftext|>",
+		"end of text token to split texts")
+	padToken := flag.String("pad", "<|endoftext|>",
+		"pad token to pad out contexts to context size")
+	boundaryToken := flag.String("boundary", "\n",
+		"boundary token to split contexts on")
+	outputFile := flag.String("output", "tokenized.chunk",
+		"tokenized output file")
+	inputDir := flag.String("input", "",
+		"input directory")
+	flag.Parse()
+	if *inputDir == "" {
+		flag.Usage()
+		log.Fatal("Must provide -input for directory source")
+	}
 
-	if nextText, err := readTexts(dir); err != nil {
+	textsTokenizer := NewTextsTokenizer()
+	textsTokenizer.ContextSize = *contextSize
+	textsTokenizer.TokenizerId = *tokenizerId
+	textsTokenizer.EndOfText = *endOfText
+	textsTokenizer.PadToken = *padToken
+	textsTokenizer.Boundary = *boundaryToken
+
+	if nextText, err := ReadTexts(*inputDir); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		total := writeContexts(output,
-			tokenizeTexts(nextText, 2048, gpt_bpe.Token(198)))
+		contexts, tokErr := textsTokenizer.TokenizeTexts(
+			nextText)
+		if tokErr != nil {
+			log.Fatal(tokErr)
+		}
+		total, writeErr := WriteContexts(*outputFile, contexts)
+		if writeErr != nil {
+			log.Fatal(writeErr)
+		}
 		log.Printf("%d tokens in %0.2fs", total,
 			time.Now().Sub(begin).Seconds())
 	}
