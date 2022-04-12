@@ -59,19 +59,18 @@ const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
 func NewGPT2Encoder() GPTEncoder {
-	return NewEncoder("resources/gpt2/unitrim.json",
-		"resources/gpt2/encoder.json",
-		"resources/gpt2/vocab.bpe")
+	return NewEncoder("gpt2")
 }
 
 func NewPileEncoder() GPTEncoder {
-	return NewEncoder("resources/pile/unitrim.json",
-		"resources/pile/encoder.json",
-		"resources/pile/vocab.bpe")
+	return NewEncoder("pile")
 }
 
-func NewEncoder(unitrimPath string, encoderPath string,
-	ranksPath string) GPTEncoder {
+func NewEncoder(vocabId string) GPTEncoder {
+	unitrimPath := "resources/" + vocabId + "/unitrim.json"
+	encoderPath := "resources/" + vocabId + "/encoder.json"
+	ranksPath := "resources/" + vocabId + "/vocab.bpe"
+
 	// Read token unicode trimming definitions
 	unitrimFile, _ := f.ReadFile(unitrimPath)
 	unitrimArr := make([]int, 0)
