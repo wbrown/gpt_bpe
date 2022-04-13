@@ -3,9 +3,9 @@ package gpt_bpe
 import (
 	"encoding/base64"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"log"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -17,15 +17,6 @@ var corpus string
 // var corpus2 string
 var gpt2Encoded *Tokens
 var pileEncoded *Tokens
-
-// AssertEqual checks if values are equal
-func AssertEqual(t *testing.T, a interface{}, b interface{}) {
-	if reflect.DeepEqual(a, b) {
-		return
-	}
-	t.Errorf("Received %v (type %v), expected %v (type %v)", a,
-		reflect.TypeOf(a), b, reflect.TypeOf(b))
-}
 
 func init() {
 	gpt2Encoder = NewGPT2Encoder()
@@ -131,8 +122,8 @@ var SplitTests = []SplitTest{
 	{"we'll go jump in a lake.",
 		[]string{"we", "'ll", " go", " jump", " in", " a", " lake",
 			"."}},
-	{"multiple  gpt2Encoded spaces.",
-		[]string{"multiple", "  ", "gpt2Encoded", " spaces", "."}},
+	{"multiple  encoded spaces.",
+		[]string{"multiple", "  ", "encoded", " spaces", "."}},
 	{"Capitalized Words Are Cool",
 		[]string{"Capitalized", " Words", " Are", " Cool"}},
 	{"we'LL test irregular cApitalizatioN.",
@@ -147,7 +138,7 @@ var SplitTests = []SplitTest{
 func TestGPTEncoder_Split(t *testing.T) {
 	for testIdx := range SplitTests {
 		test := SplitTests[testIdx]
-		AssertEqual(t, *(gpt2Encoder.SplitWords(&test.Input)), test.Expected)
+		assert.Equal(t, *(gpt2Encoder.SplitWords(&test.Input)), test.Expected)
 	}
 }
 
@@ -164,13 +155,24 @@ func BenchmarkGPTEncoder_Decode(b *testing.B) {
 }
 
 type EncoderTest struct {
-	Input    string
-	Expected Tokens
+	Input        string
+	GPT2Expected Tokens
+	PileExpected Tokens
 }
 
 var GPTEncoderTests = []EncoderTest{
 	{"… …",
-		Tokens{1399, 3926}},
+		Tokens{1399, 3926},
+		Tokens{2866, 8139}},
+	{"<|endoftext|>",
+		Tokens{50256},
+		Tokens{0}},
+	{" <|endoftext|>\n<|endoftext|>foo",
+		Tokens{220, 50256, 198, 50256, 21943},
+		Tokens{209, 0, 187, 0, 12110}},
+	{" <|padding|>test",
+		Tokens{1279, 91, 39231, 91, 29, 9288},
+		Tokens{209, 1, 2566}},
 }
 
 func BenchmarkGPTEncoder_Encode(b *testing.B) {
@@ -179,6 +181,14 @@ func BenchmarkGPTEncoder_Encode(b *testing.B) {
 	duration := time.Since(start)
 	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
 		len(corpus), tokenCt, duration))
+}
+
+func recastExpected(tokens Tokens) (recast []uint16) {
+	recast = make([]uint16, len(tokens))
+	for idx := range tokens {
+		recast[idx] = uint16(tokens[idx])
+	}
+	return recast
 }
 
 func TestGPTEncoder_Encode(t *testing.T) {
@@ -190,7 +200,20 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *gpt2Encoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
-		AssertEqual(t, tokensPtr, GPTEncoderTests[testIdx].Expected)
+		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].GPT2Expected)
+	}
+}
+
+func TestPileEncoder_Encode(t *testing.T) {
+	start := time.Now()
+	tokenCt := len(*pileEncoder.Encode(&corpus))
+	duration := time.Since(start)
+	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
+	for testIdx := range GPTEncoderTests {
+		tokensPtr := *pileEncoder.Encode(
+			&(GPTEncoderTests[testIdx].Input))
+		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].PileExpected)
 	}
 }
 
@@ -202,7 +225,7 @@ func TestGPTEncoder_Decode2(t *testing.T) {
 	} else {
 		tokens := TokensFromBin(&binTokens)
 		tokens, err = gpt2Encoder.TrimIncompleteSentence(tokens)
-		AssertEqual(t, decodedCorpus, gpt2Encoder.Decode(tokens))
+		assert.Equal(t, decodedCorpus, gpt2Encoder.Decode(tokens))
 	}
 }
 
@@ -217,7 +240,7 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	tokenNumBytes := len(decoded)
 	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
 		len(*gpt2Encoded), tokenNumBytes, duration))
-	AssertEqual(t, corpus, decoded)
+	assert.Equal(t, corpus, decoded)
 }
 
 func TestPileEncoder_Decode(t *testing.T) {
@@ -231,7 +254,7 @@ func TestPileEncoder_Decode(t *testing.T) {
 	tokenNumBytes := len(decoded)
 	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
 		len(*pileEncoded), tokenNumBytes, duration))
-	AssertEqual(t, corpus, decoded)
+	assert.Equal(t, corpus, decoded)
 }
 
 func TestGPTEncoder_TokensReady(t *testing.T) {
