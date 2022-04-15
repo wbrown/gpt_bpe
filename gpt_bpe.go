@@ -20,15 +20,17 @@ type Token uint16
 type Tokens []Token
 
 type GPTEncoder struct {
-	encoder    map[string]Token
-	decoder    map[Token][]byte
-	bpe_ranks  map[GPTPair]float64
-	unitrim    []int
-	pattern    *regexp.Regexp
-	puncPat    *regexp.Regexp
-	byteToRune [256]rune
-	runeToByte map[rune]byte
-	cache      *lru.Cache
+	encoder     map[string]Token
+	decoder     map[Token][]byte
+	bpe_ranks   map[GPTPair]float64
+	unitrim     []int
+	pattern     *regexp.Regexp
+	puncPat     *regexp.Regexp
+	specialsPat *regexp.Regexp
+	byteToRune  [256]rune
+	runeToByte  map[rune]byte
+	specials    map[string]Tokens
+	cache       *lru.Cache
 }
 
 type GPTPair struct {
@@ -55,7 +57,8 @@ func (bs BGERanks) Less(i, j int) bool {
 	return bs[i].rank < bs[j].rank
 }
 
-const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L" +
+const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L" +
+	"}+| ?\\p{N}+| ?[^\\s\\p{L" +
 	"}\\p{N}]+|\\s+(\\S){0}|\\s+"
 const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
@@ -79,6 +82,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	unitrimPath := "resources/" + vocabId + "/unitrim.json"
 	encoderPath := "resources/" + vocabId + "/encoder.json"
 	ranksPath := "resources/" + vocabId + "/vocab.bpe"
+	specialsPath := "resources/" + vocabId + "/specials.txt"
 
 	// Read token unicode trimming definitions
 	unitrimFile, _ := f.ReadFile(unitrimPath)
@@ -115,6 +119,31 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		left_right := strings.SplitN(scanner.Text(), " ", 2)
 		bpeRanks[GPTPair{left_right[0], left_right[1]}] = float64(idx)
 		idx += 1
+	}
+
+	// Handle special tokens. Special tokens are removed from the input before
+	// tokenization, so we need to search for them before we tokenize.
+	specialsRegexTokens := make([]string, 0)
+	specials := make(map[string]Tokens, 0)
+
+	specialsFile, specialsErr := f.ReadFile(specialsPath)
+	if specialsErr != nil {
+		log.Fatalf("Error reading special tokens file `%s`",
+			specialsPath)
+	}
+	specialsScanner := bufio.NewScanner(bytes.NewBuffer(specialsFile))
+	for specialsScanner.Scan() {
+		specialToken := specialsScanner.Text()
+		specials[specialToken] = Tokens{encoderTokens[specialToken]}
+		quotedToken := regexp.QuoteMeta(specialToken)
+		specialsRegexTokens = append(specialsRegexTokens, quotedToken)
+	}
+	specialsRegex := strings.Join(specialsRegexTokens, "|")
+
+	// Now compile our regexes.
+	specialsPat, err := regexp.Compile(specialsRegex)
+	if err != nil {
+		log.Fatalf(REGEX_ERROR, err)
 	}
 	pat, err := regexp.Compile(SPLIT_REGEX)
 	if err != nil {
@@ -158,8 +187,10 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		unitrimArr,
 		pat,
 		puncPat,
+		specialsPat,
 		bytesUnicode,
 		unicodeBytes,
+		specials,
 		cache,
 	}, nil
 }
@@ -333,9 +364,28 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 				break
 			}
 		}
-		idxes := encoder.pattern.FindAllStringIndex(line, -1)
-		for idx := range idxes {
-			words = append(words, line[idxes[idx][0]:idxes[idx][1]])
+		specialIdxes := encoder.specialsPat.FindAllStringIndex(line, -1)
+		beginIdx := 0
+		var specialEnd int
+		for specialIdx := range specialIdxes {
+			specialBegin := specialIdxes[specialIdx][0]
+			specialEnd = specialIdxes[specialIdx][1]
+			specialSplit := line[specialBegin:specialEnd]
+			beforeSpecial := line[beginIdx:specialBegin]
+			idxes := encoder.pattern.FindAllStringIndex(beforeSpecial, -1)
+			for idx := range idxes {
+				words = append(words,
+					beforeSpecial[idxes[idx][0]:idxes[idx][1]])
+			}
+			words = append(words, specialSplit)
+			beginIdx = specialEnd
+		}
+		if specialEnd < len(line) {
+			post := line[specialEnd:]
+			idxes := encoder.pattern.FindAllStringIndex(post, -1)
+			for idx := range idxes {
+				words = append(words, post[idxes[idx][0]:idxes[idx][1]])
+			}
 		}
 	}
 	return &words
@@ -345,9 +395,15 @@ func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 	words := encoder.SplitWords(text)
 	encoded := make(Tokens, 0)
 	for idx := range *words {
-		fragment := encoder.toUnicode(&(*words)[idx])
-		token := encoder.toBPE(fragment)
-		encoded = append(encoded, encoder.encodeTokens(&token)...)
+		var encodedTokens Tokens
+		if specialToken, isSpecial := encoder.specials[(*words)[idx]]; isSpecial {
+			encodedTokens = Tokens{encoder.encoder[string(encoder.decoder[specialToken[0]])]}
+		} else {
+			fragment := encoder.toUnicode(&(*words)[idx])
+			token := encoder.toBPE(fragment)
+			encodedTokens = encoder.encodeTokens(&token)
+		}
+		encoded = append(encoded, encodedTokens...)
 	}
 	return &encoded
 }
