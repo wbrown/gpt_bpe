@@ -333,7 +333,7 @@ func main() {
 	endOfText := flag.String("eot", "<|endoftext|>",
 		"end of text token to split texts")
 	padToken := flag.String("pad", "<|endoftext|>",
-		"pad token to pad out contexts to context size")
+		"pad token to pad out contexts, can be <|padding|>")
 	boundaryToken := flag.String("boundary", "\n",
 		"boundary token to split contexts on")
 	outputFile := flag.String("output", "tokenized.chunk",
