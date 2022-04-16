@@ -8,6 +8,7 @@ import (
 	"github.com/yargevad/filepathx"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -15,33 +16,104 @@ var tokenizers map[string]*gpt_bpe.GPTEncoder
 
 type TextsIterator func() *string
 
-// ReadTexts
-// Consumes a directory path and recursively scans for `.txt` files, producing
-// a TextsIterator function that yields the text file contents.
-func ReadTexts(dirPath string) (TextsIterator, error) {
-	matches, err := filepathx.Glob(dirPath + "/**/*.txt")
+// GlobTexts
+// Given a directory path, recursively finds all `.txt` files.
+func GlobTexts(dirPath string) (textPaths []string, err error) {
+	textPaths, err = filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
 	}
-	matchIdx := 0
-	numMatches := len(matches)
+	numMatches := len(textPaths)
 	if numMatches == 0 {
 		return nil, errors.New(fmt.Sprintf(
 			"%s does not contain any .txt files", dirPath))
 	}
-	return func() *string {
-		if matchIdx < numMatches {
+	return textPaths, nil
+}
+
+func FindNewestPath(paths *[]string) (path *string, newest *time.Time,
+	err error) {
+	for matchIdx := range *paths {
+		currPath := (*paths)[matchIdx]
+		if stat, statErr := os.Stat(currPath); statErr != nil {
+			return nil, nil, statErr
+		} else if newest == nil || newest.Before(stat.ModTime()) {
+			modTime := stat.ModTime()
+			newest = &modTime
+			path = &currPath
+		}
+	}
+	return path, newest, nil
+}
+
+// FindNewestText
+// Given a directory, recursively scans and returns the path and modified time
+// for the newest `.txt` file.
+func FindNewestText(dirPath string) (path *string, newest *time.Time,
+	err error) {
+	matches, err := GlobTexts(dirPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return FindNewestPath(&matches)
+}
+
+// FindNewestDir
+// Given a directory, recursively scans and returns the path and modified time
+// for the directory that contains the most recent `.txt` modification.
+func FindNewestDir(dirPath string) (path *string, newest *time.Time,
+	err error) {
+	fileMatches, err := GlobTexts(dirPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Find all directories, as removed files will modify the time of the
+	// containing directory.
+	directories := make(map[string]bool, 0)
+	for matchIdx := range fileMatches {
+		currPath := fileMatches[matchIdx]
+		directories[filepath.Dir(currPath)] = true
+	}
+	directoryMatches := make([]string, 0)
+	for dir, _ := range directories {
+		directoryMatches = append(directoryMatches, dir)
+	}
+	return FindNewestPath(&directoryMatches)
+}
+
+// ReadTexts
+// Consumes a directory path and recursively scans for `.txt` files, producing
+// a TextsIterator function that yields the text file contents.
+func ReadTexts(dirPath string) (TextsIterator, error) {
+	matches, err := GlobTexts(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	numMatches := len(matches)
+	texts := make(chan *string, 2)
+
+	go func() {
+		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
 			path := matches[matchIdx]
 			if textBytes, readErr := os.ReadFile(path); readErr != nil {
+				close(texts)
 				log.Fatal(readErr)
 			} else {
 				log.Print("Reading ", path)
 				matchIdx += 1
 				text := string(textBytes)
-				return &text
+				texts <- &text
 			}
 		}
-		return nil
+		close(texts)
+	}()
+
+	return func() *string {
+		if text, more := <-texts; !more {
+			return nil
+		} else {
+			return text
+		}
 	}, nil
 }
 
@@ -67,6 +139,7 @@ func NewTextsTokenizer() TextsTokenizer {
 
 func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	id string) (gpt_bpe.Token, error) {
+	s = fmt.Sprint(s)
 	token := t.Get(s)
 	if token == nil {
 		tokens := t.Encode(&s)
@@ -130,7 +203,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	var numTokens, idx, begin, boundaryIdx int
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan *gpt_bpe.Tokens, 1)
+	tokenizedTexts := make(chan *gpt_bpe.Tokens, 2)
 	nextTokenized := func() {
 		for {
 			text = nextText()
@@ -305,12 +378,25 @@ func WriteContexts(outPath string, nextContext ContextsIterator) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	contexts := make(chan *gpt_bpe.Tokens, 2)
+
+	go func() {
+		for {
+			context := nextContext()
+			if context == nil {
+				close(contexts)
+				break
+			} else {
+				contexts <- context
+			}
+		}
+	}()
+
 	for {
-		context := nextContext()
-		if context == nil {
+		context, more := <-contexts
+		if !more {
 			break
 		}
-
 		binContext := context.ToBin()
 		if _, writeErr := outFile.Write(*binContext); writeErr != nil {
 			return totalTokens, writeErr
@@ -322,8 +408,8 @@ func WriteContexts(outPath string, nextContext ContextsIterator) (int, error) {
 
 func init() {
 	tokenizers = make(map[string]*gpt_bpe.GPTEncoder, 0)
-	tokenizers["gpt2"], _ = gpt_bpe.NewEncoder("gpt2")
-	tokenizers["pile"], _ = gpt_bpe.NewEncoder("pile")
+	tokenizers["gpt2"] = &gpt_bpe.GPT2Encoder
+	tokenizers["pile"] = &gpt_bpe.PileEncoder
 }
 
 func main() {
@@ -340,8 +426,10 @@ func main() {
 		"tokenized output file")
 	inputDir := flag.String("input", "",
 		"input directory")
-	unitrimBool := flag.Bool("unitrim", true,
-		"trim contexts to valid unicode")
+	unitrimBool := flag.Bool("no_unitrim", false,
+		"do not trim contexts to valid unicode")
+	forceRetokenization := flag.Bool("retokenize", false,
+		"force retokenization even if tokenizer output is newer")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -354,7 +442,30 @@ func main() {
 	textsTokenizer.EndOfText = *endOfText
 	textsTokenizer.PadToken = *padToken
 	textsTokenizer.Boundary = *boundaryToken
-	textsTokenizer.Unitrim = *unitrimBool
+	textsTokenizer.Unitrim = !*unitrimBool
+
+	if !*forceRetokenization {
+		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
+			os.ErrNotExist) && outErr != nil {
+			log.Fatal(outErr)
+		} else if newestPath, newestModTime, newestErr := FindNewestText(
+			*inputDir); newestErr != nil {
+			log.Fatal(newestErr)
+		} else if newestModTime.Before(outStat.ModTime()) {
+			log.Printf("Newest source `%s` is older than `%s`, "+
+				"not retokenizing. "+
+				"Use -retokenize to force retokenization.", *newestPath,
+				*outputFile)
+			os.Exit(0)
+		} else if newestDir, newestDirModTime, newestDirErr := FindNewestDir(
+			*inputDir); newestDirErr != nil {
+			log.Fatal(newestDirErr)
+		} else if newestDirModTime.Before(outStat.ModTime()) {
+			log.Printf("Data source directory `%s` has no changes since `%s"+
+				"was tokenized. Use -retokenize to force retokenization.",
+				*newestDir, *outputFile)
+		}
+	}
 
 	if nextText, err := ReadTexts(*inputDir); err != nil {
 		log.Fatal(err)
