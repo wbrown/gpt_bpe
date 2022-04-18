@@ -448,10 +448,13 @@ func main() {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
 			os.ErrNotExist) && outErr != nil {
 			log.Fatal(outErr)
+		} else if errors.Is(outErr, os.ErrNotExist) {
+			log.Printf("Creating %s", *outputFile)
 		} else if newestPath, newestModTime, newestErr := FindNewestText(
 			*inputDir); newestErr != nil {
 			log.Fatal(newestErr)
-		} else if newestModTime.Before(outStat.ModTime()) {
+		} else if newestModTime != nil && newestModTime.Before(
+			outStat.ModTime()) {
 			log.Printf("Newest source `%s` is older than `%s`, "+
 				"not retokenizing. "+
 				"Use -retokenize to force retokenization.", *newestPath,
@@ -460,7 +463,8 @@ func main() {
 		} else if newestDir, newestDirModTime, newestDirErr := FindNewestDir(
 			*inputDir); newestDirErr != nil {
 			log.Fatal(newestDirErr)
-		} else if newestDirModTime.Before(outStat.ModTime()) {
+		} else if newestDirModTime != nil && newestDirModTime.Before(
+			outStat.ModTime()) {
 			log.Printf("Data source directory `%s` has no changes since `%s"+
 				"was tokenized. Use -retokenize to force retokenization.",
 				*newestDir, *outputFile)
