@@ -100,7 +100,6 @@ func ReadTexts(dirPath string) (TextsIterator, error) {
 				log.Fatal(readErr)
 			} else {
 				log.Print("Reading ", path)
-				matchIdx += 1
 				text := string(textBytes)
 				texts <- &text
 			}
