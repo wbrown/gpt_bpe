@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru"
+	"io"
 	"log"
 	"math"
+	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,17 +23,20 @@ type Token uint16
 type Tokens []Token
 
 type GPTEncoder struct {
-	encoder     map[string]Token
-	decoder     map[Token][]byte
-	bpe_ranks   map[GPTPair]float64
-	unitrim     []int
-	pattern     *regexp.Regexp
-	puncPat     *regexp.Regexp
-	specialsPat *regexp.Regexp
-	byteToRune  [256]rune
-	runeToByte  map[rune]byte
-	specials    map[string]Tokens
-	cache       *lru.Cache
+	encoder      map[string]Token
+	decoder      map[Token][]byte
+	bpe_ranks    map[GPTPair]float64
+	unitrim      []int
+	pattern      *regexp.Regexp
+	puncPat      *regexp.Regexp
+	specialsPat  *regexp.Regexp
+	byteToRune   [256]rune
+	runeToByte   map[rune]byte
+	specials     map[string]Tokens
+	cache        *lru.Cache
+	EosToken     Token
+	PadToken     Token
+	replacements map[string]string
 }
 
 type GPTPair struct {
@@ -73,29 +79,206 @@ func NewPileEncoder() GPTEncoder {
 	return *encoder
 }
 
-func NewEncoder(vocabId string) (*GPTEncoder, error) {
-	if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr != nil {
-		return nil, errors.New(fmt.Sprintf(
-			"Unknown tokenizer vocabulary '%s", vocabId))
+type HFConfig struct {
+	ModelType      *string `json:"model_type,omitempty"`
+	EosTokenId     *Token  `json:"eos_token_id,omitempty"`
+	BosTokenId     *Token  `json:"bos_token_id,omitempty"`
+	PadTokenId     *Token  `json:"pad_token_id,omitempty"`
+	EosTokenStr    *string `json:"eos_token,omitempty"`
+	PadTokenStr    *string `json:"pad_token,omitempty"`
+	VocabSize      *uint16 `json:"vocab_size,omitempty"`
+	Newlinemode    *string `json:"newlinemode,omitempty"`
+	TokenizerClass *string `json:"tokenizer_class"`
+}
+
+func FetchHuggingFace(vocabId string, file string) (respBytes []byte,
+	err error) {
+	resp, remoteErr := http.Get("https://huggingface." +
+		"co/" + vocabId + "/raw/main/" + file)
+	if remoteErr != nil {
+		return nil, remoteErr
+	}
+	defer resp.Body.Close()
+	respBytes, respErr := io.ReadAll(resp.Body)
+	if respErr != nil {
+		return nil, respErr
+	} else {
+		if mkdirErr := os.MkdirAll(vocabId, 0755); mkdirErr != nil {
+			return respBytes, mkdirErr
+		}
+		os.WriteFile(vocabId+"/"+file, respBytes, 0755)
+		return respBytes, nil
+	}
+}
+
+func ResolveHF(vocabId string) (exists bool, err error, config *HFConfig) {
+	configJson, configErr := FetchHuggingFace(vocabId, "config.json")
+	if configErr != nil {
+		return false, configErr, nil
 	}
 
-	unitrimPath := "resources/" + vocabId + "/unitrim.json"
-	encoderPath := "resources/" + vocabId + "/encoder.json"
-	ranksPath := "resources/" + vocabId + "/vocab.bpe"
-	specialsPath := "resources/" + vocabId + "/specials.txt"
+	var hfConfig HFConfig
+	configErr = json.Unmarshal(configJson, &hfConfig)
+	if configErr != nil {
+		return true, configErr, nil
+	}
+	vocabJson, vocabErr := FetchHuggingFace(vocabId, "vocab.json")
+	if vocabErr != nil {
+		return true, vocabErr, nil
+	}
+	mergesTxt, mergesErr := FetchHuggingFace(vocabId, "merges.txt")
+	if mergesErr != nil {
+		return true, mergesErr, nil
+	}
+	specialJson, specialErr := FetchHuggingFace(vocabId,
+		"special_tokens_map.json")
+
+	var writeErr error
+
+	if writeErr = os.WriteFile(vocabId+"/vocab.json", vocabJson,
+		0755); writeErr != nil {
+		return true, writeErr, nil
+	}
+	if writeErr = os.WriteFile(vocabId+"/merges.txt", mergesTxt,
+		0755); writeErr != nil {
+		return true, writeErr, nil
+	}
+
+	specialTokens := make(map[string]interface{}, 0)
+	if specialErr == nil {
+		if specialErr = json.Unmarshal(specialJson,
+			&specialTokens); specialErr != nil {
+			return true, specialErr, nil
+		}
+	}
+
+	seenSpecials := make(map[string]bool)
+	specialTokenStrings := make([]string, 0)
+	specialsFile, specialFileErr := os.OpenFile(vocabId+"/specials.txt",
+		os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
+	if specialFileErr != nil {
+		return true, specialFileErr, nil
+	}
+	defer specialsFile.Close()
+	for k, v := range specialTokens {
+		var specialToken string
+		switch t := v.(type) {
+		case string:
+			specialToken = t
+		case map[string]interface{}:
+			mv := t["content"]
+			switch mvt := mv.(type) {
+			case string:
+				specialToken = mvt
+			default:
+				log.Fatal(fmt.Sprintf("Unknown format for `special_tokens_map."+
+					"json`: %v", t))
+			}
+		default:
+			log.Fatal(fmt.Sprintf("Unknown format for `special_tokens_map."+
+				"json`: %v", t))
+		}
+		if !seenSpecials[specialToken] {
+			specialTokenStrings = append(specialTokenStrings, specialToken)
+			seenSpecials[specialToken] = true
+		}
+		switch k {
+		case "eos_token":
+			hfConfig.EosTokenStr = &specialToken
+		case "pad_token":
+			hfConfig.PadTokenStr = &specialToken
+		}
+	}
+	if len(specialTokenStrings) > 0 {
+		_, writeErr = specialsFile.WriteString(strings.Join(
+			specialTokenStrings, "\n"))
+		if writeErr != nil {
+			return true, writeErr, nil
+		}
+	}
+	defaultTkn := "<|endoftext|>"
+	if hfConfig.EosTokenStr == nil {
+		hfConfig.EosTokenStr = &defaultTkn
+	}
+	if hfConfig.PadTokenStr == nil {
+		hfConfig.PadTokenStr = &defaultTkn
+	}
+
+	hfConfigJson, _ := json.Marshal(hfConfig)
+	if writeErr = os.WriteFile(vocabId+"/config.json", hfConfigJson,
+		0755); writeErr != nil {
+		return true, writeErr, nil
+	}
+	return true, nil, &hfConfig
+}
+
+func ResolveVocabId(vocabId string) (bool, *HFConfig, error) {
+	if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr == nil {
+		return true, nil, nil
+	}
+	if _, localErr := os.ReadDir(vocabId); localErr == nil {
+		configJson, configErr := os.ReadFile(vocabId + "/config.json")
+		if configErr != nil {
+			return false, nil, configErr
+		}
+		var hfConfig HFConfig
+		configErr = json.Unmarshal(configJson, &hfConfig)
+		if configErr != nil {
+			return false, nil, configErr
+		}
+		return false, &hfConfig, nil
+	}
+	if hfExists, hfErr, hfConfig := ResolveHF(vocabId); hfErr != nil {
+		if hfExists {
+			return false, nil, hfErr
+		} else {
+			return false, nil, errors.New(fmt.Sprintf(
+				"Unknown tokenizer vocabulary '%s", vocabId))
+		}
+	} else {
+		return false, hfConfig, nil
+	}
+}
+
+func NewEncoder(vocabId string) (*GPTEncoder, error) {
+	isInternalVocab, hfConfig, vocabErr := ResolveVocabId(vocabId)
+	if vocabErr != nil {
+		return nil, vocabErr
+	}
+
+	var eosTokenStr, padTokenStr string
+	var unitrimFile, encoderFile, ranksFile, specialsFile []byte
+	if isInternalVocab {
+		eosTokenStr = "<|endoftext|>"
+		padTokenStr = "<|endoftext|>"
+		unitrimFile, _ = f.ReadFile(
+			"resources/" + vocabId + "/unitrim.json")
+		encoderFile, _ = f.ReadFile(
+			"resources/" + vocabId + "/encoder.json")
+		ranksFile, _ = f.ReadFile(
+			"resources/" + vocabId + "/vocab.bpe")
+		specialsFile, _ = f.ReadFile(
+			"resources/" + vocabId + "/specials.txt")
+	} else {
+		eosTokenStr = *hfConfig.EosTokenStr
+		padTokenStr = *hfConfig.PadTokenStr
+		unitrimFile, _ = f.ReadFile(
+			"resources/gpt2/unitrim.json")
+		encoderFile, _ = os.ReadFile(vocabId + "/vocab.json")
+		ranksFile, _ = os.ReadFile(vocabId + "/merges.txt")
+		specialsFile, _ = os.ReadFile(vocabId + "/specials.txt")
+	}
 
 	// Read token unicode trimming definitions
-	unitrimFile, _ := f.ReadFile(unitrimPath)
 	unitrimArr := make([]int, 0)
 	if json.Unmarshal(unitrimFile, &unitrimArr) != nil {
-		log.Fatalf("Error unmarshalling unitrim `%s`", unitrimPath)
+		log.Fatal("Error unmarshalling `unitrim.json`")
 	}
 
 	// Read encoder mappings and also generate reverse mappings.
-	encoderFile, _ := f.ReadFile(encoderPath)
 	encoderTokens := make(map[string]Token)
 	if json.Unmarshal(encoderFile, &encoderTokens) != nil {
-		log.Fatalf("Error unmarshalling encoder `%s`", encoderPath)
+		log.Fatal("Error unmarshalling encoder")
 	}
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
@@ -103,12 +286,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
-	var bpeMergesFile []byte
-	var mergesErr error
-	if bpeMergesFile, mergesErr = f.ReadFile(ranksPath); mergesErr != nil {
-		log.Fatalf("Error unmarshaling BPE ranks file `%s`", ranksPath)
-	}
-	scanner := bufio.NewScanner(bytes.NewBuffer(bpeMergesFile))
+	scanner := bufio.NewScanner(bytes.NewBuffer(ranksFile))
 	idx := uint16(0)
 	firstLine := true
 	for scanner.Scan() {
@@ -126,14 +304,12 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	specialsRegexTokens := make([]string, 0)
 	specials := make(map[string]Tokens, 0)
 
-	specialsFile, specialsErr := f.ReadFile(specialsPath)
-	if specialsErr != nil {
-		log.Fatalf("Error reading special tokens file `%s`",
-			specialsPath)
-	}
 	specialsScanner := bufio.NewScanner(bytes.NewBuffer(specialsFile))
 	for specialsScanner.Scan() {
 		specialToken := specialsScanner.Text()
+		if specialToken == "" {
+			continue
+		}
 		specials[specialToken] = Tokens{encoderTokens[specialToken]}
 		quotedToken := regexp.QuoteMeta(specialToken)
 		specialsRegexTokens = append(specialsRegexTokens, quotedToken)
@@ -178,7 +354,14 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		}
 		bytesUnicode[b] = bytesUnicodeMap[uint8(b)]
 	}
+
 	cache, _ := lru.New(BPE_LRU_SZ)
+
+	replacements := make(map[string]string, 0)
+	if hfConfig != nil && hfConfig.Newlinemode != nil && *hfConfig.
+		Newlinemode == "s" {
+		replacements["\n"] = "</s>"
+	}
 
 	return &GPTEncoder{
 		encoderTokens,
@@ -192,6 +375,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		unicodeBytes,
 		specials,
 		cache,
+		encoderTokens[eosTokenStr],
+		encoderTokens[padTokenStr],
+		replacements,
 	}, nil
 }
 
@@ -364,6 +550,9 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 				break
 			}
 		}
+		for replaced, replacement := range encoder.replacements {
+			line = strings.ReplaceAll(line, replaced, replacement)
+		}
 		specialIdxes := encoder.specialsPat.FindAllStringIndex(line, -1)
 		beginIdx := 0
 		var specialEnd int
@@ -446,7 +635,13 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 	good := 0
 	need := 0
 	for tokenIdx := range *tokens {
-		req := encoder.unitrim[(*tokens)[tokenIdx]]
+		tok := (*tokens)[tokenIdx]
+		var req int
+		if int(tok) > len(encoder.unitrim) {
+			req = 0
+		} else {
+			req = encoder.unitrim[(*tokens)[tokenIdx]]
+		}
 		if !(need+req < 0) {
 			need += req
 		}
