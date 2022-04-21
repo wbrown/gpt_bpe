@@ -69,6 +69,34 @@ var TrimSentencesTests = []TrimTest{
 		sent2},
 }
 
+func TestHFResolution(t *testing.T) {
+	_, err := NewEncoder("EleutherAI/gpt-j-6B")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestHFTokenzier(t *testing.T) {
+	enc, err := NewEncoder("EleutherAI/gpt-j-6B")
+	if err != nil {
+		t.Error(err)
+	}
+	sent := "The fox jumped over the hare."
+	hfTokens := enc.Encode(&sent)
+	gptTokens := gpt2Encoder.Encode(&sent)
+	assert.Equal(t, hfTokens, gptTokens)
+}
+
+func TestFairSeqTokenizer(t *testing.T) {
+	enc, err := NewEncoder("KoboldAI/fairseq-dense-2.7B")
+	if err != nil {
+		t.Error(err)
+	}
+	sent := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	fsTokens := enc.Encode(&sent)
+	assert.Equal(t, (*fsTokens)[8], Token(50259))
+}
+
 var TrimNewLinesTests = append(TrimSentencesTests[3:5], TrimSentencesTests[9:11]...)
 
 func TestGPTEncoder_TrimIncompleteSentence(t *testing.T) {
@@ -181,14 +209,6 @@ func BenchmarkGPTEncoder_Encode(b *testing.B) {
 	duration := time.Since(start)
 	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
 		len(corpus), tokenCt, duration))
-}
-
-func recastExpected(tokens Tokens) (recast []uint16) {
-	recast = make([]uint16, len(tokens))
-	for idx := range tokens {
-		recast[idx] = uint16(tokens[idx])
-	}
-	return recast
 }
 
 func TestGPTEncoder_Encode(t *testing.T) {

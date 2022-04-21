@@ -170,16 +170,28 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 	tokenizer := *tokenizerPtr
-	padToken, padErr := getAndCheckToken(&tokenizer, tt.PadToken,
-		"PadToken")
-	if padErr != nil {
-		return nil, padErr
+	var padToken, endOfText gpt_bpe.Token
+	if tt.PadToken == "" {
+		padToken = tokenizer.PadToken
+	} else {
+		var padErr error
+		padToken, padErr = getAndCheckToken(&tokenizer, tt.PadToken,
+			"PadToken")
+		if padErr != nil {
+			return nil, padErr
+		}
 	}
-	endOfText, eotErr := getAndCheckToken(&tokenizer, tt.EndOfText,
-		"EndOfText")
-	if eotErr != nil {
-		return nil, eotErr
+	if tt.EndOfText == "" {
+		endOfText = tokenizer.EosToken
+	} else {
+		var eotErr error
+		endOfText, eotErr = getAndCheckToken(&tokenizer, tt.EndOfText,
+			"EndOfText")
+		if eotErr != nil {
+			return nil, eotErr
+		}
 	}
+
 	var boundary gpt_bpe.Token
 	if tt.Boundary == "" {
 		boundary = 65535
@@ -370,7 +382,8 @@ func (tt TextsTokenizer) TokenizeTexts(
 // WriteContexts
 // Consumes a ContextsIterator function and serializes the contexts to an
 // aligned binary file.
-func WriteContexts(outPath string, nextContext ContextsIterator) (int, error) {
+func WriteContexts(outPath string, nextContext ContextsIterator,
+	encoder *gpt_bpe.GPTEncoder) (int, error) {
 	totalTokens := 0
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE,
 		755)
@@ -387,6 +400,10 @@ func WriteContexts(outPath string, nextContext ContextsIterator) (int, error) {
 				break
 			} else {
 				contexts <- context
+				if encoder != nil {
+					println("=========================================")
+					println(encoder.Decode(context))
+				}
 			}
 		}
 	}()
@@ -413,14 +430,19 @@ func init() {
 
 func main() {
 	tokenizerId := flag.String("tokenizer", "gpt2",
-		"tokenizer to use [gpt2, pile]")
+		"tokenizer to use [gpt2, pile, huggingface-id]")
 	contextSize := flag.Int("context", 2048, "context size")
-	endOfText := flag.String("eot", "<|endoftext|>",
-		"end of text token to split texts")
-	padToken := flag.String("pad", "<|endoftext|>",
-		"pad token to pad out contexts, can be <|padding|>")
+	showContexts := flag.Bool("show_contexts", false,
+		"show contexts as they are tokenized")
+	endOfText := flag.String("eot", "",
+		"end of text token to split texts, can be token or int16 "+
+			"token_id")
+	padToken := flag.String("pad", "",
+		"pad token to pad out contexts, can be <|padding|>, or an "+
+			"int16 token_id")
 	boundaryToken := flag.String("boundary", "\n",
-		"boundary token to split contexts on")
+		"boundary token to split contexts on, can be a string token "+
+			"or int16 token_id")
 	outputFile := flag.String("output", "tokenized.chunk",
 		"tokenized output file")
 	inputDir := flag.String("input", "",
@@ -479,7 +501,11 @@ func main() {
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		total, writeErr := WriteContexts(*outputFile, contexts)
+		var enc *gpt_bpe.GPTEncoder
+		if *showContexts {
+			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
+		}
+		total, writeErr := WriteContexts(*outputFile, contexts, enc)
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
