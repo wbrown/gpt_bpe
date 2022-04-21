@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -138,7 +139,7 @@ func NewTextsTokenizer() TextsTokenizer {
 
 func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	id string) (gpt_bpe.Token, error) {
-	s = fmt.Sprint(s)
+	s = strings.ReplaceAll(s, "\\n", "\n")
 	token := t.Get(s)
 	if token == nil {
 		tokens := t.Encode(&s)
