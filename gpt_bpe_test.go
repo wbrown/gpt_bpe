@@ -2,6 +2,7 @@ package gpt_bpe
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"log"
@@ -73,6 +74,10 @@ func TestHFResolution(t *testing.T) {
 	_, err := NewEncoder("EleutherAI/gpt-j-6B")
 	if err != nil {
 		t.Error(err)
+	}
+	_, err = NewEncoder("nonexist/nonexist")
+	if err == nil {
+		t.Error(errors.New("failed to return error on non-existent model"))
 	}
 }
 
