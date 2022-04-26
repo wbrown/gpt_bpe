@@ -11,7 +11,9 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -80,6 +82,7 @@ func NewPileEncoder() GPTEncoder {
 }
 
 type HFConfig struct {
+	ModelId        *string `json:"omitempty"`
 	ModelType      *string `json:"model_type,omitempty"`
 	EosTokenId     *Token  `json:"eos_token_id,omitempty"`
 	BosTokenId     *Token  `json:"bos_token_id,omitempty"`
@@ -91,14 +94,9 @@ type HFConfig struct {
 	TokenizerClass *string `json:"tokenizer_class"`
 }
 
-func FetchHuggingFace(vocabId string, file string) (respBytes []byte,
+func handleResp(resp *http.Response, vocabId string,
+	file string) (respBytes []byte,
 	err error) {
-	resp, remoteErr := http.Get("https://huggingface." +
-		"co/" + vocabId + "/raw/main/" + file)
-	if remoteErr != nil {
-		return nil, remoteErr
-	}
-	defer resp.Body.Close()
 	respBytes, respErr := io.ReadAll(resp.Body)
 	if respErr != nil {
 		return nil, respErr
@@ -111,53 +109,105 @@ func FetchHuggingFace(vocabId string, file string) (respBytes []byte,
 	}
 }
 
-func ResolveHF(vocabId string) (exists bool, err error, config *HFConfig) {
-	configJson, configErr := FetchHuggingFace(vocabId, "config.json")
+func FetchHTTP(uri string, file string, vocabId *string) (respBytes []byte,
+	realizedVocabId string, err error) {
+	if vocabId == nil {
+		u, _ := url.Parse(uri)
+		basePath := path.Base(u.Path)
+		vocabId = &basePath
+	}
+	realizedVocabId = *vocabId
+	resp, remoteErr := http.Get(uri + "/" + file)
+	if remoteErr != nil {
+		return nil, realizedVocabId, remoteErr
+	} else if resp.StatusCode != 200 {
+		return nil, realizedVocabId,
+			errors.New("model not found on http server")
+	}
+	defer resp.Body.Close()
+	respBytes, err = handleResp(resp, *vocabId, file)
+	return respBytes, realizedVocabId, err
+}
+
+func FetchHuggingFace(vocabId string, file string) (respBytes []byte,
+	realizedVocabId string, err error) {
+	return FetchHTTP("https://huggingface."+
+		"co/"+vocabId+"/raw/main", file, &vocabId)
+}
+
+func isValidUrl(toTest string) bool {
+	_, err := url.ParseRequestURI(toTest)
+	if err != nil {
+		return false
+	}
+
+	u, err := url.Parse(toTest)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+
+	return true
+}
+
+func FetchConfig(vocabId string, file string) (respBytes []byte,
+	realizedVocabId string, err error) {
+	if isValidUrl(vocabId) {
+		return FetchHTTP(vocabId, file, nil)
+	} else {
+		return FetchHuggingFace(vocabId, file)
+	}
+}
+
+func ResolveConfig(vocabId string) (exists bool,
+	realizedVocabId string, config *HFConfig,
+	err error) {
+	configJson, realizedVocabId, configErr := FetchConfig(vocabId,
+		"config.json")
 	if configErr != nil {
-		return false, configErr, nil
+		return false, vocabId, nil, configErr
 	}
 
 	var hfConfig HFConfig
 	configErr = json.Unmarshal(configJson, &hfConfig)
 	if configErr != nil {
-		return true, configErr, nil
+		return true, realizedVocabId, nil, configErr
 	}
-	vocabJson, vocabErr := FetchHuggingFace(vocabId, "vocab.json")
+	vocabJson, _, vocabErr := FetchConfig(vocabId, "vocab.json")
 	if vocabErr != nil {
-		return true, vocabErr, nil
+		return true, realizedVocabId, nil, vocabErr
 	}
-	mergesTxt, mergesErr := FetchHuggingFace(vocabId, "merges.txt")
+	mergesTxt, _, mergesErr := FetchConfig(vocabId, "merges.txt")
 	if mergesErr != nil {
-		return true, mergesErr, nil
+		return true, realizedVocabId, nil, mergesErr
 	}
-	specialJson, specialErr := FetchHuggingFace(vocabId,
+	specialJson, _, specialErr := FetchConfig(vocabId,
 		"special_tokens_map.json")
 
 	var writeErr error
 
-	if writeErr = os.WriteFile(vocabId+"/vocab.json", vocabJson,
+	if writeErr = os.WriteFile(realizedVocabId+"/vocab.json", vocabJson,
 		0755); writeErr != nil {
-		return true, writeErr, nil
+		return true, realizedVocabId, nil, writeErr
 	}
-	if writeErr = os.WriteFile(vocabId+"/merges.txt", mergesTxt,
+	if writeErr = os.WriteFile(realizedVocabId+"/merges.txt", mergesTxt,
 		0755); writeErr != nil {
-		return true, writeErr, nil
+		return true, realizedVocabId, nil, writeErr
 	}
 
 	specialTokens := make(map[string]interface{}, 0)
 	if specialErr == nil {
 		if specialErr = json.Unmarshal(specialJson,
 			&specialTokens); specialErr != nil {
-			return true, specialErr, nil
+			return true, realizedVocabId, nil, specialErr
 		}
 	}
 
 	seenSpecials := make(map[string]bool)
 	specialTokenStrings := make([]string, 0)
-	specialsFile, specialFileErr := os.OpenFile(vocabId+"/specials.txt",
+	specialsFile, specialFileErr := os.OpenFile(realizedVocabId+"/specials.txt",
 		os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
 	if specialFileErr != nil {
-		return true, specialFileErr, nil
+		return true, realizedVocabId, nil, specialFileErr
 	}
 	defer specialsFile.Close()
 	for k, v := range specialTokens {
@@ -193,7 +243,7 @@ func ResolveHF(vocabId string) (exists bool, err error, config *HFConfig) {
 		_, writeErr = specialsFile.WriteString(strings.Join(
 			specialTokenStrings, "\n"))
 		if writeErr != nil {
-			return true, writeErr, nil
+			return true, realizedVocabId, nil, writeErr
 		}
 	}
 	defaultTkn := "<|endoftext|>"
@@ -205,37 +255,47 @@ func ResolveHF(vocabId string) (exists bool, err error, config *HFConfig) {
 	}
 
 	hfConfigJson, _ := json.Marshal(hfConfig)
-	if writeErr = os.WriteFile(vocabId+"/config.json", hfConfigJson,
+	if writeErr = os.WriteFile(realizedVocabId+"/config.json", hfConfigJson,
 		0755); writeErr != nil {
-		return true, writeErr, nil
+		return true, realizedVocabId, nil, writeErr
 	}
-	return true, nil, &hfConfig
+	return true, realizedVocabId, &hfConfig, nil
 }
 
 func ResolveVocabId(vocabId string) (bool, *HFConfig, error) {
-	if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr == nil {
+	var resolvedVocabId string
+	if isValidUrl(vocabId) {
+		u, _ := url.Parse(vocabId)
+		basePath := path.Base(u.Path)
+		resolvedVocabId = basePath
+	} else if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr == nil {
 		return true, nil, nil
+	} else {
+		resolvedVocabId = vocabId
 	}
-	if _, localErr := os.ReadDir(vocabId); localErr == nil {
-		configJson, configErr := os.ReadFile(vocabId + "/config.json")
+	if _, localErr := os.ReadDir(resolvedVocabId); localErr == nil {
+		configJson, configErr := os.ReadFile(resolvedVocabId + "/config.json")
 		if configErr != nil {
 			return false, nil, configErr
 		}
 		var hfConfig HFConfig
 		configErr = json.Unmarshal(configJson, &hfConfig)
+		hfConfig.ModelId = &resolvedVocabId
 		if configErr != nil {
 			return false, nil, configErr
 		}
 		return false, &hfConfig, nil
-	}
-	if hfExists, hfErr, hfConfig := ResolveHF(vocabId); hfErr != nil {
+	} else if hfExists, resolvedVocabId, hfConfig, hfErr := ResolveConfig(
+		vocabId); hfErr != nil {
 		if hfExists {
 			return false, nil, hfErr
 		} else {
 			return false, nil, errors.New(fmt.Sprintf(
-				"Unknown tokenizer vocabulary '%s", vocabId))
+				"Cannot load vocabulary '%s': %s", resolvedVocabId,
+				localErr))
 		}
 	} else {
+		hfConfig.ModelId = &resolvedVocabId
 		return false, hfConfig, nil
 	}
 }
@@ -244,6 +304,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	isInternalVocab, hfConfig, vocabErr := ResolveVocabId(vocabId)
 	if vocabErr != nil {
 		return nil, vocabErr
+	}
+	if hfConfig != nil && hfConfig.ModelId != nil {
+		vocabId = *hfConfig.ModelId
 	}
 
 	var eosTokenStr, padTokenStr string

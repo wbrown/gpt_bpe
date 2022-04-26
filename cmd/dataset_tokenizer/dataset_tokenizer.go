@@ -209,18 +209,19 @@ func (tt TextsTokenizer) TokenizeTexts(
 
 	prior := make(gpt_bpe.Tokens, 0)
 
-	var tokens *gpt_bpe.Tokens
+	var tokens gpt_bpe.Tokens
 	var text *string
 	var done bool
 	var numTokens, idx, begin, boundaryIdx int
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan *gpt_bpe.Tokens, 2)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 2)
 	nextTokenized := func() {
 		for {
 			text = nextText()
 			if text != nil {
-				tokenizedTexts <- tokenizer.Encode(text)
+				tokenized := tokenizer.Encode(text)
+				tokenizedTexts <- *tokenized
 			} else {
 				close(tokenizedTexts)
 				break
@@ -238,7 +239,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 		boundaryIdx = 0
 		if more {
 			done = false
-			numTokens = len(*tokens)
+			numTokens = len(tokens)
 		} else {
 			done = true
 		}
@@ -273,7 +274,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 			}
 			// Iterate until we reach the end of this text's tokens.
 			for idx < numTokens {
-				token := (*tokens)[idx]
+				token := (tokens)[idx]
 				// Mark the position of the last `boundary` token we've seen.
 				if token == boundary {
 					boundaryIdx = idx
@@ -281,7 +282,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
 				if idx-begin+len(prior) >= contextSize {
-					chunk := (*tokens)[begin:idx]
+					chunk := (tokens)[begin:idx]
 					// If we have `prior` from a prior text, we prepend the
 					// beginning of this text.
 					if len(prior) > 0 {
@@ -310,7 +311,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 						roundtripRemainder := contextSize - len(chunk)
 						if roundtripRemainder > 0 {
 							addlEnd := idx + roundtripRemainder
-							addlTokens := (*tokens)[idx:addlEnd]
+							addlTokens := (tokens)[idx:addlEnd]
 							trimmedAddl := tokenizer.TrimTokens(&addlTokens)
 							chunk = append(chunk, *trimmedAddl...)
 							idx += len(*trimmedAddl)
@@ -362,7 +363,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 			// we append `<|endoftext|>` token and carry it over to the next
 			// text's batch in `prior`.
 			if begin < numTokens {
-				prior = append(prior, (*tokens)[begin:]...)
+				prior = append(prior, (tokens)[begin:]...)
 				if len(prior) < contextSize {
 					prior = append(prior, endOfText)
 				}
@@ -391,7 +392,7 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	if err != nil {
 		return 0, err
 	}
-	contexts := make(chan *gpt_bpe.Tokens, 2)
+	contexts := make(chan gpt_bpe.Tokens, 2)
 
 	go func() {
 		for {
@@ -400,8 +401,9 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 				close(contexts)
 				break
 			} else {
-				contexts <- context
+				contexts <- *context
 				if encoder != nil {
+					println(len(*context))
 					println("=========================================")
 					println(encoder.Decode(context))
 				}
@@ -418,7 +420,7 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 		if _, writeErr := outFile.Write(*binContext); writeErr != nil {
 			return totalTokens, writeErr
 		}
-		totalTokens += len(*context)
+		totalTokens += len(context)
 	}
 	return totalTokens, nil
 }
