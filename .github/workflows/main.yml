@@ -16,3 +16,4 @@ jobs:
 
       - uses: imjasonh/setup-ko@v0.4
       - run: ko publish --base-import-paths ./cmd/dataset_tokenizer -t ${GITHUB_SHA::7}
+      - run: ko publish --base-import-paths ./cmd/model_downloader -t ${GITHUB_SHA::7}

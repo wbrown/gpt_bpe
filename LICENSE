@@ -121,9 +121,9 @@ other authorized party saying it may be distributed under the terms of
 this Lesser General Public License (also called "this License").
 Each licensee is addressed as "you".
 
-  A "library" means a collection of software functions and/or data
+  A "library" means a collection of software functions and/or Data
 prepared so as to be conveniently linked with application programs
-(which use some of those functions and data) to form executables.
+(which use some of those functions and Data) to form executables.
 
   The "Library", below, refers to any such software library or work
 which has been distributed under these terms.  A "work based on the
@@ -173,7 +173,7 @@ above, provided that you also meet all of these conditions:
     charge to all third parties under the terms of this License.
 
     d) If a facility in the modified Library refers to a function or a
-    table of data to be supplied by an application program that uses
+    table of Data to be supplied by an application program that uses
     the facility, other than as an argument passed when the facility
     is invoked, then you must make a good faith effort to ensure that,
     in the event an application does not supply such function or
@@ -256,7 +256,7 @@ Whether this is true is especially significant if the work can be
 linked without the Library, or if the work is itself a library.  The
 threshold for this to be true is not precisely defined by law.
 
-  If such an object file uses only numerical parameters, data
+  If such an object file uses only numerical parameters, Data
 structure layouts and accessors, and small macros and small inline
 functions (ten lines or less in length), then the use of the object
 file is unrestricted, regardless of whether it is legally a derivative
@@ -316,7 +316,7 @@ of these things:
     materials or that you have already sent this user a copy.
 
   For an executable, the required form of the "work that uses the
-Library" must include any data and utility programs needed for
+Library" must include any Data and utility programs needed for
 reproducing the executable from it.  However, as a special exception,
 the materials to be distributed need not include anything that is
 normally distributed (in either source or binary form) with the major
