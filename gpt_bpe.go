@@ -4,16 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
 	lru "github.com/hashicorp/golang-lru"
-	"io"
+	"github.com/wbrown/gpt_bpe/resources"
 	"log"
 	"math"
-	"net/http"
-	"net/url"
-	"os"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -72,276 +66,36 @@ const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
 func NewGPT2Encoder() GPTEncoder {
-	encoder, _ := NewEncoder("gpt2")
+	encoder, _ := NewEncoder("gpt2-tokenizer")
 	return *encoder
 }
 
 func NewPileEncoder() GPTEncoder {
-	encoder, _ := NewEncoder("pile")
+	encoder, _ := NewEncoder("pile-tokenizer")
 	return *encoder
 }
 
-type HFConfig struct {
-	ModelId        *string `json:"omitempty"`
-	ModelType      *string `json:"model_type,omitempty"`
-	EosTokenId     *Token  `json:"eos_token_id,omitempty"`
-	BosTokenId     *Token  `json:"bos_token_id,omitempty"`
-	PadTokenId     *Token  `json:"pad_token_id,omitempty"`
-	EosTokenStr    *string `json:"eos_token,omitempty"`
-	PadTokenStr    *string `json:"pad_token,omitempty"`
-	VocabSize      *uint16 `json:"vocab_size,omitempty"`
-	Newlinemode    *string `json:"newlinemode,omitempty"`
-	TokenizerClass *string `json:"tokenizer_class"`
-}
-
-func handleResp(resp *http.Response, vocabId string,
-	file string) (respBytes []byte,
-	err error) {
-	respBytes, respErr := io.ReadAll(resp.Body)
-	if respErr != nil {
-		return nil, respErr
-	} else {
-		if mkdirErr := os.MkdirAll(vocabId, 0755); mkdirErr != nil {
-			return respBytes, mkdirErr
-		}
-		os.WriteFile(vocabId+"/"+file, respBytes, 0755)
-		return respBytes, nil
-	}
-}
-
-func FetchHTTP(uri string, file string, vocabId *string) (respBytes []byte,
-	realizedVocabId string, err error) {
-	if vocabId == nil {
-		u, _ := url.Parse(uri)
-		basePath := path.Base(u.Path)
-		vocabId = &basePath
-	}
-	realizedVocabId = *vocabId
-	resp, remoteErr := http.Get(uri + "/" + file)
-	if remoteErr != nil {
-		return nil, realizedVocabId, remoteErr
-	} else if resp.StatusCode != 200 {
-		return nil, realizedVocabId,
-			errors.New("model not found on http server")
-	}
-	defer resp.Body.Close()
-	respBytes, err = handleResp(resp, *vocabId, file)
-	return respBytes, realizedVocabId, err
-}
-
-func FetchHuggingFace(vocabId string, file string) (respBytes []byte,
-	realizedVocabId string, err error) {
-	return FetchHTTP("https://huggingface."+
-		"co/"+vocabId+"/raw/main", file, &vocabId)
-}
-
-func isValidUrl(toTest string) bool {
-	_, err := url.ParseRequestURI(toTest)
-	if err != nil {
-		return false
-	}
-
-	u, err := url.Parse(toTest)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return false
-	}
-
-	return true
-}
-
-func FetchConfig(vocabId string, file string) (respBytes []byte,
-	realizedVocabId string, err error) {
-	if isValidUrl(vocabId) {
-		return FetchHTTP(vocabId, file, nil)
-	} else {
-		return FetchHuggingFace(vocabId, file)
-	}
-}
-
-func ResolveConfig(vocabId string) (exists bool,
-	realizedVocabId string, config *HFConfig,
-	err error) {
-	configJson, realizedVocabId, configErr := FetchConfig(vocabId,
-		"config.json")
-	if configErr != nil {
-		return false, vocabId, nil, configErr
-	}
-
-	var hfConfig HFConfig
-	configErr = json.Unmarshal(configJson, &hfConfig)
-	if configErr != nil {
-		return true, realizedVocabId, nil, configErr
-	}
-	vocabJson, _, vocabErr := FetchConfig(vocabId, "vocab.json")
-	if vocabErr != nil {
-		return true, realizedVocabId, nil, vocabErr
-	}
-	mergesTxt, _, mergesErr := FetchConfig(vocabId, "merges.txt")
-	if mergesErr != nil {
-		return true, realizedVocabId, nil, mergesErr
-	}
-	specialJson, _, specialErr := FetchConfig(vocabId,
-		"special_tokens_map.json")
-
-	var writeErr error
-
-	if writeErr = os.WriteFile(realizedVocabId+"/vocab.json", vocabJson,
-		0755); writeErr != nil {
-		return true, realizedVocabId, nil, writeErr
-	}
-	if writeErr = os.WriteFile(realizedVocabId+"/merges.txt", mergesTxt,
-		0755); writeErr != nil {
-		return true, realizedVocabId, nil, writeErr
-	}
-
-	specialTokens := make(map[string]interface{}, 0)
-	if specialErr == nil {
-		if specialErr = json.Unmarshal(specialJson,
-			&specialTokens); specialErr != nil {
-			return true, realizedVocabId, nil, specialErr
-		}
-	}
-
-	seenSpecials := make(map[string]bool)
-	specialTokenStrings := make([]string, 0)
-	specialsFile, specialFileErr := os.OpenFile(realizedVocabId+"/specials.txt",
-		os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
-	if specialFileErr != nil {
-		return true, realizedVocabId, nil, specialFileErr
-	}
-	defer specialsFile.Close()
-	for k, v := range specialTokens {
-		var specialToken string
-		switch t := v.(type) {
-		case string:
-			specialToken = t
-		case map[string]interface{}:
-			mv := t["content"]
-			switch mvt := mv.(type) {
-			case string:
-				specialToken = mvt
-			default:
-				log.Fatal(fmt.Sprintf("Unknown format for `special_tokens_map."+
-					"json`: %v", t))
-			}
-		default:
-			log.Fatal(fmt.Sprintf("Unknown format for `special_tokens_map."+
-				"json`: %v", t))
-		}
-		if !seenSpecials[specialToken] {
-			specialTokenStrings = append(specialTokenStrings, specialToken)
-			seenSpecials[specialToken] = true
-		}
-		switch k {
-		case "eos_token":
-			hfConfig.EosTokenStr = &specialToken
-		case "pad_token":
-			hfConfig.PadTokenStr = &specialToken
-		}
-	}
-	if len(specialTokenStrings) > 0 {
-		_, writeErr = specialsFile.WriteString(strings.Join(
-			specialTokenStrings, "\n"))
-		if writeErr != nil {
-			return true, realizedVocabId, nil, writeErr
-		}
-	}
-	defaultTkn := "<|endoftext|>"
-	if hfConfig.EosTokenStr == nil {
-		hfConfig.EosTokenStr = &defaultTkn
-	}
-	if hfConfig.PadTokenStr == nil {
-		hfConfig.PadTokenStr = &defaultTkn
-	}
-
-	hfConfigJson, _ := json.Marshal(hfConfig)
-	if writeErr = os.WriteFile(realizedVocabId+"/config.json", hfConfigJson,
-		0755); writeErr != nil {
-		return true, realizedVocabId, nil, writeErr
-	}
-	return true, realizedVocabId, &hfConfig, nil
-}
-
-func ResolveVocabId(vocabId string) (bool, *HFConfig, error) {
-	var resolvedVocabId string
-	if isValidUrl(vocabId) {
-		u, _ := url.Parse(vocabId)
-		basePath := path.Base(u.Path)
-		resolvedVocabId = basePath
-	} else if _, vocabErr := f.ReadDir("resources/" + vocabId); vocabErr == nil {
-		return true, nil, nil
-	} else {
-		resolvedVocabId = vocabId
-	}
-	if _, localErr := os.ReadDir(resolvedVocabId); localErr == nil {
-		configJson, configErr := os.ReadFile(resolvedVocabId + "/config.json")
-		if configErr != nil {
-			return false, nil, configErr
-		}
-		var hfConfig HFConfig
-		configErr = json.Unmarshal(configJson, &hfConfig)
-		hfConfig.ModelId = &resolvedVocabId
-		if configErr != nil {
-			return false, nil, configErr
-		}
-		return false, &hfConfig, nil
-	} else if hfExists, resolvedVocabId, hfConfig, hfErr := ResolveConfig(
-		vocabId); hfErr != nil {
-		if hfExists {
-			return false, nil, hfErr
-		} else {
-			return false, nil, errors.New(fmt.Sprintf(
-				"Cannot load vocabulary '%s': %s", resolvedVocabId,
-				localErr))
-		}
-	} else {
-		hfConfig.ModelId = &resolvedVocabId
-		return false, hfConfig, nil
-	}
-}
-
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
-	isInternalVocab, hfConfig, vocabErr := ResolveVocabId(vocabId)
+	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId)
 	if vocabErr != nil {
 		return nil, vocabErr
 	}
+	resources := *resourcesPtr
+
 	if hfConfig != nil && hfConfig.ModelId != nil {
 		vocabId = *hfConfig.ModelId
 	}
 
-	var eosTokenStr, padTokenStr string
-	var unitrimFile, encoderFile, ranksFile, specialsFile []byte
-	if isInternalVocab {
-		eosTokenStr = "<|endoftext|>"
-		padTokenStr = "<|endoftext|>"
-		unitrimFile, _ = f.ReadFile(
-			"resources/" + vocabId + "/unitrim.json")
-		encoderFile, _ = f.ReadFile(
-			"resources/" + vocabId + "/encoder.json")
-		ranksFile, _ = f.ReadFile(
-			"resources/" + vocabId + "/vocab.bpe")
-		specialsFile, _ = f.ReadFile(
-			"resources/" + vocabId + "/specials.txt")
-	} else {
-		eosTokenStr = *hfConfig.EosTokenStr
-		padTokenStr = *hfConfig.PadTokenStr
-		unitrimFile, _ = f.ReadFile(
-			"resources/gpt2/unitrim.json")
-		encoderFile, _ = os.ReadFile(vocabId + "/vocab.json")
-		ranksFile, _ = os.ReadFile(vocabId + "/merges.txt")
-		specialsFile, _ = os.ReadFile(vocabId + "/specials.txt")
-	}
-
 	// Read token unicode trimming definitions
 	unitrimArr := make([]int, 0)
-	if json.Unmarshal(unitrimFile, &unitrimArr) != nil {
+	if json.Unmarshal(*resources["unitrim.json"].Data, &unitrimArr) != nil {
 		log.Fatal("Error unmarshalling `unitrim.json`")
 	}
 
 	// Read encoder mappings and also generate reverse mappings.
 	encoderTokens := make(map[string]Token)
-	if json.Unmarshal(encoderFile, &encoderTokens) != nil {
-		log.Fatal("Error unmarshalling encoder")
+	if json.Unmarshal(*resources["vocab.json"].Data, &encoderTokens) != nil {
+		log.Fatal("Error unmarshalling `vocab.json`")
 	}
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
@@ -349,7 +103,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
-	scanner := bufio.NewScanner(bytes.NewBuffer(ranksFile))
+	scanner := bufio.NewScanner(bytes.NewBuffer(*resources["merges.txt"].Data))
 	idx := uint16(0)
 	firstLine := true
 	for scanner.Scan() {
@@ -367,15 +121,32 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	specialsRegexTokens := make([]string, 0)
 	specials := make(map[string]Tokens, 0)
 
-	specialsScanner := bufio.NewScanner(bytes.NewBuffer(specialsFile))
-	for specialsScanner.Scan() {
-		specialToken := specialsScanner.Text()
-		if specialToken == "" {
-			continue
+	if specialsTxt, ok := resources["specials.txt"]; ok {
+		specialsScanner := bufio.NewScanner(bytes.NewBuffer(*specialsTxt.Data))
+		for specialsScanner.Scan() {
+			specialToken := specialsScanner.Text()
+			if specialToken == "" {
+				continue
+			}
+			specials[specialToken] = Tokens{encoderTokens[specialToken]}
+			quotedToken := regexp.QuoteMeta(specialToken)
+			specialsRegexTokens = append(specialsRegexTokens, quotedToken)
 		}
-		specials[specialToken] = Tokens{encoderTokens[specialToken]}
-		quotedToken := regexp.QuoteMeta(specialToken)
-		specialsRegexTokens = append(specialsRegexTokens, quotedToken)
+	} else if specialsJson, ok := resources["specials.json"]; ok {
+		specialsData := make(map[string]string, 0)
+		seenSpecials := make(map[string]bool, 0)
+		if specialErr := json.Unmarshal(*specialsJson.Data,
+			&specialsData); specialErr != nil {
+			return nil, specialErr
+		}
+		for _, v := range specialsData {
+			if _, seen := seenSpecials[v]; !seen {
+				seenSpecials[v] = true
+				specials[v] = Tokens{encoderTokens[v]}
+				quotedToken := regexp.QuoteMeta(v)
+				specialsRegexTokens = append(specialsRegexTokens, quotedToken)
+			}
+		}
 	}
 	specialsRegex := strings.Join(specialsRegexTokens, "|")
 
@@ -438,8 +209,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		unicodeBytes,
 		specials,
 		cache,
-		encoderTokens[eosTokenStr],
-		encoderTokens[padTokenStr],
+		encoderTokens[*hfConfig.EosTokenStr],
+		encoderTokens[*hfConfig.PadTokenStr],
 		replacements,
 	}, nil
 }
