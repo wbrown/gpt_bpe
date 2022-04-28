@@ -471,7 +471,7 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 	for tokenIdx := range *tokens {
 		tok := (*tokens)[tokenIdx]
 		var req int
-		if int(tok) > len(encoder.unitrim) {
+		if int(tok) >= len(encoder.unitrim) {
 			req = 0
 		} else {
 			req = encoder.unitrim[(*tokens)[tokenIdx]]

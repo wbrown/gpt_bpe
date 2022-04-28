@@ -160,15 +160,26 @@ type ContextsIterator func() *gpt_bpe.Tokens
 // Consumes a TextsIterator and produces a ContextsIterator iterator function
 // that returns tokenized contexts that are fixed and padded out to
 // `contextSize`.
-func (tt TextsTokenizer) TokenizeTexts(
-	nextText TextsIterator) (ContextsIterator, error) {
+func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
 	tokenizerPtr, ok := tokenizers[tt.TokenizerId]
 	if !ok {
 		var tokErr error
 		tokenizerPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
 		if tokErr != nil {
 			return nil, tokErr
+		} else {
+			tokenizers[tt.TokenizerId] = tokenizerPtr
+			return tokenizerPtr, nil
 		}
+	}
+	return tokenizerPtr, nil
+}
+
+func (tt TextsTokenizer) TokenizeTexts(
+	nextText TextsIterator) (ContextsIterator, error) {
+	tokenizerPtr, tokErr := tt.InitTokenizer()
+	if tokErr != nil {
+		return nil, tokErr
 	}
 	tokenizer := *tokenizerPtr
 	var padToken, endOfText gpt_bpe.Token
@@ -493,6 +504,9 @@ func main() {
 				"was tokenized. Use -retokenize to force retokenization.",
 				*newestDir, *outputFile)
 		}
+	}
+	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+		log.Fatal(tokErr)
 	}
 
 	if nextText, err := ReadTexts(*inputDir); err != nil {
