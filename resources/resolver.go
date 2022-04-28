@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
-	mmap "github.com/edsrzf/mmap-go"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -14,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"time"
 )
 
@@ -23,6 +23,8 @@ type WriteCounter struct {
 	Total    uint64
 	Last     time.Time
 	Reported bool
+	Path     string
+	Size     uint64
 }
 
 func (wc *WriteCounter) Write(p []byte) (int, error) {
@@ -31,7 +33,8 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 	if time.Now().Sub(wc.Last).Seconds() > 10 {
 		wc.Reported = true
 		wc.Last = time.Now()
-		wc.PrintProgress()
+		log.Print(fmt.Sprintf("Downloading %s... %s / %s completed.",
+			wc.Path, humanize.Bytes(wc.Total), humanize.Bytes(wc.Size)))
 	}
 	return n, nil
 }
@@ -41,7 +44,6 @@ func (wc WriteCounter) PrintProgress() {
 	// the remaining characters by filling it with spaces
 	// Return again and print current status of download
 	// We use the humanize package to print the bytes in a meaningful way (e.g. 10 MB)
-	fmt.Printf("\n... %s complete", humanize.Bytes(wc.Total))
 }
 
 const (
@@ -98,8 +100,25 @@ func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+func SizeHTTP(uri string, rsrc string) (uint, error) {
+	resp, remoteErr := http.Head(uri + "/" + rsrc)
+	if remoteErr != nil {
+		return 0, remoteErr
+	} else if resp.StatusCode != 200 {
+		return 0, errors.New(fmt.Sprintf("HTTP status code %d",
+			resp.StatusCode))
+	} else {
+		size, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+		return uint(size), nil
+	}
+}
+
 func FetchHuggingFace(id string, rsrc string) (io.ReadCloser, error) {
 	return FetchHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
+}
+
+func SizeHuggingFace(id string, rsrc string) (uint, error) {
+	return SizeHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
 }
 
 func isValidUrl(toTest string) bool {
@@ -128,6 +147,16 @@ func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 		}
 	} else {
 		return FetchHuggingFace(uri, rsrc)
+	}
+}
+
+func Size(uri string, rsrc string) (uint, error) {
+	if isValidUrl(uri) {
+		return SizeHTTP(uri, rsrc)
+	} else if fsz, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
+		return uint(fsz.Size()), nil
+	} else {
+		return SizeHuggingFace(uri, rsrc)
 	}
 }
 
@@ -234,23 +263,48 @@ func ResolveResources(uri string, dir *string,
 	resources := GetResourceEntries()
 
 	for file, flag := range resources {
+		var rsrcFile os.File
 		if flag <= rsrcLvl {
-			print(fmt.Sprintf("Resolving %s/%s... ", uri, file))
-			rsrcReader, rsrcErr := Fetch(uri, file)
-			if rsrcErr != nil {
+			log.Printf("Resolving %s/%s... ", uri, file)
+			targetPath := path.Join(*dir, file)
+			rsrcSize, rsrcSizeErr := Size(uri, file)
+			if rsrcSizeErr != nil {
 				if flag&RESOURCE_REQUIRED != 0 {
-					println("not found, required!")
+					log.Printf("%s/%s not found, required!",
+						uri, file)
 					return &foundResources, errors.New(
 						fmt.Sprintf(
 							"cannot retrieve required `%s` from `%s`: %s",
-							uri, file, rsrcErr))
+							uri, file, rsrcSizeErr))
 				} else {
-					println("not there, not required.")
+					log.Printf("Resolved %s/%s... not there, not required.",
+						uri, file)
+					continue
 				}
+			} else if targetStat, targetStatErr := os.Stat(targetPath); !os.IsNotExist(
+				targetStatErr) && uint(targetStat.Size()) == rsrcSize {
+				log.Printf("Skipping %s/%s... already exists, "+
+					"and of the correct size.", uri, file)
+				openFile, skipFileErr := os.OpenFile(
+					path.Join(*dir, file),
+					os.O_RDONLY, 0755)
+				if skipFileErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error opening '%s' for write: %s",
+							rsrcFile, skipFileErr))
+				} else {
+					rsrcFile = *openFile
+				}
+			} else if rsrcReader, rsrcErr := Fetch(uri, file); rsrcErr != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf(
+						"cannot retrieve `%s` from `%s`: %s",
+						uri, file, rsrcErr))
 			} else {
-				rsrcFile, rsrcFileErr := os.OpenFile(
+				openFile, rsrcFileErr := os.OpenFile(
 					path.Join(*dir, file),
 					os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
+				rsrcFile = *openFile
 				if rsrcFileErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error opening '%s' for write: %s",
@@ -258,8 +312,10 @@ func ResolveResources(uri string, dir *string,
 				}
 				counter := &WriteCounter{
 					Last: time.Now(),
+					Path: fmt.Sprintf("%s/%s", uri, file),
+					Size: uint64(rsrcSize),
 				}
-				bytesDownloaded, ioErr := io.Copy(rsrcFile,
+				bytesDownloaded, ioErr := io.Copy(&rsrcFile,
 					io.TeeReader(rsrcReader, counter))
 				rsrcReader.Close()
 				if ioErr != nil {
@@ -267,18 +323,16 @@ func ResolveResources(uri string, dir *string,
 						fmt.Sprintf("error downloading '%s': %s",
 							rsrcFile, ioErr))
 				} else {
-					if counter.Reported {
-						fmt.Println()
-					}
-					fmt.Printf("%s complete.\n",
-						humanize.Bytes(uint64(bytesDownloaded)))
+					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
+						"%s completed.", uri, file,
+						humanize.Bytes(uint64(bytesDownloaded))))
 				}
-				if mmapErr := foundResources.AddEntry(file,
-					rsrcFile); mmapErr != nil {
-					return &foundResources, errors.New(
-						fmt.Sprintf("error trying to mmap file: %s",
-							mmapErr))
-				}
+			}
+			if mmapErr := foundResources.AddEntry(file,
+				&rsrcFile); mmapErr != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf("error trying to mmap file: %s",
+						mmapErr))
 			}
 		}
 	}
