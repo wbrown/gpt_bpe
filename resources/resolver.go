@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
+	mmap "github.com/edsrzf/mmap-go"
 	"io"
 	"io/fs"
 	"io/ioutil"
