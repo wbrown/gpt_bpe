@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -16,6 +17,18 @@ import (
 var tokenizers map[string]*gpt_bpe.GPTEncoder
 
 type TextsIterator func() *string
+
+func SanitizeText(text string) string {
+	extraWhiteSpace := regexp.MustCompile("\\s+")
+
+	text = strings.ReplaceAll(text, "\\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "")
+	text = strings.ReplaceAll(text, "\t", " ")
+	text = strings.ReplaceAll(text, " :", ":")
+	text = extraWhiteSpace.ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+	return text
+}
 
 // GlobTexts
 // Given a directory path, recursively finds all `.txt` files.
@@ -85,7 +98,7 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file contents.
-func ReadTexts(dirPath string) (TextsIterator, error) {
+func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
@@ -102,6 +115,9 @@ func ReadTexts(dirPath string) (TextsIterator, error) {
 			} else {
 				log.Print("Reading ", path)
 				text := string(textBytes)
+				if sanitize {
+					text = SanitizeText(text)
+				}
 				texts <- &text
 			}
 		}
@@ -465,6 +481,8 @@ func main() {
 		"do not trim contexts to valid unicode")
 	forceRetokenization := flag.Bool("retokenize", false,
 		"force retokenization even if tokenizer output is newer")
+	sanitizeBool := flag.Bool("sanitize", false,
+		"sanitize inputs of whitespace issues")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -509,7 +527,7 @@ func main() {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(*inputDir); err != nil {
+	if nextText, err := ReadTexts(*inputDir, *sanitizeBool); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
