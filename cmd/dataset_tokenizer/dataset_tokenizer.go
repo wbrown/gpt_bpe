@@ -21,19 +21,18 @@ type TextsIterator func() *string
 func SanitizeText(text string) string {
 	extraNewLines := regexp.MustCompile("(?m)\n+")
 	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
-	suffixWhiteSpace := regexp.MustCompile("[[:space:]]+$")
-	prefixWhiteSpace := regexp.MustCompile("^[[:space:]]+")
 
 	text = strings.ReplaceAll(text, "\\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "")
 	text = extraNewLines.ReplaceAllString(text, "\n")
 	lines := strings.Split(text, "\n")
 	for lineIdx := range lines {
-		lines[lineIdx] = strings.ReplaceAll(lines[lineIdx], "\t", " ")
-		lines[lineIdx] = strings.ReplaceAll(lines[lineIdx], " :", ":")
-		lines[lineIdx] = extraWhiteSpace.ReplaceAllString(lines[lineIdx], " ")
-		lines[lineIdx] = suffixWhiteSpace.ReplaceAllString(lines[lineIdx], "")
-		lines[lineIdx] = prefixWhiteSpace.ReplaceAllString(lines[lineIdx], "")
+		line := lines[lineIdx]
+		line = strings.ReplaceAll(line, "\t", " ")
+		line = strings.ReplaceAll(line, " :", ":")
+		line = extraWhiteSpace.ReplaceAllString(line, " ")
+		line = strings.TrimSpace(line)
+		lines[lineIdx] = line
 	}
 	return strings.Join(lines, "\n")
 }
