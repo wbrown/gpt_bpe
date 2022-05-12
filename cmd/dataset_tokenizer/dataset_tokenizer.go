@@ -19,15 +19,23 @@ var tokenizers map[string]*gpt_bpe.GPTEncoder
 type TextsIterator func() *string
 
 func SanitizeText(text string) string {
-	extraWhiteSpace := regexp.MustCompile("\\s+")
+	extraNewLines := regexp.MustCompile("(?m)\n+")
+	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
+	suffixWhiteSpace := regexp.MustCompile("[[:space:]]+$")
+	prefixWhiteSpace := regexp.MustCompile("^[[:space:]]+")
 
 	text = strings.ReplaceAll(text, "\\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "")
-	text = strings.ReplaceAll(text, "\t", " ")
-	text = strings.ReplaceAll(text, " :", ":")
-	text = extraWhiteSpace.ReplaceAllString(text, " ")
-	text = strings.TrimSpace(text)
-	return text
+	text = extraNewLines.ReplaceAllString(text, "\n")
+	lines := strings.Split(text, "\n")
+	for lineIdx := range lines {
+		lines[lineIdx] = strings.ReplaceAll(lines[lineIdx], "\t", " ")
+		lines[lineIdx] = strings.ReplaceAll(lines[lineIdx], " :", ":")
+		lines[lineIdx] = extraWhiteSpace.ReplaceAllString(lines[lineIdx], " ")
+		lines[lineIdx] = suffixWhiteSpace.ReplaceAllString(lines[lineIdx], "")
+		lines[lineIdx] = prefixWhiteSpace.ReplaceAllString(lines[lineIdx], "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // GlobTexts
