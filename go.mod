@@ -3,17 +3,20 @@ module github.com/wbrown/gpt_bpe
 go 1.17
 
 require (
-	github.com/edsrzf/mmap-go v1.1.0 // indirect
+	github.com/edsrzf/mmap-go v1.1.0
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/jdkato/prose/v2 v2.0.0
 	github.com/stretchr/testify v1.7.1
 	github.com/yargevad/filepathx v1.0.0
 )
 
 require (
+	github.com/dustin/go-humanize v1.0.0
+	github.com/jdkato/prose/v2 v2.0.0
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.7.1 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
