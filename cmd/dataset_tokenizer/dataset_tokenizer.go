@@ -316,57 +316,27 @@ func (tt TextsTokenizer) TokenizeTexts(
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
 				if idx-begin+len(prior) >= contextSize {
-					chunk := (tokens)[begin:idx]
+					var chunk gpt_bpe.Tokens
 					// If we have `prior` from a prior text, we prepend the
 					// beginning of this text.
 					if len(prior) > 0 {
-						prior = append(prior, chunk...)
-						chunk = prior
+						chunk = append(prior, (tokens)[begin:]...)
 						prior = make(gpt_bpe.Tokens, 0)
+					} else {
+						chunk = (tokens)[begin:]
 					}
-					var isTrimmed bool
+
 					if doUnitrim {
-						// We trim to valid tokens, as we don't want partials
-						// that are truncated multi-tokens.
-						trimmed := tokenizer.TrimTokens(&chunk)
-						trimmedLength := len(*trimmed)
-						isTrimmed = len(*trimmed) != len(chunk)
-						chunk = *trimmed
-						idx = begin + trimmedLength
+						var endAt int
+						chunk, endAt = tokenizer.AlignAndSizeTokens(&chunk,
+							contextSize)
+						idx = begin + endAt
+					} else if len(chunk) > contextSize {
+						chunk = (tokens)[:contextSize]
+					} else {
+						idx = begin + len(chunk)
 					}
-					// We do a decode and reencode pass, as this can affect
-					// the size after a trim.
-					if isTrimmed {
-						decodedChunk := tokenizer.Decode(&chunk)
-						reencodedChunk := tokenizer.Encode(&decodedChunk)
-						chunk = *reencodedChunk
-						// See if there's any change in size that causes it to
-						// be smaller than the `contextSize`.
-						roundtripRemainder := contextSize - len(chunk)
-						if roundtripRemainder > 0 {
-							addlEnd := idx + roundtripRemainder
-							addlTokens := (tokens)[idx:addlEnd]
-							trimmedAddl := tokenizer.TrimTokens(&addlTokens)
-							chunk = append(chunk, *trimmedAddl...)
-							idx += len(*trimmedAddl)
-							// Another decode/re-encode pass.
-							decodedChunk = tokenizer.Decode(&chunk)
-							reencodedChunk = tokenizer.Encode(&decodedChunk)
-							// Loop, dropping tokens one by one until we have
-							// valid tokens and we fit within `contextSize`.
-							for {
-								chunk = *reencodedChunk
-								if len(chunk) <= contextSize &&
-									tokenizer.TokensReady(&chunk) {
-									break
-								}
-								chunk = chunk[:len(chunk)-1]
-								idx -= 1
-								decodedChunk = tokenizer.Decode(&chunk)
-								reencodedChunk = tokenizer.Encode(&decodedChunk)
-							}
-						}
-					}
+
 					// If we have less than `contextSize`, we need to pad out
 					// the tokens in this context.
 					padSize := contextSize - len(chunk)
