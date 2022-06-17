@@ -127,7 +127,6 @@ func (encoder GPTEncoder) AlignAndSizeTokens(tokens *Tokens,
 	chunk := (*tokens)[0:desiredLength]
 	// We trim to valid tokens, as we don't want partials
 	// that are truncated multi-tokens.
-
 	trimmed := encoder.TrimTokens(&chunk)
 	trimmedLength := len(*trimmed)
 	isTrimmed := len(*trimmed) != len(chunk)

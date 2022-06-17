@@ -472,12 +472,18 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 		tok := (*tokens)[tokenIdx]
 		var req int
 		if int(tok) >= len(encoder.unitrim) {
+			// Don't error out on tokens that we don't know about.
 			req = 0
 		} else {
 			req = encoder.unitrim[(*tokens)[tokenIdx]]
 		}
 		if !(need+req < 0) {
 			need += req
+		}
+		if req == 0 {
+			// reset need to 0 to avoid being stuck when we have invalid
+			// unicode being generated.
+			need = 0
 		}
 		if need == 0 {
 			good = tokenIdx + 1
