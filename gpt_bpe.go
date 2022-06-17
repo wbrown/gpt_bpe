@@ -371,10 +371,14 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 	return word
 }
 
-func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
+func (encoder *GPTEncoder) WordSplitter(text *string) func() *[]string {
 	splitLines := strings.SplitAfter(*text, "\n")
-	words := make([]string, 0, len(*text)/3)
-	for lineIdx := 0; lineIdx < len(splitLines); lineIdx++ {
+	lineIdx := 0
+	return func() *[]string {
+		if lineIdx >= len(splitLines) {
+			return nil
+		}
+		words := make([]string, 0)
 		line := splitLines[lineIdx]
 		for lineIdx < len(splitLines)-1 {
 			if splitLines[lineIdx+1] == "\n" {
@@ -410,23 +414,67 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 				words = append(words, post[idxes[idx][0]:idxes[idx][1]])
 			}
 		}
+		lineIdx++
+		return &words
 	}
-	return &words
+}
+
+func (encoder *GPTEncoder) StreamingEncode(text *string) func(int) *Tokens {
+	wordSplitter := encoder.WordSplitter(text)
+	accumulator := make(Tokens, 0, 2048)
+	return func(desiredTokens int) *Tokens {
+		for {
+			if len(accumulator) > desiredTokens {
+				chunk := accumulator[:desiredTokens]
+				accumulator = accumulator[desiredTokens:]
+				return &chunk
+			}
+			words := wordSplitter()
+			if words == nil {
+				if len(accumulator) > 0 {
+					chunk := accumulator
+					accumulator = Tokens{}
+					return &chunk
+				} else {
+					return nil
+				}
+			}
+			for idx := range *words {
+				var encodedTokens Tokens
+				specialToken, isSpecial := encoder.specials[(*words)[idx]]
+				if isSpecial {
+					decodedSpecial := string(encoder.decoder[specialToken[0]])
+					encodedTokens = Tokens{encoder.encoder[decodedSpecial]}
+				} else {
+					fragment := encoder.toUnicode(&(*words)[idx])
+					token := encoder.toBPE(fragment)
+					encodedTokens = encoder.encodeTokens(&token)
+				}
+				accumulator = append(accumulator, encodedTokens...)
+			}
+		}
+	}
 }
 
 func (encoder *GPTEncoder) Encode(text *string) *Tokens {
-	words := encoder.SplitWords(text)
+	wordSplitter := encoder.WordSplitter(text)
 	encoded := make(Tokens, 0)
-	for idx := range *words {
-		var encodedTokens Tokens
-		if specialToken, isSpecial := encoder.specials[(*words)[idx]]; isSpecial {
-			encodedTokens = Tokens{encoder.encoder[string(encoder.decoder[specialToken[0]])]}
-		} else {
-			fragment := encoder.toUnicode(&(*words)[idx])
-			token := encoder.toBPE(fragment)
-			encodedTokens = encoder.encodeTokens(&token)
+	for {
+		words := wordSplitter()
+		if words == nil {
+			break
 		}
-		encoded = append(encoded, encodedTokens...)
+		for idx := range *words {
+			var encodedTokens Tokens
+			if specialToken, isSpecial := encoder.specials[(*words)[idx]]; isSpecial {
+				encodedTokens = Tokens{encoder.encoder[string(encoder.decoder[specialToken[0]])]}
+			} else {
+				fragment := encoder.toUnicode(&(*words)[idx])
+				token := encoder.toBPE(fragment)
+				encodedTokens = encoder.encodeTokens(&token)
+			}
+			encoded = append(encoded, encodedTokens...)
+		}
 	}
 	return &encoded
 }
