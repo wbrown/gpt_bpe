@@ -179,10 +179,6 @@ func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 
 type ContextsIterator func() *gpt_bpe.Tokens
 
-// TokenizeTexts
-// Consumes a TextsIterator and produces a ContextsIterator iterator function
-// that returns tokenized contexts that are fixed and padded out to
-// `contextSize`.
 func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
 	tokenizerPtr, ok := tokenizers[tt.TokenizerId]
 	if !ok {
@@ -198,6 +194,10 @@ func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
 	return tokenizerPtr, nil
 }
 
+// TokenizeTexts
+// Consumes a TextsIterator and produces a ContextsIterator iterator function
+// that returns tokenized contexts that are fixed and padded out to
+// `contextSize`.
 func (tt TextsTokenizer) TokenizeTexts(
 	nextText TextsIterator) (ContextsIterator, error) {
 	tokenizerPtr, tokErr := tt.InitTokenizer()
@@ -241,8 +241,6 @@ func (tt TextsTokenizer) TokenizeTexts(
 	contextSize := tt.ContextSize
 	doUnitrim := tt.Unitrim
 
-	prior := make(gpt_bpe.Tokens, 0)
-
 	var tokens gpt_bpe.Tokens
 	var text *string
 	var done bool
@@ -254,8 +252,15 @@ func (tt TextsTokenizer) TokenizeTexts(
 		for {
 			text = nextText()
 			if text != nil {
-				tokenized := tokenizer.Encode(text)
-				tokenizedTexts <- *tokenized
+				encodeChunk := tokenizer.StreamingEncode(text)
+				for {
+					tokenized := encodeChunk(contextSize * 8)
+					if tokenized == nil {
+						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						break
+					}
+					tokenizedTexts <- *tokenized
+				}
 			} else {
 				close(tokenizedTexts)
 				break
@@ -265,46 +270,45 @@ func (tt TextsTokenizer) TokenizeTexts(
 	go nextTokenized()
 
 	// Consumes tokenized texts and resets closured states for token blocks.
-	nextInput := func() {
-		var more bool
-		tokens, more = <-tokenizedTexts
-		idx = 0
-		begin = 0
-		boundaryIdx = 0
+	moreTokens := func() {
+		moreTokens, more := <-tokenizedTexts
+		tokens = append(tokens, moreTokens...)
+		numTokens = len(tokens)
 		if more {
 			done = false
-			numTokens = len(tokens)
 		} else {
 			done = true
 		}
 	}
 
 	// Prime the pump by initializing the states.
-	nextInput()
+	moreTokens()
 
 	// Return an iterator function that returns token chunks that are always
 	// `contextSize` tokens.
 	nextContext := func() *gpt_bpe.Tokens {
+		if len(tokens)-idx < contextSize*4 {
+			moreTokens()
+		}
 		// Loop until we get a full token chunk.
 		for {
-			if done {
+			if numTokens == 0 {
+				return nil
+			} else if done && idx == numTokens {
 				// We're completely done and have no more token chunks to
 				// return, so we flush out and pad the last chunk.
-				if len(prior) > 0 {
-					padSize := contextSize - len(prior)
-					if padSize > 0 {
-						for padIdx := 0; padIdx < padSize; padIdx += 1 {
-							prior = append(prior, padToken)
-						}
+				chunk := tokens[begin:]
+				padSize := contextSize - len(chunk)
+				if padSize > 0 {
+					for padIdx := 0; padIdx < padSize; padIdx += 1 {
+						chunk = append(chunk, padToken)
 					}
-					ret := prior
-					prior = make(gpt_bpe.Tokens, 0)
-					return &ret
-				} else {
-					// We just flushed the last token chunk, and have no more
-					// so we return `nil`.
-					return nil
 				}
+				tokens = gpt_bpe.Tokens{}
+				idx = 0
+				numTokens = 0
+				begin = 0
+				return &chunk
 			}
 			// Iterate until we reach the end of this text's tokens.
 			for idx < numTokens {
@@ -315,17 +319,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 				}
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
-				currWindow := idx - begin + len(prior)
+				currWindow := idx - begin
 				if currWindow >= contextSize {
-					var chunk gpt_bpe.Tokens
-					// If we have `prior` from a prior text, we prepend the
-					// beginning of this text.
-					if len(prior) > 0 {
-						chunk = append(prior, (tokens)[begin:]...)
-						prior = make(gpt_bpe.Tokens, 0)
-					} else {
-						chunk = (tokens)[begin:]
-					}
+					chunk := (tokens)[begin:]
 
 					if doUnitrim {
 						var endAt int
@@ -358,29 +354,21 @@ func (tt TextsTokenizer) TokenizeTexts(
 					}
 					// Reset the `begin` offsets, move idx, to set up the
 					// state for the next invocation of this function.
-					begin = idx
-					idx += 1
+					if idx > contextSize*6 {
+						tokens = tokens[idx:]
+						begin = 0
+						idx = 0
+					} else {
+						begin = idx
+					}
+					numTokens = len(tokens)
 					return &chunk
 				}
 				idx += 1
-			}
-			// If we've reached this, and have less tokens than `numTokens`,
-			// we append `<|endoftext|>` token and carry it over to the next
-			// text's batch in `prior`.
-			if begin < numTokens {
-				prior = append(prior, (tokens)[begin:]...)
-				if len(prior) < contextSize {
-					prior = append(prior, endOfText)
-				}
-				if len(prior) == contextSize {
-					chunk := &prior
-					prior = make(gpt_bpe.Tokens, 0)
-					nextInput()
-					return chunk
+				if len(tokens)-idx < contextSize*2 {
+					moreTokens()
 				}
 			}
-			// Fetch the next text's tokens.
-			nextInput()
 		}
 	}
 	return nextContext, nil
