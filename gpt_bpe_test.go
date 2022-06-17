@@ -2,11 +2,13 @@ package gpt_bpe
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,15 +20,42 @@ var corpus string
 // var corpus2 string
 var gpt2Encoded *Tokens
 var pileEncoded *Tokens
+var unicodeTrimTests []*Tokens
+
+func handleRead(path string) []byte {
+	if textBytes, err := os.ReadFile(path); err != nil {
+		log.Fatalf("Error opening `%s`: %v", path, err)
+	} else {
+		return textBytes
+	}
+	return nil
+}
+
+func loadUnicodeTrimTests(path string) []*Tokens {
+	tests := make([]*Tokens, 0)
+	fileBlob := string(handleRead(path))
+	fileLines := strings.Split(fileBlob, "\n")
+	for idx := range fileLines {
+		line := fileLines[idx]
+		if len(line) == 0 {
+			continue
+		}
+		unicodeTrimTest := make(Tokens, 0)
+		if err := json.Unmarshal([]byte(line),
+			&unicodeTrimTest); err != nil {
+			log.Fatalf("Error unmarshaling `%s`: %v", path, err)
+		}
+		tests = append(tests, &unicodeTrimTest)
+	}
+	return tests
+}
 
 func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
-	if textBytes, err := os.ReadFile("resources/frankenstein.txt"); err != nil {
-		log.Fatal("Error opening `resources/frankenstein.txt`")
-	} else {
-		corpus = string(textBytes)
-	}
+	textBytes := handleRead("resources/frankenstein.txt")
+	corpus = string(textBytes)
+	unicodeTrimTests = loadUnicodeTrimTests("resources/dump_trimmed.jsonl")
 }
 
 func TestMain(m *testing.M) {
@@ -111,6 +140,14 @@ func TestGPTEncoder_TrimIncompleteSentence(t *testing.T) {
 	output := gpt2Encoder.Decode(trimmed)
 	if expected != output {
 		t.Error("output != expected; output := ", expected)
+	}
+}
+
+func TestGPTEncoder_TrimTokens(t *testing.T) {
+	for testIdx := range unicodeTrimTests {
+		assert.NotEqual(t, len(*gpt2Encoder.TrimTokens(
+			unicodeTrimTests[testIdx])),
+			len(*unicodeTrimTests[testIdx]))
 	}
 }
 
