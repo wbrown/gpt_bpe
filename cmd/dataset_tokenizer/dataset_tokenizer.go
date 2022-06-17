@@ -315,7 +315,8 @@ func (tt TextsTokenizer) TokenizeTexts(
 				}
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
-				if idx-begin+len(prior) >= contextSize {
+				currWindow := idx - begin + len(prior)
+				if currWindow >= contextSize {
 					var chunk gpt_bpe.Tokens
 					// If we have `prior` from a prior text, we prepend the
 					// beginning of this text.
