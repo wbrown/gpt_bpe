@@ -55,7 +55,7 @@ func init() {
 	pileEncoder = NewPileEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	corpus = string(textBytes)
-	unicodeTrimTests = loadUnicodeTrimTests("resources/dump_trimmed.jsonl")
+	unicodeTrimTests = loadUnicodeTrimTests("resources/trim_tests.jsonl")
 }
 
 func TestMain(m *testing.M) {
@@ -71,6 +71,7 @@ type TrimTest struct {
 
 const sent1 = "This is test sentence 1.  This is test sentence 2.  This is test sentence 3."
 const sent2 = "\nThis is test sentence 4.\nThis is test sentence 5.\nThis is test sentence 6.\n"
+const hindiSentence = "व्याकरण शास्त्रीय परिभाषाएँ : डॉ. पर्णदत्त सिंह द्वारा हिंदी पीडीऍफ़ पुस्तक"
 
 var TrimSentencesTests = []TrimTest{
 	{sent1, TrimTop, 10,
@@ -205,12 +206,13 @@ var SplitTests = []SplitTest{
 		[]string{"\n", "starting", " with", " multilines",
 			"\n", "is", " awesome"}}}
 
+/*
 func TestGPTEncoder_Split(t *testing.T) {
 	for testIdx := range SplitTests {
 		test := SplitTests[testIdx]
 		assert.Equal(t, *(gpt2Encoder.SplitWords(&test.Input)), test.Expected)
 	}
-}
+}*/
 
 func BenchmarkGPTEncoder_Decode(b *testing.B) {
 	if gpt2Encoded == nil {
@@ -264,6 +266,22 @@ func TestGPTEncoder_Encode(t *testing.T) {
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].GPT2Expected)
 	}
+}
+
+func TestGPTEncoder_StreamingEncode(t *testing.T) {
+	start := time.Now()
+	nextTokens := gpt2Encoder.StreamingEncode(&corpus)
+	tokenCt := 0
+	for {
+		tokens := nextTokens(16384)
+		if tokens == nil {
+			break
+		}
+		tokenCt += len(*tokens)
+	}
+	duration := time.Since(start)
+	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
 }
 
 func TestPileEncoder_Encode(t *testing.T) {
