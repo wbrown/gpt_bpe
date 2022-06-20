@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -41,6 +42,24 @@ func TestSanitizer(t *testing.T) {
 	for testIdx := range sanitizerTests {
 		input := sanitizerTests[testIdx].Input
 		output := SanitizeText(input)
+		assert.Equal(t, sanitizerTests[testIdx].Expected, output)
+	}
+}
+
+func TestSanitizedRuneReader_ReadRune(t *testing.T) {
+	for testIdx := range sanitizerTests {
+		input := sanitizerTests[testIdx].Input
+		reader := CreateTextSanitizer(bytes.NewBufferString(input))
+		runes := make([]rune, 0)
+		for {
+			r, size, _ := reader.ReadRune()
+			if size > 0 {
+				runes = append(runes, r)
+			} else {
+				break
+			}
+		}
+		output := string(runes)
 		assert.Equal(t, sanitizerTests[testIdx].Expected, output)
 	}
 }

@@ -206,13 +206,12 @@ var SplitTests = []SplitTest{
 		[]string{"\n", "starting", " with", " multilines",
 			"\n", "is", " awesome"}}}
 
-/*
 func TestGPTEncoder_Split(t *testing.T) {
 	for testIdx := range SplitTests {
 		test := SplitTests[testIdx]
-		assert.Equal(t, *(gpt2Encoder.SplitWords(&test.Input)), test.Expected)
+		assert.Equal(t, test.Expected, *(gpt2Encoder.SplitWords(&test.Input)))
 	}
-}*/
+}
 
 func BenchmarkGPTEncoder_Decode(b *testing.B) {
 	if gpt2Encoded == nil {
@@ -270,7 +269,8 @@ func TestGPTEncoder_Encode(t *testing.T) {
 
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	start := time.Now()
-	nextTokens := gpt2Encoder.StreamingEncode(&corpus)
+	corpusRunes := strings.NewReader(corpus)
+	nextTokens := gpt2Encoder.StreamingEncode(corpusRunes)
 	tokenCt := 0
 	for {
 		tokens := nextTokens(16384)
