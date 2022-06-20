@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/wbrown/gpt_bpe"
 	"github.com/yargevad/filepathx"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,7 +19,103 @@ import (
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
 
-type TextsIterator func() *string
+type TextsIterator func() io.RuneReader
+
+type SanitizedRuneReader struct {
+	whitespaceRegex *regexp.Regexp
+	reader          *bufio.Reader
+	currLine        **bytes.Buffer
+	accumulator     *[]rune
+}
+
+func (runeReader SanitizedRuneReader) nextLine() bool {
+	acc := runeReader.accumulator
+	var text string
+	for {
+		r, size, _ := (*runeReader.reader).ReadRune()
+
+		// Get our last rune if we have one.
+		lastRune := rune(0)
+		if len(*acc) > 0 {
+			lastRune = (*acc)[len(*acc)-1]
+		}
+		if size == 0 && len(*acc) == 0 {
+			// No valid rune, and our accumulator is empty, so we're done.
+			return false
+		} else if size == 0 {
+			// No valid rune, and we have stuff in our accumulator, so let's
+			// flush and finish up.
+			text = string(*acc)
+			*acc = (*acc)[:0]
+			break
+		} else if r == '\r' {
+			// Silently drop Windows `\r`
+		} else if r == '\n' && lastRune == '\n' {
+			// Drop additional newlines.
+		} else if r != '\n' && lastRune == '\n' {
+			// If prior rune is `\n` and current rune is NOT `\n`, flush the
+			// current accumulator to `text`, and start a new accumulator with
+			// the current rune.
+			text = string(*acc)
+			*acc = []rune{r}
+			//*acc = append(*acc, r)
+			break
+		} else if r == 'n' && lastRune == '\\' {
+			// Replace escaped `\n` with `\n`.
+			(*acc)[len(*acc)-1] = '\n'
+		} else if r == ':' && lastRune == ' ' {
+			// Strip colons with leading spaces.
+			(*acc)[len(*acc)-1] = ':'
+		} else if r == '\t' {
+			// Replace tabs with single spaces.
+			*acc = append(*acc, ' ')
+			text = string(*acc)
+		} else {
+			// We have a valid rune, so let's append it onto our accumulator.
+			*acc = append(*acc, r)
+			text = string(*acc)
+		}
+	}
+	lines := strings.Split(text, "\n")
+	for lineIdx := range lines {
+		line := lines[lineIdx]
+		text = runeReader.whitespaceRegex.ReplaceAllString(text, " ")
+		line = strings.TrimSpace(line)
+		lines[lineIdx] = line
+	}
+	text = strings.Join(lines, "\n")
+	stringBuffer := bytes.NewBufferString(text)
+	*runeReader.currLine = stringBuffer
+	return true
+}
+
+func (runeReader SanitizedRuneReader) ReadRune() (r rune, size int,
+	err error) {
+	if r, size, err = (*runeReader.currLine).ReadRune(); err != nil {
+		if more := runeReader.nextLine(); !more {
+			return 0, 0, io.EOF
+		} else {
+			return (*runeReader.currLine).ReadRune()
+		}
+	} else {
+		return r, size, err
+	}
+}
+
+func CreateTextSanitizer(handle io.Reader) SanitizedRuneReader {
+	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
+	scanner := bufio.NewReader(handle)
+	accumulator := make([]rune, 0, 16384)
+	emptyBuffer := bytes.NewBufferString("")
+	sanitizer := SanitizedRuneReader{
+		whitespaceRegex: extraWhiteSpace,
+		reader:          scanner,
+		accumulator:     &accumulator,
+		currLine:        &emptyBuffer,
+	}
+	sanitizer.nextLine()
+	return sanitizer
+}
 
 func SanitizeText(text string) string {
 	extraNewLines := regexp.MustCompile("(?m)\n+")
@@ -111,32 +210,25 @@ func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 		return nil, err
 	}
 	numMatches := len(matches)
-	texts := make(chan *string, 2)
+	matchIdx := 0
 
-	go func() {
-		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
-			path := matches[matchIdx]
-			if textBytes, readErr := os.ReadFile(path); readErr != nil {
-				close(texts)
-				log.Fatal(readErr)
+	return func() io.RuneReader {
+		if matchIdx == numMatches {
+			return nil
+		}
+		path := matches[matchIdx]
+		matchIdx++
+		if fileReader, openErr := os.Open(path); openErr != nil {
+			log.Fatal(openErr)
+		} else {
+			log.Print("Reading ", path)
+			if sanitize {
+				return CreateTextSanitizer(fileReader)
 			} else {
-				log.Print("Reading ", path)
-				text := string(textBytes)
-				if sanitize {
-					text = SanitizeText(text)
-				}
-				texts <- &text
+				return bufio.NewReader(fileReader)
 			}
 		}
-		close(texts)
-	}()
-
-	return func() *string {
-		if text, more := <-texts; !more {
-			return nil
-		} else {
-			return text
-		}
+		return nil
 	}, nil
 }
 
@@ -242,17 +334,16 @@ func (tt TextsTokenizer) TokenizeTexts(
 	doUnitrim := tt.Unitrim
 
 	var tokens gpt_bpe.Tokens
-	var text *string
 	var done bool
 	var numTokens, idx, begin, boundaryIdx int
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 2)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 4)
 	nextTokenized := func() {
 		for {
-			text = nextText()
-			if text != nil {
-				encodeChunk := tokenizer.StreamingEncode(text)
+			runeReader := nextText()
+			if runeReader != nil {
+				encodeChunk := tokenizer.StreamingEncode(runeReader)
 				for {
 					tokenized := encodeChunk(contextSize * 8)
 					if tokenized == nil {
@@ -304,7 +395,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 						chunk = append(chunk, padToken)
 					}
 				}
-				tokens = gpt_bpe.Tokens{}
+				tokens = tokens[:0]
 				idx = 0
 				numTokens = 0
 				begin = 0
@@ -503,6 +594,7 @@ func main() {
 			log.Fatal(tokErr)
 		}
 		var enc *gpt_bpe.GPTEncoder
+		// *showContexts = true
 		if *showContexts {
 			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
 		}
