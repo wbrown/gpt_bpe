@@ -1,41 +1,23 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/wbrown/gpt_bpe"
 	"github.com/yargevad/filepathx"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
 
-type TextsIterator func() *string
-
-func SanitizeText(text string) string {
-	extraNewLines := regexp.MustCompile("(?m)\n+")
-	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
-
-	text = strings.ReplaceAll(text, "\\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "")
-	text = extraNewLines.ReplaceAllString(text, "\n")
-	lines := strings.Split(text, "\n")
-	for lineIdx := range lines {
-		line := lines[lineIdx]
-		line = strings.ReplaceAll(line, "\t", " ")
-		line = strings.ReplaceAll(line, " :", ":")
-		line = extraWhiteSpace.ReplaceAllString(line, " ")
-		line = strings.TrimSpace(line)
-		lines[lineIdx] = line
-	}
-	return strings.Join(lines, "\n")
-}
+type TextsIterator func() io.RuneReader
 
 // GlobTexts
 // Given a directory path, recursively finds all `.txt` files.
@@ -96,7 +78,7 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 		directories[filepath.Dir(currPath)] = true
 	}
 	directoryMatches := make([]string, 0)
-	for dir, _ := range directories {
+	for dir := range directories {
 		directoryMatches = append(directoryMatches, dir)
 	}
 	return FindNewestPath(&directoryMatches)
@@ -104,38 +86,48 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
-// a TextsIterator function that yields the text file contents.
+// a TextsIterator function that yields the text file as an io.Reader type.
 func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
 	}
 	numMatches := len(matches)
-	texts := make(chan *string, 2)
 
+	type namedRuneReader struct {
+		path   string
+		reader io.RuneReader
+	}
+
+	// We pre-emptively do the work to set up the buffers for the next file,
+	// while the pror file is being consumed.
+	runeReaders := make(chan namedRuneReader, 1)
 	go func() {
 		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
 			path := matches[matchIdx]
-			if textBytes, readErr := os.ReadFile(path); readErr != nil {
-				close(texts)
-				log.Fatal(readErr)
+			if fileReader, openErr := os.Open(path); openErr != nil {
+				log.Fatal(openErr)
 			} else {
-				log.Print("Reading ", path)
-				text := string(textBytes)
 				if sanitize {
-					text = SanitizeText(text)
+					runeReaders <- namedRuneReader{
+						path,
+						CreateTextSanitizer(fileReader)}
+				} else {
+					runeReaders <- namedRuneReader{
+						path,
+						bufio.NewReader(fileReader)}
 				}
-				texts <- &text
 			}
 		}
-		close(texts)
+		close(runeReaders)
 	}()
 
-	return func() *string {
-		if text, more := <-texts; !more {
+	return func() io.RuneReader {
+		if reader, ok := <-runeReaders; !ok {
 			return nil
 		} else {
-			return text
+			log.Print("Reading ", reader.path)
+			return reader.reader
 		}
 	}, nil
 }
@@ -242,17 +234,16 @@ func (tt TextsTokenizer) TokenizeTexts(
 	doUnitrim := tt.Unitrim
 
 	var tokens gpt_bpe.Tokens
-	var text *string
 	var done bool
 	var numTokens, idx, begin, boundaryIdx int
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 2)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 4)
 	nextTokenized := func() {
 		for {
-			text = nextText()
-			if text != nil {
-				encodeChunk := tokenizer.StreamingEncode(text)
+			runeReader := nextText()
+			if runeReader != nil {
+				encodeChunk := tokenizer.StreamingEncode(runeReader)
 				for {
 					tokenized := encodeChunk(contextSize * 8)
 					if tokenized == nil {
@@ -304,7 +295,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 						chunk = append(chunk, padToken)
 					}
 				}
-				tokens = gpt_bpe.Tokens{}
+				tokens = tokens[:0]
 				idx = 0
 				numTokens = 0
 				begin = 0
@@ -503,6 +494,7 @@ func main() {
 			log.Fatal(tokErr)
 		}
 		var enc *gpt_bpe.GPTEncoder
+		// *showContexts = true
 		if *showContexts {
 			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
 		}
@@ -510,7 +502,9 @@ func main() {
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		log.Printf("%d tokens in %0.2fs", total,
-			time.Now().Sub(begin).Seconds())
+		duration := time.Now().Sub(begin).Seconds()
+		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration)
+
 	}
 }
