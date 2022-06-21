@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -20,121 +18,6 @@ import (
 var tokenizers map[string]*gpt_bpe.GPTEncoder
 
 type TextsIterator func() io.RuneReader
-
-type SanitizedRuneReader struct {
-	whitespaceRegex *regexp.Regexp
-	reader          *bufio.Reader
-	currLine        **bytes.Buffer
-	accumulator     *[]rune
-}
-
-func (runeReader SanitizedRuneReader) nextLine() bool {
-	acc := runeReader.accumulator
-	var text string
-	for {
-		r, size, _ := (*runeReader.reader).ReadRune()
-
-		// Get our last rune if we have one.
-		lastRune := rune(0)
-		if len(*acc) > 0 {
-			lastRune = (*acc)[len(*acc)-1]
-		}
-		if size == 0 && len(*acc) == 0 {
-			// No valid rune, and our accumulator is empty, so we're done.
-			return false
-		} else if size == 0 {
-			// No valid rune, and we have stuff in our accumulator, so let's
-			// flush and finish up.
-			text = string(*acc)
-			*acc = (*acc)[:0]
-			break
-		} else if r == '\r' {
-			// Silently drop Windows `\r`
-		} else if r == '\n' && lastRune == '\n' {
-			// Drop additional newlines.
-		} else if r != '\n' && lastRune == '\n' {
-			// If prior rune is `\n` and current rune is NOT `\n`, flush the
-			// current accumulator to `text`, and start a new accumulator with
-			// the current rune.
-			text = string(*acc)
-			*acc = []rune{r}
-			//*acc = append(*acc, r)
-			break
-		} else if r == 'n' && lastRune == '\\' {
-			// Replace escaped `\n` with `\n`.
-			(*acc)[len(*acc)-1] = '\n'
-		} else if r == ':' && lastRune == ' ' {
-			// Strip colons with leading spaces.
-			(*acc)[len(*acc)-1] = ':'
-		} else if r == '\t' {
-			// Replace tabs with single spaces.
-			*acc = append(*acc, ' ')
-			text = string(*acc)
-		} else {
-			// We have a valid rune, so let's append it onto our accumulator.
-			*acc = append(*acc, r)
-			text = string(*acc)
-		}
-	}
-	lines := strings.Split(text, "\n")
-	for lineIdx := range lines {
-		line := lines[lineIdx]
-		line = runeReader.whitespaceRegex.ReplaceAllString(line, " ")
-		line = strings.TrimSpace(line)
-		lines[lineIdx] = line
-	}
-	text = strings.Join(lines, "\n")
-	stringBuffer := bytes.NewBufferString(text)
-	*runeReader.currLine = stringBuffer
-	return true
-}
-
-func (runeReader SanitizedRuneReader) ReadRune() (r rune, size int,
-	err error) {
-	if r, size, err = (*runeReader.currLine).ReadRune(); err != nil {
-		if more := runeReader.nextLine(); !more {
-			return 0, 0, io.EOF
-		} else {
-			return (*runeReader.currLine).ReadRune()
-		}
-	} else {
-		return r, size, err
-	}
-}
-
-func CreateTextSanitizer(handle io.Reader) SanitizedRuneReader {
-	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
-	scanner := bufio.NewReader(handle)
-	accumulator := make([]rune, 0, 16384)
-	emptyBuffer := bytes.NewBufferString("")
-	sanitizer := SanitizedRuneReader{
-		whitespaceRegex: extraWhiteSpace,
-		reader:          scanner,
-		accumulator:     &accumulator,
-		currLine:        &emptyBuffer,
-	}
-	sanitizer.nextLine()
-	return sanitizer
-}
-
-func SanitizeText(text string) string {
-	extraNewLines := regexp.MustCompile("(?m)\n+")
-	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
-
-	text = strings.ReplaceAll(text, "\\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "")
-	text = extraNewLines.ReplaceAllString(text, "\n")
-	lines := strings.Split(text, "\n")
-	for lineIdx := range lines {
-		line := lines[lineIdx]
-		line = strings.ReplaceAll(line, "\t", " ")
-		line = strings.ReplaceAll(line, " :", ":")
-		line = extraWhiteSpace.ReplaceAllString(line, " ")
-		line = strings.TrimSpace(line)
-		lines[lineIdx] = line
-	}
-	return strings.Join(lines, "\n")
-}
 
 // GlobTexts
 // Given a directory path, recursively finds all `.txt` files.
@@ -195,7 +78,7 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 		directories[filepath.Dir(currPath)] = true
 	}
 	directoryMatches := make([]string, 0)
-	for dir, _ := range directories {
+	for dir := range directories {
 		directoryMatches = append(directoryMatches, dir)
 	}
 	return FindNewestPath(&directoryMatches)
@@ -203,32 +86,49 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
-// a TextsIterator function that yields the text file contents.
+// a TextsIterator function that yields the text file as an io.Reader type.
 func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
 	}
 	numMatches := len(matches)
-	matchIdx := 0
 
-	return func() io.RuneReader {
-		if matchIdx == numMatches {
-			return nil
-		}
-		path := matches[matchIdx]
-		matchIdx++
-		if fileReader, openErr := os.Open(path); openErr != nil {
-			log.Fatal(openErr)
-		} else {
-			log.Print("Reading ", path)
-			if sanitize {
-				return CreateTextSanitizer(fileReader)
+	type namedRuneReader struct {
+		path   string
+		reader io.RuneReader
+	}
+
+	// We pre-emptively do the work to set up the buffers for the next file,
+	// while the pror file is being consumed.
+	runeReaders := make(chan namedRuneReader, 1)
+	go func() {
+		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
+			path := matches[matchIdx]
+			if fileReader, openErr := os.Open(path); openErr != nil {
+				log.Fatal(openErr)
 			} else {
-				return bufio.NewReader(fileReader)
+				if sanitize {
+					runeReaders <- namedRuneReader{
+						path,
+						CreateTextSanitizer(fileReader)}
+				} else {
+					runeReaders <- namedRuneReader{
+						path,
+						bufio.NewReader(fileReader)}
+				}
 			}
 		}
-		return nil
+		close(runeReaders)
+	}()
+
+	return func() io.RuneReader {
+		if reader, ok := <-runeReaders; !ok {
+			return nil
+		} else {
+			log.Print("Reading ", reader.path)
+			return reader.reader
+		}
 	}, nil
 }
 
@@ -602,7 +502,9 @@ func main() {
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		log.Printf("%d tokens in %0.2fs", total,
-			time.Now().Sub(begin).Seconds())
+		duration := time.Now().Sub(begin).Seconds()
+		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration)
+
 	}
 }
