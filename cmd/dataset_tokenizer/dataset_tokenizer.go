@@ -79,7 +79,7 @@ func (runeReader SanitizedRuneReader) nextLine() bool {
 	lines := strings.Split(text, "\n")
 	for lineIdx := range lines {
 		line := lines[lineIdx]
-		text = runeReader.whitespaceRegex.ReplaceAllString(text, " ")
+		line = runeReader.whitespaceRegex.ReplaceAllString(line, " ")
 		line = strings.TrimSpace(line)
 		lines[lineIdx] = line
 	}
