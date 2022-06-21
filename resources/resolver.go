@@ -141,8 +141,9 @@ func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 		return FetchHTTP(uri, rsrc)
 	} else if _, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
 		if handle, fileErr := os.Open(path.Join(uri, rsrc)); fileErr != nil {
-			return nil, errors.New(fmt.Sprintf("error opening %s/%s",
-				fileErr))
+			return nil, errors.New(
+				fmt.Sprintf("error opening %s/%s: %v",
+					uri, rsrc, fileErr))
 		} else {
 			return handle, fileErr
 		}
@@ -292,7 +293,7 @@ func ResolveResources(uri string, dir *string,
 				if skipFileErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error opening '%s' for write: %s",
-							rsrcFile, skipFileErr))
+							file, skipFileErr))
 				} else {
 					rsrcFile = *openFile
 				}
@@ -309,7 +310,7 @@ func ResolveResources(uri string, dir *string,
 				if rsrcFileErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error opening '%s' for write: %s",
-							rsrcFile, rsrcFileErr))
+							file, rsrcFileErr))
 				}
 				counter := &WriteCounter{
 					Last: time.Now(),
@@ -322,7 +323,7 @@ func ResolveResources(uri string, dir *string,
 				if ioErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error downloading '%s': %s",
-							rsrcFile, ioErr))
+							file, ioErr))
 				} else {
 					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
 						"%s completed.", uri, file,
