@@ -20,7 +20,8 @@ var tokenizers map[string]*gpt_bpe.GPTEncoder
 type TextsIterator func() io.RuneReader
 
 // GlobTexts
-// Given a directory path, recursively finds all `.txt` files.
+// Given a directory path, recursively finds all `.txt` files, returning a
+// slice of paths.
 func GlobTexts(dirPath string) (textPaths []string, err error) {
 	textPaths, err = filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
@@ -34,6 +35,9 @@ func GlobTexts(dirPath string) (textPaths []string, err error) {
 	return textPaths, nil
 }
 
+// FindNewestPath
+// Given a directory path, recursively scans and returns the path and modified
+// time for the newest `.txt` file.
 func FindNewestPath(paths *[]string) (path *string, newest *time.Time,
 	err error) {
 	for matchIdx := range *paths {
@@ -132,6 +136,8 @@ func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 	}, nil
 }
 
+// TextsTokenizer
+// A struct that encapsulates the configuration for a streaming tokenizer.
 type TextsTokenizer struct {
 	TokenizerId string
 	ContextSize int
@@ -141,6 +147,8 @@ type TextsTokenizer struct {
 	Unitrim     bool
 }
 
+// NewTextsTokenizer
+// Creates a new TextsTokenizer struct with the default configuration.
 func NewTextsTokenizer() TextsTokenizer {
 	return TextsTokenizer{
 		"gpt2",
@@ -152,6 +160,9 @@ func NewTextsTokenizer() TextsTokenizer {
 	}
 }
 
+// getAndCheckToken
+// Check if s is a valid token via tokenizer table lookup; if not, we try
+// encoding and checking if it is a valid single token returned.
 func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	id string) (gpt_bpe.Token, error) {
 	s = strings.ReplaceAll(s, "\\n", "\n")

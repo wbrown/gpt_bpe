@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+// SanitizedRuneReader
+// SanitizeRuneReader sanitizes the runes from an io.RuneReader, removing
+// extra whitespace, and replacing escaped newlines with actual newlines, and
+// replacing tabs with spaces.
 type SanitizedRuneReader struct {
 	bufSize         int
 	lastRune        *rune
@@ -19,6 +23,7 @@ type SanitizedRuneReader struct {
 	moreBuffers     chan *bytes.Buffer
 }
 
+// nextBuffer accumulates sanitized runes into a buffer, and returns the buffer.
 func (runeReader SanitizedRuneReader) nextBuffer() *bytes.Buffer {
 	acc := runeReader.accumulator
 	accIdx := runeReader.accumulatorIdx
@@ -74,6 +79,9 @@ func (runeReader SanitizedRuneReader) nextBuffer() *bytes.Buffer {
 	return stringBuffer
 }
 
+// ReadRune implements the bytes.RuneReader interface. It returns the next rune
+// from the sanitized reader, along with the size of the rune, and whether or
+// not there are any more runes to read.
 func (runeReader SanitizedRuneReader) ReadRune() (r rune, size int,
 	err error) {
 	if *runeReader.currBuffer == nil {
@@ -90,6 +98,9 @@ func (runeReader SanitizedRuneReader) ReadRune() (r rune, size int,
 	}
 }
 
+// CreateTextSanitizer creates a SanitizedRuneReader that consumes an io.Reader
+// and sanitizes the text it reads. The returned SanitizedRuneReader can be used
+// to read scrubbed runes from the io.Reader.
 func CreateTextSanitizer(handle io.Reader) SanitizedRuneReader {
 	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
 	scanner := bufio.NewReader(handle)
@@ -122,6 +133,9 @@ func CreateTextSanitizer(handle io.Reader) SanitizedRuneReader {
 	return sanitizer
 }
 
+// SanitizeText sanitizes a text file, removing extra whitespace, and replacing
+// escaped newlines with actual newlines, and scrubbing	colons with leading
+// spaces, replacing tabs with spaces, and dropping Windows carriage returns.
 func SanitizeText(text string) string {
 	reader := CreateTextSanitizer(bytes.NewBufferString(text))
 	runes := make([]rune, 0)

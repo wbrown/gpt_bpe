@@ -76,12 +76,15 @@ func NewPileEncoder() GPTEncoder {
 	return *encoder
 }
 
+// NewEncoder
+// Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
+// id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId)
 	if vocabErr != nil {
 		return nil, vocabErr
 	}
-	resources := *resourcesPtr
+	rsrcs := *resourcesPtr
 
 	if hfConfig != nil && hfConfig.ModelId != nil {
 		vocabId = *hfConfig.ModelId
@@ -89,13 +92,13 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Read token unicode trimming definitions
 	unitrimArr := make([]int, 0)
-	if json.Unmarshal(*resources["unitrim.json"].Data, &unitrimArr) != nil {
+	if json.Unmarshal(*rsrcs["unitrim.json"].Data, &unitrimArr) != nil {
 		log.Fatal("Error unmarshalling `unitrim.json`")
 	}
 
 	// Read encoder mappings and also generate reverse mappings.
 	encoderTokens := make(map[string]Token)
-	if json.Unmarshal(*resources["vocab.json"].Data, &encoderTokens) != nil {
+	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
 		log.Fatal("Error unmarshalling `vocab.json`")
 	}
 	tokensEncoder := make(map[Token][]byte)
@@ -104,7 +107,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
-	scanner := bufio.NewScanner(bytes.NewBuffer(*resources["merges.txt"].Data))
+	scanner := bufio.NewScanner(bytes.NewBuffer(*rsrcs["merges.txt"].Data))
 	idx := uint16(0)
 	firstLine := true
 	for scanner.Scan() {
@@ -122,7 +125,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	specialsRegexTokens := make([]string, 0)
 	specials := make(map[string]Tokens, 0)
 
-	if specialsTxt, ok := resources["specials.txt"]; ok {
+	if specialsTxt, ok := rsrcs["specials.txt"]; ok {
 		specialsScanner := bufio.NewScanner(bytes.NewBuffer(*specialsTxt.Data))
 		for specialsScanner.Scan() {
 			specialToken := specialsScanner.Text()
@@ -133,7 +136,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 			quotedToken := regexp.QuoteMeta(specialToken)
 			specialsRegexTokens = append(specialsRegexTokens, quotedToken)
 		}
-	} else if specialsJson, ok := resources["specials.json"]; ok {
+	} else if specialsJson, ok := rsrcs["specials.json"]; ok {
 		specialsData := make(map[string]string, 0)
 		seenSpecials := make(map[string]bool, 0)
 		if specialErr := json.Unmarshal(*specialsJson.Data,
@@ -236,8 +239,13 @@ func insertAt(data []BGERank, i int, v BGERank) []BGERank {
 	return data
 }
 
+// insertSortedNoDups inserts v, a BGERank, into data and returns the new slice.
+// If v is already in data, it is not inserted again. It ensures that the slice
+// is sorted and has no duplicates.
 func insertSortedNoDups(data BGERanks, v BGERank) BGERanks {
-	i := sort.Search(len(data), func(i int) bool { return data[i].rank >= v.rank })
+	i := sort.Search(len(data), func(i int) bool {
+		return data[i].rank >= v.rank
+	})
 	if i < len(data) && data[i] == v {
 		return data
 	}
@@ -263,6 +271,9 @@ func getPairs(word []string) []GPTPair {
 	return pairs[0:ct]
 }
 
+// getRankedPairs
+// Accepts a slice of strings and returns a slice of BGERanks, sorted by
+// their rank.
 func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 	rankedPairs := make(BGERanks, 0, len(word))
 	begin := 1
@@ -281,6 +292,9 @@ func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 	return rankedPairs
 }
 
+// rankPairs
+// Accepts a slice of GPTPair and returns a slice of BGERanks, sorted by
+// their rank.
 func (encoder *GPTEncoder) rankPairs(pairs []GPTPair) BGERanks {
 	rankedPairs := make(BGERanks, 0)
 	for idx := range pairs {
@@ -295,6 +309,8 @@ func (encoder *GPTEncoder) rankPairs(pairs []GPTPair) BGERanks {
 	return rankedPairs
 }
 
+// minPair
+// Accepts a slice of GPTPair and returns the pair with the lowest BPE rank.
 func (encoder *GPTEncoder) minPair(pairs []GPTPair) (retPair GPTPair) {
 	rankedPairs := encoder.rankPairs(pairs)
 	if len(rankedPairs) > 0 {
@@ -303,15 +319,7 @@ func (encoder *GPTEncoder) minPair(pairs []GPTPair) (retPair GPTPair) {
 	return retPair
 }
 
-func (encoder *GPTEncoder) toUnicode(text *string) string {
-	textBytes := []byte(*text)
-	outArr := make([]rune, len(*text))
-	for idx := range textBytes {
-		outArr[idx] = encoder.byteToRune[textBytes[idx]]
-	}
-	return string(outArr)
-}
-
+// pos finds the index of the first occurrence of seek in word past index i.
 func pos(word []string, seek string, i int) int {
 	for j, v := range word[i:] {
 		if seek == v {
@@ -321,13 +329,8 @@ func pos(word []string, seek string, i int) int {
 	return -1
 }
 
-func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
-	for idx := range *tokens {
-		encoded = append(encoded, encoder.encoder[(*tokens)[idx]])
-	}
-	return encoded
-}
-
+// toBPE
+// Given pre-split text, return a list of BPE tokens as strings.
 func (encoder *GPTEncoder) toBPE(text string) []string {
 	if lookup, ok := encoder.cache.Get(text); ok {
 		return lookup.([]string)
@@ -372,6 +375,10 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 	return word
 }
 
+// WordSplitter
+// Returns an iterator function that reads from an io.RuneReader and splits
+// the input into words. Each invocation of the iterator function returns
+// one word or nil if there are no more words.
 func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 	runeAccumulator := make([]rune, 0, 16384)
 	wordsAccumulator := make(chan string, 2048)
@@ -458,6 +465,7 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 	}
 }
 
+// SplitWords splits a string into words according to BPE encoder rules.
 func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 	words := make([]string, 0)
 	nextWord := encoder.WordSplitter(strings.NewReader(*text))
@@ -471,18 +479,41 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 	return &words
 }
 
+func (encoder *GPTEncoder) toUnicode(text *string) string {
+	textBytes := []byte(*text)
+	outArr := make([]rune, len(*text))
+	for idx := range textBytes {
+		outArr[idx] = encoder.byteToRune[textBytes[idx]]
+	}
+	return string(outArr)
+}
+
+func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
+	for idx := range *tokens {
+		encoded = append(encoded, encoder.encoder[(*tokens)[idx]])
+	}
+	return encoded
+}
+
+// StreamingEncode is a streaming encoder. It takes an io.RuneReader and
+// returns an iterator function that will return Tokens on each call.
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
 	accumulator := make(Tokens, 0, 16384)
 	return func(desiredTokens int) *Tokens {
 		for {
+			// If we have enough tokens, then we return them, and reset the
+			// accumulator.
 			if len(accumulator) > desiredTokens {
 				chunk := accumulator[:desiredTokens]
 				accumulator = accumulator[desiredTokens:]
 				return &chunk
 			}
+			// Fetch the next word from the WordSplitter.
 			word := nextWord()
+			// If we have no word, then we're done.
 			if word == nil {
+				// If we have any tokens left, then we return them.
 				if len(accumulator) > 0 {
 					chunk := accumulator
 					accumulator = accumulator[:0]
@@ -491,6 +522,8 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 					return nil
 				}
 			}
+			// Otherwise, we add the word to the accumulator. We have to handle
+			// the special tokens here, since they're not in the vocab.
 			var encodedTokens Tokens
 			specialToken, isSpecial := encoder.specials[*word]
 			if isSpecial {
@@ -506,6 +539,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 	}
 }
 
+// Encode encodes a string into a sequence of tokens.
 func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 	encoded := make(Tokens, 0, 4096)
 	runeReader := strings.NewReader(*text)
@@ -520,6 +554,9 @@ func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 	return &encoded
 }
 
+// Get
+// Looks up text in the encoder, and returns the Token representation of it. If
+// the text is not found, then nil is returned.
 func (encoder *GPTEncoder) Get(text string) *Token {
 	if token, ok := encoder.encoder[text]; !ok {
 		return nil
@@ -528,6 +565,7 @@ func (encoder *GPTEncoder) Get(text string) *Token {
 	}
 }
 
+// Decode Tokens back into a string, handling unicode.
 func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	// First convert our `Token` tokens into an 8-bit byte array.
 	bs := make([]byte, 0, len(*encoded))
