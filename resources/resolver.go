@@ -20,6 +20,8 @@ import (
 
 type ResourceFlag uint8
 
+// WriteCounter counts the number of bytes written to it, and every 10 seconds,
+// it prints a message reporting the number of bytes written so far.
 type WriteCounter struct {
 	Total    uint64
 	Last     time.Time
@@ -40,13 +42,8 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (wc WriteCounter) PrintProgress() {
-	// Clear the line by using a character return to go back to the start and remove
-	// the remaining characters by filling it with spaces
-	// Return again and print current status of download
-	// We use the humanize package to print the bytes in a meaningful way (e.g. 10 MB)
-}
-
+// Enumeration of resource flags that indicate what the resolver should do
+// with the resource.
 const (
 	RESOURCE_REQUIRED ResourceFlag = 1 << iota
 	RESOURCE_OPTIONAL
@@ -75,6 +72,9 @@ func (rsrcs *Resources) Cleanup() {
 	}
 }
 
+// GetResourceEntries
+// Returns a default map of resource entries that express what files are
+// required, optional, derived, and/or model resources.
 func GetResourceEntries() ResourceEntryDefs {
 	return ResourceEntryDefs{
 		"config.json":             RESOURCE_REQUIRED,
@@ -90,6 +90,8 @@ func GetResourceEntries() ResourceEntryDefs {
 	}
 }
 
+// FetchHTTP
+// Fetch a resource from a remote HTTP server.
 func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
 	resp, remoteErr := http.Get(uri + "/" + rsrc)
 	if remoteErr != nil {
@@ -101,6 +103,8 @@ func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// SizeHTTP
+// Get the size of a resource from a remote HTTP server.
 func SizeHTTP(uri string, rsrc string) (uint, error) {
 	resp, remoteErr := http.Head(uri + "/" + rsrc)
 	if remoteErr != nil {
@@ -114,10 +118,14 @@ func SizeHTTP(uri string, rsrc string) (uint, error) {
 	}
 }
 
+// FetchHuggingFace
+// Wrapper around FetchHTTP that fetches a resource from huggingface.co.
 func FetchHuggingFace(id string, rsrc string) (io.ReadCloser, error) {
 	return FetchHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
 }
 
+// SizeHuggingFace
+// Wrapper around SizeHTTP that gets the size of a resource from huggingface.co.
 func SizeHuggingFace(id string, rsrc string) (uint, error) {
 	return SizeHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
 }
@@ -136,6 +144,12 @@ func isValidUrl(toTest string) bool {
 	return true
 }
 
+// Fetch
+// Given a base URI and a resource name, determines if the resource is local,
+// remote, or from huggingface.co. If the resource is local, it returns a
+// file handle to the resource. If the resource is remote, or from
+// huggingface.co, it fetches the resource and returns a ReadCloser to the
+// fetched or cached resource.
 func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 	if isValidUrl(uri) {
 		return FetchHTTP(uri, rsrc)
@@ -152,6 +166,8 @@ func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 	}
 }
 
+// Size
+// Given a base URI and a resource name, determine the size of the resource.
 func Size(uri string, rsrc string) (uint, error) {
 	if isValidUrl(uri) {
 		return SizeHTTP(uri, rsrc)
@@ -162,6 +178,8 @@ func Size(uri string, rsrc string) (uint, error) {
 	}
 }
 
+// AddEntry
+// Add a resource to the Resources map, opening it as a mmap.Map.
 func (rsrcs *Resources) AddEntry(name string, file *os.File) error {
 	fileMmap, mmapErr := mmap.Map(file, mmap.RDONLY, 0)
 	if mmapErr != nil {
@@ -174,8 +192,13 @@ func (rsrcs *Resources) AddEntry(name string, file *os.File) error {
 	return nil
 }
 
+// Specials
+// Map of special tokens such as `<|pad|>`, `<|endoftext|>`, etc.
 type Specials map[string]string
 
+// ResolveSpecialTokens
+// If `specials.json` does not exist in `dir`, create it from the
+// `special_tokens_map.json` file.
 func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 	realizedSpecials Specials, err error) {
 	realizedSpecials = make(Specials, 0)
@@ -258,6 +281,8 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 	return realizedSpecials, nil
 }
 
+// ResolveResources resolves all resources at a given uri, and checks if they
+// exist in the given directory. If they don't exist, they are downloaded.
 func ResolveResources(uri string, dir *string,
 	rsrcLvl ResourceFlag) (*Resources,
 	error) {
@@ -341,6 +366,7 @@ func ResolveResources(uri string, dir *string,
 	return &foundResources, nil
 }
 
+// HFConfig contains the tokenizer configuration that gpt_bpe uses.
 type HFConfig struct {
 	ModelId        *string `json:"omitempty"`
 	ModelType      *string `json:"model_type,omitempty"`
@@ -354,6 +380,9 @@ type HFConfig struct {
 	TokenizerClass *string `json:"tokenizer_class"`
 }
 
+// ResolveConfig
+// Resolves a given vocabulary id, and returns the corresonding HuggingFace
+// configuration, and the resources for the tokenizer.
 func ResolveConfig(vocabId string) (config *HFConfig,
 	resources *Resources, err error) {
 	dir, dirErr := ioutil.TempDir("", "resources")
@@ -403,12 +432,18 @@ func ResolveConfig(vocabId string) (config *HFConfig,
 	return &hfConfig, resources, nil
 }
 
-func GetCompiledResource(path string) ResourceEntry {
+// GetEmbeddedResource
+// Returns a ResourceEntry for the given resource name that is embedded in
+// the binary.
+func GetEmbeddedResource(path string) ResourceEntry {
 	resourceFile, _ := f.Open(path)
 	resourceBytes, _ := f.ReadFile(path)
 	return ResourceEntry{&resourceFile, &resourceBytes}
 }
 
+// ResolveVocabId
+// Resolves a vocabulary id to a set of resources, from embedded,
+// local filesystem, or remote.
 func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	var resolvedVocabId string
 	if _, vocabErr := f.ReadDir(vocabId); vocabErr == nil {
@@ -419,13 +454,13 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
-		resources["unitrim.json"] = GetCompiledResource(
+		resources["unitrim.json"] = GetEmbeddedResource(
 			vocabId + "/unitrim.json")
-		resources["vocab.json"] = GetCompiledResource(
+		resources["vocab.json"] = GetEmbeddedResource(
 			vocabId + "/encoder.json")
-		resources["merges.txt"] = GetCompiledResource(
+		resources["merges.txt"] = GetEmbeddedResource(
 			vocabId + "/vocab.bpe")
-		resources["specials.txt"] = GetCompiledResource(
+		resources["specials.txt"] = GetEmbeddedResource(
 			vocabId + "/specials.txt")
 		return hf, &resources, nil
 	}
@@ -442,7 +477,7 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	} else {
 		config.ModelId = &resolvedVocabId
 		if _, exists := (*resources)["unitrim.json"]; !exists {
-			(*resources)["unitrim.json"] = GetCompiledResource(
+			(*resources)["unitrim.json"] = GetEmbeddedResource(
 				"gpt2-tokenizer/unitrim.json")
 		}
 		return config, resources, nil
