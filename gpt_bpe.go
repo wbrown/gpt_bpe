@@ -3,6 +3,7 @@ package gpt_bpe
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
@@ -15,6 +16,8 @@ import (
 )
 
 const BPE_LRU_SZ = 8192
+const RUNEBUF_SZ = 16384
+const WORDCHAN_SZ = 4096
 
 type Token uint16
 type Tokens []Token
@@ -30,10 +33,13 @@ type GPTEncoder struct {
 	byteToRune   [256]rune
 	runeToByte   map[rune]byte
 	specials     map[string]Tokens
+	specialsTree *RuneNode
 	cache        *lru.Cache
 	EosToken     Token
 	PadToken     Token
 	replacements map[string]string
+	runeBufSz    int
+	wordChanSz   int
 }
 
 type GPTPair struct {
@@ -74,6 +80,61 @@ func NewGPT2Encoder() GPTEncoder {
 func NewPileEncoder() GPTEncoder {
 	encoder, _ := NewEncoder("pile-tokenizer")
 	return *encoder
+}
+
+type RuneNode struct {
+	rune      rune
+	runes     []rune
+	terminal  bool
+	childs    map[rune]*RuneNode
+	childsArr []*RuneNode
+}
+
+func (encoder *GPTEncoder) createRuneTree() *RuneNode {
+	runeTree := &RuneNode{
+		runes:  []rune{},
+		childs: make(map[rune]*RuneNode, 0),
+	}
+
+	for k := range encoder.specials {
+		keyRunes := []rune(k)
+		keyLen := len(keyRunes)
+		node := runeTree
+		for i := 0; i < keyLen; i++ {
+			r := keyRunes[i]
+			childNode, ok := node.childs[r]
+			if !ok {
+				node.childs[r] = &RuneNode{
+					rune:      r,
+					runes:     keyRunes[:i+1],
+					terminal:  i == keyLen-1,
+					childs:    make(map[rune]*RuneNode, 0),
+					childsArr: make([]*RuneNode, 0),
+				}
+			} else if i == keyLen-1 {
+				childNode.terminal = true
+			}
+			if len(node.childs) != len(node.childsArr) {
+				node.childsArr = append(node.childsArr, node.childs[r])
+			}
+			node = node.childs[r]
+		}
+	}
+	return runeTree
+}
+
+func (root *RuneNode) evaluate(node *RuneNode, r rune) (*RuneNode, bool) {
+	for childIdx := range node.childsArr {
+		child := node.childsArr[childIdx]
+		if child.rune == r {
+			return child, child.terminal
+		}
+	}
+	if node != root {
+		return root.evaluate(root, r)
+	} else {
+		return root, false
+	}
 }
 
 // NewEncoder
@@ -201,7 +262,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		replacements["\n"] = "</s>"
 	}
 
-	return &GPTEncoder{
+	encoder := &GPTEncoder{
 		encoderTokens,
 		tokensEncoder,
 		bpeRanks,
@@ -212,11 +273,16 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		bytesUnicode,
 		unicodeBytes,
 		specials,
+		nil,
 		cache,
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
 		replacements,
-	}, nil
+		RUNEBUF_SZ,
+		WORDCHAN_SZ,
+	}
+	encoder.specialsTree = encoder.createRuneTree()
+	return encoder, nil
 }
 
 // insertAt inserts v into s at index i and returns the new slice.
@@ -229,7 +295,7 @@ func insertAt(data []BGERank, i int, v BGERank) []BGERank {
 	// Make space for the inserted element by shifting
 	// values at the insertion index up one index. The call
 	// to append does not allocate memory when cap(data) is
-	// greater ​than len(data).
+	// greater than len(data).
 	data = append(data[:i+1], data[i:]...)
 
 	// Insert the new element.
@@ -329,6 +395,31 @@ func pos(word []string, seek string, i int) int {
 	return -1
 }
 
+// findAllStringIndex returns a set of indexes of all occurrences of substr in
+// string.
+func findAllStringIndex(text string, substr string) [][]int {
+	var indexes [][]int
+	for i := 0; i < len(text); {
+		j := strings.Index(text[i:], substr)
+		if j < 0 {
+			break
+		}
+		indexes = append(indexes, []int{i + j, i + j + len(substr)})
+		i += j + len(substr)
+	}
+	return indexes
+}
+
+// findAllStringsIndexes returns a set of indexes of all occurrences of strings,
+// which are substrings of text removing all overlaps.
+func findAllStringsIndexes(text string, strings []string) [][]int {
+	var indexes [][]int
+	for _, substr := range strings {
+		indexes = append(indexes, findAllStringIndex(text, substr)...)
+	}
+	return indexes
+}
+
 // toBPE
 // Given pre-split text, return a list of BPE tokens as strings.
 func (encoder *GPTEncoder) toBPE(text string) []string {
@@ -375,15 +466,32 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 	return word
 }
 
+func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
+	lenMap := make(map[int][][]rune)
+	for k := range encoder.specials {
+		keyLen := len(k)
+		keyRunes := []rune(k)
+		if entry, ok := lenMap[keyLen]; ok {
+			lenMap[keyLen] = append(entry, keyRunes)
+		} else {
+			lenMap[keyLen] = [][]rune{keyRunes}
+		}
+	}
+	return lenMap
+}
+
 // WordSplitter
 // Returns an iterator function that reads from an io.RuneReader and splits
 // the input into words. Each invocation of the iterator function returns
 // one word or nil if there are no more words.
 func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
-	runeAccumulator := make([]rune, 0, 16384)
-	wordsAccumulator := make(chan string, 2048)
+	wordsAccumulator := make(chan string, encoder.wordChanSz)
 
 	wordSplitter := func() {
+		specialsRuneRoot := encoder.specialsTree
+		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
+		specialToken := false
+		specialsNode := specialsRuneRoot
 		for {
 			// Let's collect runes until we reach the end of our IO stream, or
 			// hit a newline.
@@ -393,7 +501,9 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 					break
 				}
 				runeAccumulator = append(runeAccumulator, r)
-				if r == '\n' {
+				specialsNode, specialToken = specialsRuneRoot.evaluate(
+					specialsNode, r)
+				if specialToken || r == '\n' {
 					break
 				}
 			}
@@ -405,9 +515,15 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 				break
 			}
 
-			// Turn our accumulated runes into a string to operate on, and empty
-			// out the runeAccumulator for the next run.
-			line := string(runeAccumulator)
+			// If we've discovered a special token, then we need to split the
+			// runeAccumulator before the special token.
+			var line string
+			if specialToken {
+				line = string(runeAccumulator[:len(runeAccumulator)-len(
+					specialsNode.runes)])
+			} else {
+				line = string(runeAccumulator)
+			}
 			runeAccumulator = runeAccumulator[:0]
 
 			// Some things such as KoboldAI have a 'replacement' rule, where
@@ -417,39 +533,22 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 				line = strings.ReplaceAll(line, replaced, replacement)
 			}
 
-			// Due to how special tokens work, we have to find them and handle
-			// them before we actually tokenize the rest. So, we find all the
-			// special tokens and loop through them.
-			beginIdx := 0
-			specialIdxes := encoder.specialsPat.FindAllStringIndex(line, -1)
-			var specialEnd int
-			for specialIdx := range specialIdxes {
-				specialBegin := specialIdxes[specialIdx][0]
-				specialEnd = specialIdxes[specialIdx][1]
-				specialSplit := line[specialBegin:specialEnd]
-				beforeSpecial := line[beginIdx:specialBegin]
-				// We split all words before the special token in question, and
-				// and accumulate them.
-				idxes := encoder.pattern.FindAllStringIndex(beforeSpecial,
-					-1)
-				for idx := range idxes {
-					word := beforeSpecial[idxes[idx][0]:idxes[idx][1]]
-					wordsAccumulator <- word
-				}
-				// Then we add our special token itself.
-				wordsAccumulator <- specialSplit
-				beginIdx = specialEnd
+			// We split all words before the special token in question, and
+			// accumulate them.
+			idxes := encoder.pattern.FindAllStringIndex(line, -1)
+			for idx := range idxes {
+				word := line[idxes[idx][0]:idxes[idx][1]]
+				wordsAccumulator <- word
 			}
-			// No more special tokens, but we still have the rest of our line,
-			// so we split and add them to the wordAccumulator.
-			if specialEnd < len(line) {
-				post := line[specialEnd:]
-				idxes := encoder.pattern.FindAllStringIndex(post, -1)
-				for idx := range idxes {
-					word := post[idxes[idx][0]:idxes[idx][1]]
-					wordsAccumulator <- word
-				}
+
+			// Finally, if we have a special token, we cap it off.
+			if specialToken {
+				wordsAccumulator <- string(specialsNode.runes)
 			}
+
+			// Reset our special tokens state.
+			specialsNode = specialsRuneRoot
+			specialToken = false
 		}
 	}
 
@@ -539,19 +638,40 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 	}
 }
 
-// Encode encodes a string into a sequence of tokens.
-func (encoder *GPTEncoder) Encode(text *string) *Tokens {
+func (encoder *GPTEncoder) EncodeReader(reader io.RuneReader) *Tokens {
 	encoded := make(Tokens, 0, 4096)
-	runeReader := strings.NewReader(*text)
-	nextTokens := encoder.StreamingEncode(runeReader)
+	nextTokens := encoder.StreamingEncode(reader)
 	for {
-		tokens := nextTokens(2048)
+		tokens := nextTokens(4096)
 		if tokens == nil {
 			break
 		}
 		encoded = append(encoded, *tokens...)
 	}
 	return &encoded
+}
+
+// EncodeBuffer takes a byte array and encodes it into Tokens in another
+// byte array.
+func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) *[]byte {
+	runeReader := bytes.NewReader(*buffer)
+	nextTokens := encoder.StreamingEncode(runeReader)
+	buf := bytes.NewBuffer(make([]byte, 0, 4096))
+	for {
+		tokens := nextTokens(2048)
+		if tokens == nil {
+			break
+		}
+		binary.Write(buf, binary.LittleEndian, tokens)
+	}
+	bufBytes := buf.Bytes()
+	return &bufBytes
+}
+
+// Encode encodes a string into a sequence of tokens.
+func (encoder *GPTEncoder) Encode(text *string) *Tokens {
+	runeReader := strings.NewReader(*text)
+	return encoder.EncodeReader(runeReader)
 }
 
 // Get
