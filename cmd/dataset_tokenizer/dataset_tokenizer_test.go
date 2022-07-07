@@ -69,25 +69,27 @@ func BenchmarkStreamingEncode(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
 	tokenizer := gpt_bpe.GPT2Encoder
-	if testFile, err := os.Open("../../resources/frankenstein." +
-		"txt"); err != nil {
-		b.Fail()
-	} else {
-		start := time.Now()
-		b.StartTimer()
-		nextChunk := tokenizer.StreamingEncode(bufio.NewReader(testFile))
-		tokensCt := 0
-		for {
-			if chunk := nextChunk(2048); chunk == nil {
-				break
-			} else {
-				tokensCt += len(*chunk)
+	for i := 0; i < 5; i++ {
+		if testFile, err := os.Open("../../all." +
+			"txt"); err != nil {
+			b.Fail()
+		} else {
+			start := time.Now()
+			b.StartTimer()
+			nextChunk := tokenizer.StreamingEncode(bufio.NewReader(testFile))
+			tokensCt := 0
+			for {
+				if chunk := nextChunk(2048); chunk == nil {
+					break
+				} else {
+					tokensCt += len(*chunk)
+				}
 			}
+			b.StopTimer()
+			tokensPerSecond := float64(tokensCt) / time.Now().Sub(start).Seconds()
+			b.Logf("%d tokens generated at %0.2f per second", tokensCt,
+				tokensPerSecond)
 		}
-		b.StopTimer()
-		tokensPerSecond := float64(tokensCt) / time.Now().Sub(start).Seconds()
-		b.Logf("%d tokens generated at %0.2f per second", tokensCt,
-			tokensPerSecond)
 	}
 }
 
