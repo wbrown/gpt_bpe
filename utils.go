@@ -16,8 +16,12 @@ const (
 	TrimNone   TrimDirection = iota
 )
 
+const (
+	TokenSize = 2
+)
+
 func (tokens *Tokens) ToBin() *[]byte {
-	buf := bytes.NewBuffer(make([]byte, 0))
+	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*TokenSize))
 	for idx := range *tokens {
 		bs := (*tokens)[idx]
 		binary.Write(buf, binary.LittleEndian, bs)

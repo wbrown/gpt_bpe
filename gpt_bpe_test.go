@@ -204,7 +204,14 @@ var SplitTests = []SplitTest{
 		[]string{"multilines", "\n", "are", " awesome"}},
 	{"\nstarting with multilines\nis awesome",
 		[]string{"\n", "starting", " with", " multilines",
-			"\n", "is", " awesome"}}}
+			"\n", "is", " awesome"}},
+	{"we'll go jump<|endoftext|> in a lake.",
+		[]string{"we", "'ll", " go", " jump", "<|endoftext|>",
+			" in", " a", " lake", "."}},
+	{"we'll go jump<|end\noftext|> in a lake.",
+		[]string{"we", "'ll", " go", " jump", "<|", "end", "\n",
+			"oftext", "|>", " in", " a", " lake", "."}},
+}
 
 func TestGPTEncoder_Split(t *testing.T) {
 	for testIdx := range SplitTests {
@@ -249,6 +256,15 @@ var GPTEncoderTests = []EncoderTest{
 func BenchmarkGPTEncoder_Encode(b *testing.B) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
+	duration := time.Since(start)
+	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
+}
+
+func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
+	corpusBytes := []byte(corpus)
+	start := time.Now()
+	tokenCt := len(*gpt2Encoder.EncodeBuffer(&corpusBytes)) / 2
 	duration := time.Since(start)
 	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
 		len(corpus), tokenCt, duration))
