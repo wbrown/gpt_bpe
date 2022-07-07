@@ -86,9 +86,10 @@ func BenchmarkStreamingEncode(b *testing.B) {
 				}
 			}
 			b.StopTimer()
-			tokensPerSecond := float64(tokensCt) / time.Now().Sub(start).Seconds()
-			b.Logf("%d tokens generated at %0.2f per second", tokensCt,
-				tokensPerSecond)
+			duration := time.Now().Sub(start)
+			tokensPerSecond := float64(tokensCt) / duration.Seconds()
+			b.Logf("%d tokens generated at %0.2f per second over %vms", tokensCt,
+				tokensPerSecond, duration.Milliseconds())
 		}
 	}
 }
