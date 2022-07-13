@@ -5,6 +5,7 @@ package main
 */
 import "C"
 import (
+	"fmt"
 	"github.com/wbrown/gpt_bpe"
 	"reflect"
 	"time"
@@ -71,29 +72,42 @@ func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 		encoder = tokenizers[tokenizerId]
 	}
 	s := C.GoString(str)
+	fmt.Printf("input: %s\n", s)
 	encoded := *encoder.Encode(&s)
+	fmt.Printf("Tokens: %v\n", encoded)
 	tokensArr := C.CBytes(*encoded.ToBin())
 	tokens := C.Tokens{
 		tokens: (*C.uint16_t)(tokensArr),
-		len:    C.size_t(len(encoded) / 2),
+		len:    C.size_t(len(encoded)),
 	}
+	fmt.Printf("tokens: %p\n", &tokens)
+	fmt.Printf("tokens.tokens: %p\n", tokens.tokens)
+	fmt.Printf("*tokens.tokens: %v\n", tokens.tokens)
+	fmt.Printf("tokens.len: %v\n", len(encoded))
 	return tokens
 }
 
 //export decode
 // decode accepts a vocabulary id and a C.Tokens struct, and returns a malloc'ed
 // C.char* containing the decoded string.
-func decode(vocabIdStr *C.char, tokens *C.Tokens) *C.char {
+func decode(vocabIdStr *C.char, tokens C.Tokens) *C.char {
 	tokenizerId := C.GoString(vocabIdStr)
 	encoder, ok := tokenizers[tokenizerId]
 	if !ok {
 		initTokenizer(vocabIdStr)
 		encoder = tokenizers[tokenizerId]
 	}
-	tokensArr := C.GoBytes(unsafe.Pointer(tokens.tokens), C.int(tokens.len))
+	tokensArr := C.GoBytes(unsafe.Pointer(tokens.tokens), C.int(tokens.len)*2)
 	goTokens := gpt_bpe.TokensFromBin(&tokensArr)
+	fmt.Printf("goTokens: %v\n", goTokens)
 	decoded := encoder.Decode(goTokens)
+	fmt.Printf("Decoded: %s\n", decoded)
 	return C.CString(decoded)
+}
+
+//export freeTokens
+func freeTokens(tokens C.Tokens) {
+	C.free(unsafe.Pointer(tokens.tokens))
 }
 
 // testBuffer tests the C interface to the tokenizer, and is here rather than
