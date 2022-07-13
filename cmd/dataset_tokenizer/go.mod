@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/stretchr/testify v1.7.1
+	github.com/wbrown/gpt_bpe v0.0.0-20220713181708-2f445d05fe60
 	github.com/yargevad/filepathx v1.0.0
 )
 
@@ -16,7 +17,6 @@ require (
 	github.com/jdkato/prose/v2 v2.0.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/wbrown/gpt_bpe 2f445d05fe6068297b6ae411fef376d7556f31fc // indirect
 	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
 	gonum.org/v1/gonum v0.7.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.6 // indirect
