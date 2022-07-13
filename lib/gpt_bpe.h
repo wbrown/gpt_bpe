@@ -73,10 +73,22 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
+
+// initTokenizer accepts a vocabulary id as a C string, and if it does not
+// exist in the global tokenizers map, initializes a tokenizer for that
+// vocabulary.
 extern GoUint8 initTokenizer(char* vocab_id);
 extern Tokens tokenizeBuffer(char* vocabIdStr, char* buf, size_t sz);
+
+// tokenize accepts a vocabulary and text as a C string, and returns a C.Tokens
+// that contains a malloc'ed array of uint16_t tokens along with the number of
+// tokens.
 extern Tokens tokenize(char* vocabIdStr, char* str);
-extern char* decode(char* vocabIdStr, Tokens* tokens);
+
+// decode accepts a vocabulary id and a C.Tokens struct, and returns a malloc'ed
+// C.char* containing the decoded string.
+extern char* decode(char* vocabIdStr, Tokens tokens);
+extern void freeTokens(Tokens tokens);
 
 #ifdef __cplusplus
 }
