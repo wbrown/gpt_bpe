@@ -15,5 +15,6 @@ jobs:
       - uses: actions/checkout@v2
 
       - uses: imjasonh/setup-ko@v0.4
-      - run: ko publish --base-import-paths ./cmd/dataset_tokenizer -t ${GITHUB_SHA::7}
       - run: ko publish --base-import-paths ./cmd/model_downloader -t ${GITHUB_SHA::7}
+      - working-directory: ./cmd/dataset_tokenizer
+        run: ko publish --base-import-paths -t ${GITHUB_SHA::7}
