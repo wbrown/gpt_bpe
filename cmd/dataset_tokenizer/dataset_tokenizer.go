@@ -9,8 +9,9 @@ import (
 	"github.com/yargevad/filepathx"
 	"io"
 	"log"
+	"math/rand"
 	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,11 +20,18 @@ var tokenizers map[string]*gpt_bpe.GPTEncoder
 
 type TextsIterator func() io.RuneReader
 
+type PathInfo struct {
+	Path    string
+	Size    int64
+	ModTime time.Time
+	Dir     bool
+}
+
 // GlobTexts
 // Given a directory path, recursively finds all `.txt` files, returning a
-// slice of paths.
-func GlobTexts(dirPath string) (textPaths []string, err error) {
-	textPaths, err = filepathx.Glob(dirPath + "/**/*.txt")
+// slice of PathInfo.
+func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
+	textPaths, err := filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -32,25 +40,87 @@ func GlobTexts(dirPath string) (textPaths []string, err error) {
 		return nil, errors.New(fmt.Sprintf(
 			"%s does not contain any .txt files", dirPath))
 	}
-	return textPaths, nil
+	pathInfos = make([]PathInfo, numMatches)
+	for matchIdx := range textPaths {
+		currPath := textPaths[matchIdx]
+		if stat, statErr := os.Stat(currPath); statErr != nil {
+			return nil, statErr
+		} else {
+			pathInfos[matchIdx] = PathInfo{
+				Path:    currPath,
+				Size:    stat.Size(),
+				ModTime: stat.ModTime(),
+				Dir:     stat.IsDir(),
+			}
+		}
+	}
+	return pathInfos, nil
+}
+
+func SortPathInfoBySize(pathInfos []PathInfo, ascending bool) {
+	if ascending {
+		sort.Slice(pathInfos, func(i, j int) bool {
+			return pathInfos[i].Size < pathInfos[j].Size
+		})
+	} else {
+		sort.Slice(pathInfos, func(i, j int) bool {
+			return pathInfos[i].Size > pathInfos[j].Size
+		})
+	}
+}
+
+func SortPathInfoByPath(pathInfos []PathInfo, ascending bool) {
+	if ascending {
+		sort.Slice(pathInfos, func(i, j int) bool {
+			return pathInfos[i].Path < pathInfos[j].Path
+		})
+	} else {
+		sort.Slice(pathInfos, func(i, j int) bool {
+			return pathInfos[i].Path > pathInfos[j].Path
+		})
+	}
+}
+
+func GetFileInfo(paths []string) ([]os.FileInfo, error) {
+	fileInfos := make([]os.FileInfo, 0)
+	for _, path := range paths {
+		if fileInfo, err := os.Stat(path); err != nil {
+			return nil, err
+		} else {
+			fileInfos = append(fileInfos, fileInfo)
+		}
+	}
+	return fileInfos, nil
+}
+
+func GetPathsFromFileInfo(fileInfos []os.FileInfo) (paths []string) {
+	for _, fileInfo := range fileInfos {
+		paths = append(paths, fileInfo.Name())
+	}
+	return paths
+}
+
+func ShufflePathInfos(pathInfos []PathInfo) {
+	for i := len(pathInfos) - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		pathInfos[i], pathInfos[j] = pathInfos[j], pathInfos[i]
+	}
 }
 
 // FindNewestPath
 // Given a directory path, recursively scans and returns the path and modified
 // time for the newest `.txt` file.
-func FindNewestPath(paths *[]string) (path *string, newest *time.Time,
+func FindNewestPath(paths []PathInfo) (path *string, newest *time.Time,
 	err error) {
-	for matchIdx := range *paths {
-		currPath := (*paths)[matchIdx]
-		if stat, statErr := os.Stat(currPath); statErr != nil {
-			return nil, nil, statErr
-		} else if newest == nil || newest.Before(stat.ModTime()) {
-			modTime := stat.ModTime()
-			newest = &modTime
-			path = &currPath
+	var newestPath string
+	var newestTime *time.Time
+	for _, pathInfo := range paths {
+		if newestTime == nil || newestTime.Before(pathInfo.ModTime) {
+			newestTime = &pathInfo.ModTime
+			newestPath = pathInfo.Path
 		}
 	}
-	return path, newest, nil
+	return &newestPath, newestTime, nil
 }
 
 // FindNewestText
@@ -62,7 +132,7 @@ func FindNewestText(dirPath string) (path *string, newest *time.Time,
 	if err != nil {
 		return nil, nil, err
 	}
-	return FindNewestPath(&matches)
+	return FindNewestPath(matches)
 }
 
 // FindNewestDir
@@ -76,26 +146,42 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 	}
 	// Find all directories, as removed files will modify the time of the
 	// containing directory.
-	directories := make(map[string]bool, 0)
+	directories := make([]PathInfo, 0)
 	for matchIdx := range fileMatches {
-		currPath := fileMatches[matchIdx]
-		directories[filepath.Dir(currPath)] = true
+		if fileMatches[matchIdx].Dir {
+			directories = append(directories, fileMatches[matchIdx])
+		}
 	}
-	directoryMatches := make([]string, 0)
-	for dir := range directories {
-		directoryMatches = append(directoryMatches, dir)
-	}
-	return FindNewestPath(&directoryMatches)
+	return FindNewestPath(directories)
 }
 
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
-func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
+func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
+	error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
 	}
+
+	if sortSpec != "" {
+		if sortSpec == "size_ascending" {
+			SortPathInfoBySize(matches, true)
+		} else if sortSpec == "size_descending" {
+			SortPathInfoBySize(matches, false)
+		} else if sortSpec == "path_ascending" {
+			SortPathInfoByPath(matches, true)
+		} else if sortSpec == "path_descending" {
+			SortPathInfoByPath(matches, false)
+		} else if sortSpec == "random" {
+			ShufflePathInfos(matches)
+		} else {
+			return nil, errors.New(fmt.Sprintf(
+				"Invalid sort spec: %s", sortSpec))
+		}
+	}
+
 	numMatches := len(matches)
 
 	type namedRuneReader struct {
@@ -109,16 +195,16 @@ func ReadTexts(dirPath string, sanitize bool) (TextsIterator, error) {
 	go func() {
 		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
 			path := matches[matchIdx]
-			if fileReader, openErr := os.Open(path); openErr != nil {
+			if fileReader, openErr := os.Open(path.Path); openErr != nil {
 				log.Fatal(openErr)
 			} else {
 				if sanitize {
 					runeReaders <- namedRuneReader{
-						path,
+						path.Path,
 						CreateTextSanitizer(fileReader)}
 				} else {
 					runeReaders <- namedRuneReader{
-						path,
+						path.Path,
 						bufio.NewReader(fileReader)}
 				}
 			}
@@ -383,7 +469,7 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	encoder *gpt_bpe.GPTEncoder) (int, error) {
 	totalTokens := 0
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE,
-		755)
+		0755)
 	if err != nil {
 		return 0, err
 	}
@@ -451,10 +537,22 @@ func main() {
 		"force retokenization even if tokenizer output is newer")
 	sanitizeBool := flag.Bool("sanitize", false,
 		"sanitize inputs of whitespace issues")
+	reorderPaths := flag.String("reorder", "",
+		"reorder input files to specification [size_ascending, "+
+			"size_descending, name_ascending, name_descending, random]")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
 		log.Fatal("Must provide -input for directory source")
+	}
+	if *reorderPaths != "" {
+		if *reorderPaths != "size_ascending" &&
+			*reorderPaths != "size_descending" &&
+			*reorderPaths != "name_ascending" &&
+			*reorderPaths != "name_descending" &&
+			*reorderPaths != "random" {
+			log.Fatal("Invalid reorder specification")
+		}
 	}
 
 	textsTokenizer := NewTextsTokenizer()
@@ -495,7 +593,8 @@ func main() {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(*inputDir, *sanitizeBool); err != nil {
+	if nextText, err := ReadTexts(*inputDir, *sanitizeBool,
+		*reorderPaths); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
@@ -516,6 +615,5 @@ func main() {
 		duration := time.Now().Sub(begin).Seconds()
 		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
 			duration, float64(total)/duration)
-
 	}
 }
