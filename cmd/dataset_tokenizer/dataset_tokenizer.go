@@ -225,12 +225,13 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 // TextsTokenizer
 // A struct that encapsulates the configuration for a streaming tokenizer.
 type TextsTokenizer struct {
-	TokenizerId string
-	ContextSize int
-	Boundary    string
-	PadToken    string
-	EndOfText   string
-	Unitrim     bool
+	TokenizerId   string
+	ContextSize   int
+	Boundary      string
+	BoundaryBegin bool
+	PadToken      string
+	EndOfText     string
+	Unitrim       bool
 }
 
 // NewTextsTokenizer
@@ -240,6 +241,7 @@ func NewTextsTokenizer() TextsTokenizer {
 		"gpt2",
 		2048,
 		"\n",
+		false,
 		"<|endoftext|>",
 		"<|endoftext|>",
 		true,
@@ -431,12 +433,20 @@ func (tt TextsTokenizer) TokenizeTexts(
 						}
 					}
 					// We had a boundary token in our last context, so set the
-					// `idx` to one past the boundary token. This effectively
-					// copies the chunk from that point on into the next
-					// returned context.
-					if boundaryIdx > 0 {
-						if idx-boundaryIdx+1 <= contextSize {
-							idx = boundaryIdx + 1
+					// `idx` to one past the boundary token or on the boundary
+					// token depending on `BoundaryBegin`.
+					// This effectively copies the chunk from that point on
+					// into the next returned context.
+					if boundaryIdx > 0 && boundaryIdx <= begin+contextSize {
+						boundaryOffset := 0
+						if !tt.BoundaryBegin {
+							boundaryOffset = 1
+						}
+						if idx-boundaryIdx+boundaryOffset <= contextSize {
+							newIdx := boundaryIdx + boundaryOffset
+							if newIdx != begin+boundaryOffset {
+								idx = newIdx
+							}
 						}
 						boundaryIdx = 0
 					}
@@ -527,6 +537,9 @@ func main() {
 	boundaryToken := flag.String("boundary", "\n",
 		"boundary token to split contexts on, can be a string token "+
 			"or int16 token_id")
+	boundaryBegin := flag.Bool("boundary_begin", false,
+		"whether to treat the boundary token as a beginning token for"+
+			"a context")
 	outputFile := flag.String("output", "tokenized.chunk",
 		"tokenized output file")
 	inputDir := flag.String("input", "",
@@ -539,7 +552,7 @@ func main() {
 		"sanitize inputs of whitespace issues")
 	reorderPaths := flag.String("reorder", "",
 		"reorder input files to specification [size_ascending, "+
-			"size_descending, name_ascending, name_descending, random]")
+			"size_descending, name_ascending, name_descending, random, none]")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -550,7 +563,8 @@ func main() {
 			*reorderPaths != "size_descending" &&
 			*reorderPaths != "name_ascending" &&
 			*reorderPaths != "name_descending" &&
-			*reorderPaths != "random" {
+			*reorderPaths != "random" &&
+			*reorderPaths != "none" {
 			log.Fatal("Invalid reorder specification")
 		}
 	}
@@ -562,6 +576,7 @@ func main() {
 	textsTokenizer.PadToken = *padToken
 	textsTokenizer.Boundary = *boundaryToken
 	textsTokenizer.Unitrim = !*unitrimBool
+	textsTokenizer.BoundaryBegin = *boundaryBegin
 
 	if !*forceRetokenization {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
