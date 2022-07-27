@@ -1,13 +1,70 @@
+//go:build !js
+
 package resources
 
-import "embed"
+import (
+	"embed"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+)
 
-//go:embed gpt2-tokenizer/encoder.json
-//go:embed gpt2-tokenizer/vocab.bpe
-//go:embed gpt2-tokenizer/unitrim.json
-//go:embed gpt2-tokenizer/specials.txt
-//go:embed pile-tokenizer/encoder.json
-//go:embed pile-tokenizer/vocab.bpe
-//go:embed pile-tokenizer/unitrim.json
-//go:embed pile-tokenizer/specials.txt
+//go:embed data/gpt2-tokenizer/encoder.json
+//go:embed data/gpt2-tokenizer/vocab.bpe
+//go:embed data/gpt2-tokenizer/unitrim.json
+//go:embed data/gpt2-tokenizer/specials.txt
+//go:embed data/pile-tokenizer/encoder.json
+//go:embed data/pile-tokenizer/vocab.bpe
+//go:embed data/pile-tokenizer/unitrim.json
+//go:embed data/pile-tokenizer/specials.txt
 var f embed.FS
+
+// GetEmbeddedResource
+// Returns a ResourceEntry for the given resource name that is embedded in
+// the binary.
+func GetEmbeddedResource(path string) ResourceEntry {
+	resourceFile, _ := f.Open("data/" + path)
+	resourceBytes, _ := f.ReadFile("data/" + path)
+	return ResourceEntry{&resourceFile, &resourceBytes}
+}
+
+// EmbeddedDirExists
+// Returns true if the given directory is embedded in the binary, otherwise
+// false and an error.
+func EmbeddedDirExists(path string) (bool, error) {
+	if _, err := f.ReadDir("data/" + path); err != nil {
+		return false, err
+	} else {
+		return true, nil
+	}
+}
+
+// FetchHTTP
+// Fetch a resource from a remote HTTP server.
+func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
+	resp, remoteErr := http.Get(uri + "/" + rsrc)
+	if remoteErr != nil {
+		return nil, remoteErr
+	} else if resp.StatusCode != 200 {
+		return nil, errors.New(fmt.Sprintf("HTTP status code %d",
+			resp.StatusCode))
+	}
+	return resp.Body, nil
+}
+
+// SizeHTTP
+// Get the size of a resource from a remote HTTP server.
+func SizeHTTP(uri string, rsrc string) (uint, error) {
+	resp, remoteErr := http.Head(uri + "/" + rsrc)
+	if remoteErr != nil {
+		return 0, remoteErr
+	} else if resp.StatusCode != 200 {
+		return 0, errors.New(fmt.Sprintf("HTTP status code %d",
+			resp.StatusCode))
+	} else {
+		size, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+		return uint(size), nil
+	}
+}
