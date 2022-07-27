@@ -709,6 +709,15 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	return text
 }
 
+// DecodeBuffer
+// Decode Tokens from a byte array into a string.
+func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
+	// First convert our bytearray into a uint16 `Token` array.
+	tokens := TokensFromBin(encoded)
+	// Decode our tokens into a string.
+	return encoder.Decode(tokens)
+}
+
 // TokensReady
 // Determine if the sequence of Tokens given is ready to be serialized
 // to string, based on if the sequence will produce valid Unicode runes.
