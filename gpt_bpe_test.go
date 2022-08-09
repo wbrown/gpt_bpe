@@ -128,8 +128,10 @@ func TestFairSeqTokenizer(t *testing.T) {
 		t.Error(err)
 	}
 	sent := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	tokens := Tokens{464, 21831, 11687, 625, 262, 387, 260, 25970, 82, 29,
+		464, 28699, 318, 5443, 621, 262, 387, 260, 13}
 	fsTokens := enc.Encode(&sent)
-	assert.Equal(t, (*fsTokens)[8], Token(50259))
+	assert.Equal(t, *fsTokens, tokens)
 }
 
 var TrimNewLinesTests = append(TrimSentencesTests[3:5], TrimSentencesTests[9:11]...)
