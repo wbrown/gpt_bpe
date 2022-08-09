@@ -5,16 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
-	mmap "github.com/edsrzf/mmap-go"
 	"io"
 	"io/fs"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
-	"strconv"
 	"time"
 )
 
@@ -90,34 +87,6 @@ func GetResourceEntries() ResourceEntryDefs {
 	}
 }
 
-// FetchHTTP
-// Fetch a resource from a remote HTTP server.
-func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
-	resp, remoteErr := http.Get(uri + "/" + rsrc)
-	if remoteErr != nil {
-		return nil, remoteErr
-	} else if resp.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("HTTP status code %d",
-			resp.StatusCode))
-	}
-	return resp.Body, nil
-}
-
-// SizeHTTP
-// Get the size of a resource from a remote HTTP server.
-func SizeHTTP(uri string, rsrc string) (uint, error) {
-	resp, remoteErr := http.Head(uri + "/" + rsrc)
-	if remoteErr != nil {
-		return 0, remoteErr
-	} else if resp.StatusCode != 200 {
-		return 0, errors.New(fmt.Sprintf("HTTP status code %d",
-			resp.StatusCode))
-	} else {
-		size, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
-		return uint(size), nil
-	}
-}
-
 // FetchHuggingFace
 // Wrapper around FetchHTTP that fetches a resource from huggingface.co.
 func FetchHuggingFace(id string, rsrc string) (io.ReadCloser, error) {
@@ -181,13 +150,13 @@ func Size(uri string, rsrc string) (uint, error) {
 // AddEntry
 // Add a resource to the Resources map, opening it as a mmap.Map.
 func (rsrcs *Resources) AddEntry(name string, file *os.File) error {
-	fileMmap, mmapErr := mmap.Map(file, mmap.RDONLY, 0)
+	fileMmap, mmapErr := readMmap(file)
 	if mmapErr != nil {
 		return errors.New(
 			fmt.Sprintf("error trying to mmap file: %s",
 				mmapErr))
 	} else {
-		(*rsrcs)[name] = ResourceEntry{file, (*[]byte)(&fileMmap)}
+		(*rsrcs)[name] = ResourceEntry{file, fileMmap}
 	}
 	return nil
 }
@@ -432,21 +401,12 @@ func ResolveConfig(vocabId string) (config *HFConfig,
 	return &hfConfig, resources, nil
 }
 
-// GetEmbeddedResource
-// Returns a ResourceEntry for the given resource name that is embedded in
-// the binary.
-func GetEmbeddedResource(path string) ResourceEntry {
-	resourceFile, _ := f.Open(path)
-	resourceBytes, _ := f.ReadFile(path)
-	return ResourceEntry{&resourceFile, &resourceBytes}
-}
-
 // ResolveVocabId
 // Resolves a vocabulary id to a set of resources, from embedded,
 // local filesystem, or remote.
 func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	var resolvedVocabId string
-	if _, vocabErr := f.ReadDir(vocabId); vocabErr == nil {
+	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		endOfText := "<|endoftext|>"
 		hf := &HFConfig{
 			ModelId:     &vocabId,
@@ -463,6 +423,8 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 		resources["specials.txt"] = GetEmbeddedResource(
 			vocabId + "/specials.txt")
 		return hf, &resources, nil
+	} else {
+		log.Printf("%v", vocabErr)
 	}
 	if isValidUrl(vocabId) {
 		u, _ := url.Parse(vocabId)
