@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 const BPE_LRU_SZ = 8192
@@ -23,23 +25,30 @@ type Token uint16
 type Tokens []Token
 
 type GPTEncoder struct {
-	encoder      map[string]Token
-	decoder      map[Token][]byte
-	bpe_ranks    map[GPTPair]float64
-	unitrim      []int
-	pattern      *regexp.Regexp
-	puncPat      *regexp.Regexp
-	specialsPat  *regexp.Regexp
-	byteToRune   [256]rune
-	runeToByte   map[rune]byte
-	specials     map[string]Tokens
-	specialsTree *RuneNode
-	cache        *lru.Cache
-	EosToken     Token
-	PadToken     Token
-	replacements map[string]string
-	runeBufSz    int
-	wordChanSz   int
+	encoder       map[string]Token
+	decoder       map[Token][]byte
+	bpe_ranks     map[GPTPair]float64
+	unitrim       []int
+	pattern       *regexp.Regexp
+	puncPat       *regexp.Regexp
+	specialsPat   *regexp.Regexp
+	byteToRune    [256]rune
+	runeToByte    map[rune]byte
+	specials      map[string]Tokens
+	specialsTree  *RuneNode
+	cache         *lru.Cache
+	PuncRunes     []rune
+	Normalizer    *strings.Replacer
+	BosToken      Token
+	EosToken      Token
+	PadToken      Token
+	encloseEosBos bool
+	prefixSpace   bool
+	lowerCase     bool
+	endOfWord     string
+	replacements  map[string]string
+	runeBufSz     int
+	wordChanSz    int
 }
 
 type GPTPair struct {
@@ -82,12 +91,26 @@ func NewPileEncoder() GPTEncoder {
 	return *encoder
 }
 
+func NewCLIPEncoder() GPTEncoder {
+	encoder, _ := NewEncoder("clip-tokenizer")
+	return *encoder
+}
+
 type RuneNode struct {
 	rune      rune
 	runes     []rune
 	terminal  bool
 	childs    map[rune]*RuneNode
 	childsArr []*RuneNode
+}
+
+func runeIsIn(r rune, runes []rune) bool {
+	for _, rr := range runes {
+		if r == rr {
+			return true
+		}
+	}
+	return false
 }
 
 func (encoder *GPTEncoder) createRuneTree() *RuneNode {
@@ -151,10 +174,66 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		vocabId = *hfConfig.ModelId
 	}
 
+	specialConfig := resources.SpecialConfig{
+		PuncRunes:     nil,
+		Normalizer:    nil,
+		EncloseEosBos: false,
+		PrefixSpace:   true,
+		LowerCase:     false,
+		EndOfWord:     "",
+	}
+	if special, ok := (rsrcs)["special_config.json"]; ok {
+		if special.Data != nil {
+			if json.Unmarshal(*special.Data, &specialConfig) != nil {
+				log.Fatal("Error unmarshalling special_config.json")
+			}
+		}
+	}
+	puncRunes := make([]rune, 0)
+	if specialConfig.PuncRunes != nil {
+		for _, r := range specialConfig.PuncRunes {
+			puncRunes = append(puncRunes, rune((*r)[0]))
+		}
+	}
+	normalizer := strings.NewReplacer()
+	if specialConfig.Normalizer != nil {
+		norms := make([]string, 0)
+		for k, v := range *specialConfig.Normalizer {
+			norms = append(norms, string(k), string(v))
+		}
+		normalizer = strings.NewReplacer(norms...)
+	}
+
 	// Read token unicode trimming definitions
 	unitrimArr := make([]int, 0)
 	if json.Unmarshal(*rsrcs["unitrim.json"].Data, &unitrimArr) != nil {
 		log.Fatal("Error unmarshalling `unitrim.json`")
+	}
+
+	// Build the bytes to unicode tables.
+	bytesUnicodeMap := make(map[byte]rune)
+	unicodeBytes := make(map[rune]byte)
+	for b := uint8('!'); b < uint8('~')+1; b++ {
+		bytesUnicodeMap[b] = rune(b)
+		unicodeBytes[rune(b)] = b
+	}
+	for b := uint8('¡'); b < uint8('¬')+1; b++ {
+		bytesUnicodeMap[b] = rune(b)
+		unicodeBytes[rune(b)] = b
+	}
+	for b := uint16('®'); b < uint16('ÿ')+1; b++ {
+		bytesUnicodeMap[byte(b)] = rune(b)
+		unicodeBytes[rune(b)] = byte(b)
+	}
+	uct := 0
+	var bytesUnicode [256]rune
+	for b := Token(0); b < 256; b++ {
+		if _, ok := bytesUnicodeMap[uint8(b)]; !ok {
+			bytesUnicodeMap[uint8(b)] = rune(256 + uct)
+			unicodeBytes[rune(256+uct)] = uint8(b)
+			uct += 1
+		}
+		bytesUnicode[b] = bytesUnicodeMap[uint8(b)]
 	}
 
 	// Read encoder mappings and also generate reverse mappings.
@@ -166,6 +245,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	for text, token := range encoderTokens {
 		tokensEncoder[token] = []byte(text)
 	}
+
 	// Read vocabulary into bpe_ranks
 	bpeRanks := make(map[GPTPair]float64)
 	scanner := bufio.NewScanner(bytes.NewBuffer(*rsrcs["merges.txt"].Data))
@@ -228,31 +308,6 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	if err != nil {
 		log.Fatalf(REGEX_ERROR, err)
 	}
-	// Build the bytes to unicode tables.
-	bytesUnicodeMap := make(map[byte]rune)
-	unicodeBytes := make(map[rune]byte)
-	for b := uint8('!'); b < uint8('~')+1; b++ {
-		bytesUnicodeMap[b] = rune(b)
-		unicodeBytes[rune(b)] = b
-	}
-	for b := uint8('¡'); b < uint8('¬')+1; b++ {
-		bytesUnicodeMap[b] = rune(b)
-		unicodeBytes[rune(b)] = b
-	}
-	for b := uint16('®'); b < uint16('ÿ')+1; b++ {
-		bytesUnicodeMap[byte(b)] = rune(b)
-		unicodeBytes[rune(b)] = byte(b)
-	}
-	uct := 0
-	var bytesUnicode [256]rune
-	for b := Token(0); b < 256; b++ {
-		if _, ok := bytesUnicodeMap[uint8(b)]; !ok {
-			bytesUnicodeMap[uint8(b)] = rune(256 + uct)
-			unicodeBytes[rune(256+uct)] = uint8(b)
-			uct += 1
-		}
-		bytesUnicode[b] = bytesUnicodeMap[uint8(b)]
-	}
 
 	cache, _ := lru.New(BPE_LRU_SZ)
 
@@ -275,8 +330,15 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		specials,
 		nil,
 		cache,
+		puncRunes,
+		normalizer,
+		encoderTokens[*hfConfig.BosTokenStr],
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
+		specialConfig.EncloseEosBos,
+		specialConfig.PrefixSpace,
+		specialConfig.LowerCase,
+		specialConfig.EndOfWord,
 		replacements,
 		RUNEBUF_SZ,
 		WORDCHAN_SZ,
@@ -426,10 +488,14 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 	if lookup, ok := encoder.cache.Get(text); ok {
 		return lookup.([]string)
 	}
+	if text == "'the" {
+		print("'t")
+	}
 	word := strings.Split(text, "")
+	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
 	if len(rankedPairs) == 0 {
-		return []string{text}
+		return []string{text + encoder.endOfWord}
 	}
 	for {
 		bigram := rankedPairs[0].bigram
@@ -462,6 +528,10 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 			rankedPairs = encoder.getRankedPairs(word)
 		}
 	}
+	if len(word) > 0 {
+		idx := len(word) - 1
+		word[idx] = word[idx]
+	}
 	encoder.cache.Add(text, word)
 	return word
 }
@@ -480,14 +550,12 @@ func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
 	return lenMap
 }
 
-// WordSplitter
-// Returns an iterator function that reads from an io.RuneReader and splits
-// the input into words. Each invocation of the iterator function returns
-// one word or nil if there are no more words.
-func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
-	wordsAccumulator := make(chan string, encoder.wordChanSz)
+type NextRuneFunc func() (rune, int, error)
+type WordCallback func(*string)
 
-	wordSplitter := func() {
+func (encoder *GPTEncoder) makeWordSplitter(nextRuneFunc NextRuneFunc,
+	wordCallback WordCallback) func() {
+	return func() {
 		specialsRuneRoot := encoder.specialsTree
 		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
 		specialToken := false
@@ -496,10 +564,11 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 			// Let's collect runes until we reach the end of our IO stream, or
 			// hit a newline.
 			for {
-				r, size, err := reader.ReadRune()
+				r, size, err := nextRuneFunc()
 				if size == 0 || err != nil {
 					break
 				}
+
 				runeAccumulator = append(runeAccumulator, r)
 				specialsNode, specialToken = specialsRuneRoot.evaluate(
 					specialsNode, r)
@@ -511,7 +580,7 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 			// If we have no runes, then we've hit an error, or reached the end
 			// of our IO stream.
 			if len(runeAccumulator) == 0 {
-				close(wordsAccumulator)
+				wordCallback(nil)
 				break
 			}
 
@@ -532,18 +601,38 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 			for replaced, replacement := range encoder.replacements {
 				line = strings.ReplaceAll(line, replaced, replacement)
 			}
+			dbg := false
+			if strings.Index(line, "and related to none") != -1 {
+				dbg = true
+			}
 
+			line = encoder.Normalizer.Replace(line)
 			// We split all words before the special token in question, and
 			// accumulate them.
 			idxes := encoder.pattern.FindAllStringIndex(line, -1)
 			for idx := range idxes {
 				word := line[idxes[idx][0]:idxes[idx][1]]
-				wordsAccumulator <- word
+				if encoder.lowerCase {
+					word = strings.ToLower(word)
+				}
+
+				if dbg {
+					fmt.Printf("%s\n", word)
+				}
+
+				if !encoder.prefixSpace {
+					word = strings.TrimSpace(word)
+				}
+
+				if len(word) > 0 {
+					wordCallback(&word)
+				}
 			}
 
 			// Finally, if we have a special token, we cap it off.
 			if specialToken {
-				wordsAccumulator <- string(specialsNode.runes)
+				runeString := string(specialsNode.runes)
+				wordCallback(&runeString)
 			}
 
 			// Reset our special tokens state.
@@ -551,7 +640,25 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 			specialToken = false
 		}
 	}
+}
 
+// WordSplitter
+// Returns an iterator function that reads from an io.RuneReader and splits
+// the input into words. Each invocation of the iterator function returns
+// one word or nil if there are no more words.
+func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
+	wordsAccumulator := make(chan string, encoder.wordChanSz)
+	wordSplitter := encoder.makeWordSplitter(
+		func() (rune, int, error) {
+			return reader.ReadRune()
+		},
+		func(word *string) {
+			if word != nil {
+				wordsAccumulator <- *word
+			} else {
+				close(wordsAccumulator)
+			}
+		})
 	go wordSplitter()
 
 	return func() *string {
@@ -599,6 +706,10 @@ func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
 	accumulator := make(Tokens, 0, 16384)
+	eosReturned := false
+	if encoder.encloseEosBos {
+		accumulator = append(accumulator, encoder.BosToken)
+	}
 	return func(desiredTokens int) *Tokens {
 		for {
 			// If we have enough tokens, then we return them, and reset the
@@ -612,6 +723,10 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			word := nextWord()
 			// If we have no word, then we're done.
 			if word == nil {
+				if encoder.encloseEosBos && !eosReturned {
+					accumulator = append(accumulator, encoder.EosToken)
+					eosReturned = true
+				}
 				// If we have any tokens left, then we return them.
 				if len(accumulator) > 0 {
 					chunk := accumulator
@@ -687,26 +802,62 @@ func (encoder *GPTEncoder) Get(text string) *Token {
 
 // Decode Tokens back into a string, handling unicode.
 func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
-	// First convert our `Token` tokens into an 8-bit byte array.
-	bs := make([]byte, 0, len(*encoded))
-	for idx := range *encoded {
-		if v, ok := encoder.decoder[(*encoded)[idx]]; ok {
-			for bIdx := range v {
-				bs = append(bs, v[bIdx])
+	// Check if we have an end of word token defined.
+	convertEndOfWord := false
+	if encoder.endOfWord != "" {
+		convertEndOfWord = true
+	}
+	// Accumulate tokens until it is unicode complete.
+	tokensAcc := make(Tokens, 0)
+	runesAcc := make([]rune, 0)
+
+	for _, token := range *encoded {
+		tokensAcc = append(tokensAcc, token)
+		if encoder.TokensReady(&tokensAcc) {
+			bs := make([]byte, 0, 32)
+			for _, safeToken := range tokensAcc {
+				if v, ok := encoder.decoder[safeToken]; ok {
+					bs = append(bs, v...)
+				}
 			}
+			// Convert our bytearray to string, interpreting as UTF-8 and then
+			// to 32-bit runes.
+			runes := []rune(string(bs))
+			decoded := make([]byte, len(runes))
+			// Convert our runes into 8-bit bytes using a 256-slot lookup table.
+			for runeIdx := range runes {
+				decoded[runeIdx] = encoder.runeToByte[runes[runeIdx]]
+			}
+			// Decode our final token representation into a Unicode string.
+			fragment := string(decoded)
+			fragmentAsRunes := []rune(fragment)
+
+			if convertEndOfWord {
+				if strings.HasSuffix(fragment, encoder.endOfWord) {
+					fragmentAsRunes = fragmentAsRunes[:len(fragmentAsRunes)-len(
+						encoder.endOfWord)]
+					if len(fragmentAsRunes) == 1 && fragmentAsRunes[0] == '\'' {
+						print("foo")
+					} else {
+						fragmentAsRunes = append(fragmentAsRunes, ' ')
+					}
+				}
+				if len(fragmentAsRunes) == 1 &&
+					unicode.IsNumber(fragmentAsRunes[0]) {
+					fragmentAsRunes = append(fragmentAsRunes, ' ')
+				}
+				if len(runesAcc) > 1 && runeIsIn(fragmentAsRunes[0],
+					encoder.PuncRunes) && unicode.IsSpace(runesAcc[len(
+					runesAcc)-1]) {
+					runesAcc = runesAcc[:len(runesAcc)-1]
+				}
+			}
+			runesAcc = append(runesAcc, fragmentAsRunes...)
+			tokensAcc = tokensAcc[:0]
 		}
 	}
-	// Convert our bytearray to string, interpreting as UTF-8 and then to
-	// 32-bit runes.
-	runes := []rune(string(bs))
-	decoded := make([]byte, len(runes))
-	// Convert our runes into 8-bit bytes using a 256-slot lookup table.
-	for runeIdx := range runes {
-		decoded[runeIdx] = encoder.runeToByte[runes[runeIdx]]
-	}
-	// Decode our final representation into an Unicode string.
-	text = string(decoded)
-	return text
+
+	return string(runesAcc)
 }
 
 // DecodeBuffer
@@ -767,6 +918,8 @@ func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
 
 var GPT2Encoder = NewGPT2Encoder()
 var PileEncoder = NewPileEncoder()
+var CLIPEncoder = NewCLIPEncoder()
 var blankString = ""
 var _ = GPT2Encoder.Encode(&blankString)
 var _ = PileEncoder.Encode(&blankString)
+var _ = CLIPEncoder.Encode(&blankString)

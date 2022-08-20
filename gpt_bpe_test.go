@@ -13,13 +13,16 @@ import (
 	"time"
 )
 
+var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
 var corpus string
+var clipCorpus string
 
 // var corpus2 string
 var gpt2Encoded *Tokens
 var pileEncoded *Tokens
+var clipEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
 func handleRead(path string) []byte {
@@ -50,11 +53,36 @@ func loadUnicodeTrimTests(path string) []*Tokens {
 	return tests
 }
 
+func Chunks(s string, chunkSize int) []string {
+	if len(s) == 0 {
+		return nil
+	}
+	if chunkSize >= len(s) {
+		return []string{s}
+	}
+	var chunks []string = make([]string, 0, (len(s)-1)/chunkSize+1)
+	currentLen := 0
+	currentStart := 0
+	for i := range s {
+		if currentLen == chunkSize {
+			chunks = append(chunks, s[currentStart:i])
+			currentLen = 0
+			currentStart = i
+		}
+		currentLen++
+	}
+	chunks = append(chunks, s[currentStart:])
+	return chunks
+}
+
 func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
+	clipEncoder = NewCLIPEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
+	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
+	clipCorpus = string(clipBytes)
 	unicodeTrimTests = loadUnicodeTrimTests("resources/trim_tests.jsonl")
 }
 
@@ -238,21 +266,27 @@ type EncoderTest struct {
 	Input        string
 	GPT2Expected Tokens
 	PileExpected Tokens
+	CLIPExpected Tokens
 }
 
 var GPTEncoderTests = []EncoderTest{
 	{"… …",
 		Tokens{1399, 3926},
-		Tokens{2866, 8139}},
+		Tokens{2866, 8139},
+		Tokens{49406, 959, 959, 49407}},
 	{"<|endoftext|>",
 		Tokens{50256},
-		Tokens{0}},
+		Tokens{0},
+		Tokens{49406, 49407, 49407}},
 	{" <|endoftext|>\n<|endoftext|>foo",
 		Tokens{220, 50256, 198, 50256, 21943},
-		Tokens{209, 0, 187, 0, 12110}},
+		Tokens{209, 0, 187, 0, 12110},
+		Tokens{49406, 49407, 49407, 23435, 49407}},
 	{" <|padding|>test",
 		Tokens{1279, 91, 39231, 91, 29, 9288},
-		Tokens{209, 1, 2566}},
+		Tokens{209, 1, 2566},
+		Tokens{49406, 27, 347, 3798, 796, 91, 285, 1628, 49407},
+	},
 }
 
 func BenchmarkGPTEncoder_Encode(b *testing.B) {
@@ -302,6 +336,20 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 		len(corpus), tokenCt, duration))
 }
 
+func TestCLIPEncoder_Encode(t *testing.T) {
+	start := time.Now()
+	tokenCt := len(*clipEncoder.Encode(&corpus))
+	duration := time.Since(start)
+	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
+	for testIdx := range GPTEncoderTests {
+		testStr := fmt.Sprintf("%s",
+			GPTEncoderTests[testIdx].Input)
+		tokensPtr := *clipEncoder.Encode(&testStr)
+		assert.Equal(t, GPTEncoderTests[testIdx].CLIPExpected, tokensPtr)
+	}
+}
+
 func TestPileEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*pileEncoder.Encode(&corpus))
@@ -311,7 +359,7 @@ func TestPileEncoder_Encode(t *testing.T) {
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *pileEncoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
-		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].PileExpected)
+		assert.Equal(t, GPTEncoderTests[testIdx].PileExpected, tokensPtr)
 	}
 }
 
@@ -323,7 +371,7 @@ func TestGPTEncoder_Decode2(t *testing.T) {
 	} else {
 		tokens := TokensFromBin(&binTokens)
 		tokens, err = gpt2Encoder.TrimIncompleteSentence(tokens)
-		assert.Equal(t, decodedCorpus, gpt2Encoder.Decode(tokens))
+		assert.Equal(t, gpt2Encoder.Decode(tokens), decodedCorpus)
 	}
 }
 
@@ -341,6 +389,29 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	assert.Equal(t, corpus, decoded)
 }
 
+func TestCLIPEncoder_Decode(t *testing.T) {
+	if clipEncoded == nil {
+		corpEncoded := clipEncoder.Encode(&corpus)
+		clipEncoded = corpEncoded
+	}
+	start := time.Now()
+	decoded := clipEncoder.Decode(clipEncoded)
+	duration := time.Since(start)
+	tokenNumBytes := len(decoded)
+	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
+		len(*clipEncoded), tokenNumBytes, duration))
+	// clipCorpusChunks := Chunks(clipCorpus, 80)
+	// decodedChunks := Chunks(decoded, 80)
+	for idx := range clipCorpus {
+		if clipCorpus[idx] != decoded[idx] {
+			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
+				decoded[idx-20:idx+20])
+			return
+		}
+	}
+	// assert.Equal(t, clipCorpus, decoded)
+}
+
 func TestPileEncoder_Decode(t *testing.T) {
 	if pileEncoded == nil {
 		corpEncoded := pileEncoder.Encode(&corpus)
@@ -352,7 +423,20 @@ func TestPileEncoder_Decode(t *testing.T) {
 	tokenNumBytes := len(decoded)
 	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
 		len(*pileEncoded), tokenNumBytes, duration))
-	assert.Equal(t, corpus, decoded)
+	range_data := corpus
+	if len(corpus) > len(decoded) {
+		range_data = decoded
+	}
+	if len(corpus) != len(decoded) {
+		t.Errorf(fmt.Sprintf("%v != %v", len(corpus), len(decoded)))
+	}
+	for idx := range range_data {
+		if corpus[idx] != decoded[idx] {
+			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
+				decoded[idx-20:idx+20])
+			return
+		}
+	}
 }
 
 func TestGPTEncoder_TokensReady(t *testing.T) {
