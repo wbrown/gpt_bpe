@@ -1,0 +1,11 @@
+{
+  "punc_runes": [ ",", ".", "!", "?", "'" ],
+  "normalizer": 	{ "‘": "'",
+    "’": "'",
+    "“": "\"",
+    "”": "\""},
+  "enclose_eos_bos": true,
+  "prefix_space": false,
+  "lower_case": true,
+  "end_of_word": "</w>"
+}

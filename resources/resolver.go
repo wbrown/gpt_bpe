@@ -342,11 +342,22 @@ type HFConfig struct {
 	EosTokenId     *uint16 `json:"eos_token_id,omitempty"`
 	BosTokenId     *uint16 `json:"bos_token_id,omitempty"`
 	PadTokenId     *uint16 `json:"pad_token_id,omitempty"`
+	BosTokenStr    *string `json:"bos_token,omitempty"`
 	EosTokenStr    *string `json:"eos_token,omitempty"`
 	PadTokenStr    *string `json:"pad_token,omitempty"`
 	VocabSize      *uint16 `json:"vocab_size,omitempty"`
 	Newlinemode    *string `json:"newlinemode,omitempty"`
 	TokenizerClass *string `json:"tokenizer_class"`
+}
+
+// Additional special tokenizer configuration.
+type SpecialConfig struct {
+	PuncRunes     []*string          `json:"punc_runes"`
+	Normalizer    *map[string]string `json:"normalizer"`
+	EncloseEosBos bool               `json:"enclose_eos_bos"`
+	PrefixSpace   bool               `json:"prefix_space"`
+	LowerCase     bool               `json:"lower_case"`
+	EndOfWord     string             `json:"end_of_word"`
 }
 
 // ResolveConfig
@@ -390,12 +401,20 @@ func ResolveConfig(vocabId string) (config *HFConfig,
 		padToken = defaultTkn
 	}
 	hfConfig.PadTokenStr = &padToken
+	bosToken, ok := specialTokens["bos_token"]
+	if !ok {
+		bosToken = defaultTkn
+	}
+	hfConfig.BosTokenStr = &bosToken
 
 	if hfConfig.EosTokenStr == nil {
 		hfConfig.EosTokenStr = &defaultTkn
 	}
 	if hfConfig.PadTokenStr == nil {
 		hfConfig.PadTokenStr = &defaultTkn
+	}
+	if hfConfig.BosTokenStr == nil {
+		hfConfig.BosTokenStr = &defaultTkn
 	}
 
 	return &hfConfig, resources, nil
@@ -408,20 +427,26 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	var resolvedVocabId string
 	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		endOfText := "<|endoftext|>"
+		bosText := "<|startoftext|>"
 		hf := &HFConfig{
 			ModelId:     &vocabId,
+			BosTokenStr: &bosText,
 			EosTokenStr: &endOfText,
 			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
-		resources["unitrim.json"] = GetEmbeddedResource(
+		resources["unitrim.json"] = *GetEmbeddedResource(
 			vocabId + "/unitrim.json")
-		resources["vocab.json"] = GetEmbeddedResource(
+		resources["vocab.json"] = *GetEmbeddedResource(
 			vocabId + "/encoder.json")
-		resources["merges.txt"] = GetEmbeddedResource(
+		resources["merges.txt"] = *GetEmbeddedResource(
 			vocabId + "/vocab.bpe")
-		resources["specials.txt"] = GetEmbeddedResource(
+		resources["specials.txt"] = *GetEmbeddedResource(
 			vocabId + "/specials.txt")
+		special_config := GetEmbeddedResource(vocabId + "/special_config.json")
+		if special_config != nil {
+			resources["special_config.json"] = *special_config
+		}
 		return hf, &resources, nil
 	} else {
 		log.Printf("%v", vocabErr)
@@ -439,7 +464,7 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	} else {
 		config.ModelId = &resolvedVocabId
 		if _, exists := (*resources)["unitrim.json"]; !exists {
-			(*resources)["unitrim.json"] = GetEmbeddedResource(
+			(*resources)["unitrim.json"] = *GetEmbeddedResource(
 				"gpt2-tokenizer/unitrim.json")
 		}
 		return config, resources, nil
