@@ -19,15 +19,26 @@ import (
 //go:embed data/pile-tokenizer/vocab.bpe
 //go:embed data/pile-tokenizer/unitrim.json
 //go:embed data/pile-tokenizer/specials.txt
+//go:embed data/clip-tokenizer/encoder.json
+//go:embed data/clip-tokenizer/vocab.bpe
+//go:embed data/clip-tokenizer/unitrim.json
+//go:embed data/clip-tokenizer/specials.txt
+//go:embed data/clip-tokenizer/special_config.json
 var f embed.FS
 
 // GetEmbeddedResource
 // Returns a ResourceEntry for the given resource name that is embedded in
 // the binary.
-func GetEmbeddedResource(path string) ResourceEntry {
-	resourceFile, _ := f.Open("data/" + path)
-	resourceBytes, _ := f.ReadFile("data/" + path)
-	return ResourceEntry{&resourceFile, &resourceBytes}
+func GetEmbeddedResource(path string) *ResourceEntry {
+	resourceFile, err := f.Open("data/" + path)
+	if err != nil {
+		return nil
+	}
+	resourceBytes, err := f.ReadFile("data/" + path)
+	if err != nil {
+		return nil
+	}
+	return &ResourceEntry{&resourceFile, &resourceBytes}
 }
 
 // EmbeddedDirExists
