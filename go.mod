@@ -12,7 +12,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/gopherjs/gopherjs v1.17.2
 	github.com/jdkato/prose/v2 v2.0.0
-	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 )
 
 require (
@@ -21,6 +20,7 @@ require (
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/sys v0.0.0-20220727055044-e65921a090b8 // indirect
 	gonum.org/v1/gonum v0.11.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
