@@ -435,14 +435,24 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
-		resources["unitrim.json"] = *GetEmbeddedResource(
-			vocabId + "/unitrim.json")
-		resources["vocab.json"] = *GetEmbeddedResource(
-			vocabId + "/encoder.json")
-		resources["merges.txt"] = *GetEmbeddedResource(
-			vocabId + "/vocab.bpe")
-		resources["specials.txt"] = *GetEmbeddedResource(
-			vocabId + "/specials.txt")
+		if unitrim := GetEmbeddedResource(vocabId + "/unitrim." +
+			"json"); unitrim != nil {
+			resources["unitrim.json"] = *unitrim
+		}
+		if config := GetEmbeddedResource(vocabId + "/config.json"); config != nil {
+			resources["config.json"] = *config
+		}
+		if vocab := GetEmbeddedResource(vocabId + "/vocab.json"); vocab != nil {
+			resources["vocab.json"] = *vocab
+		}
+		if vocab_txt := GetEmbeddedResource(vocabId + "/vocab." +
+			"txt"); vocab_txt != nil {
+			resources["vocab.txt"] = *vocab_txt
+		}
+		if specials := GetEmbeddedResource(vocabId + "/specials." +
+			"txt"); specials != nil {
+			resources["specials.txt"] = *specials
+		}
 		special_config := GetEmbeddedResource(vocabId + "/special_config.json")
 		if special_config != nil {
 			resources["special_config.json"] = *special_config
