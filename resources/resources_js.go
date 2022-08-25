@@ -11,10 +11,13 @@ import (
 // GetEmbeddedResource
 // Returns a ResourceEntry for the given resource name that is embedded in
 // the binary.
-func GetEmbeddedResource(path string) ResourceEntry {
-	resourceBytes, _ := ReadFile(path)
+func GetEmbeddedResource(path string) *ResourceEntry {
+	resourceBytes, err := ReadFile(path)
+	if err != nil {
+		return nil
+	}
 	resourceWrapper := bytes.NewReader(resourceBytes)
-	return ResourceEntry{resourceWrapper, &resourceBytes}
+	return &ResourceEntry{resourceWrapper, &resourceBytes}
 }
 
 // EmbeddedDirExists
