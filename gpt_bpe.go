@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
 	"io"
@@ -488,9 +487,6 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 	if lookup, ok := encoder.cache.Get(text); ok {
 		return lookup.([]string)
 	}
-	if text == "'the" {
-		print("'t")
-	}
 	word := strings.Split(text, "")
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
@@ -601,10 +597,6 @@ func (encoder *GPTEncoder) makeWordSplitter(nextRuneFunc NextRuneFunc,
 			for replaced, replacement := range encoder.replacements {
 				line = strings.ReplaceAll(line, replaced, replacement)
 			}
-			dbg := false
-			if strings.Index(line, "and related to none") != -1 {
-				dbg = true
-			}
 
 			line = encoder.Normalizer.Replace(line)
 			// We split all words before the special token in question, and
@@ -614,10 +606,6 @@ func (encoder *GPTEncoder) makeWordSplitter(nextRuneFunc NextRuneFunc,
 				word := line[idxes[idx][0]:idxes[idx][1]]
 				if encoder.lowerCase {
 					word = strings.ToLower(word)
-				}
-
-				if dbg {
-					fmt.Printf("%s\n", word)
 				}
 
 				if !encoder.prefixSpace {
@@ -837,7 +825,6 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 					fragmentAsRunes = fragmentAsRunes[:len(fragmentAsRunes)-len(
 						encoder.endOfWord)]
 					if len(fragmentAsRunes) == 1 && fragmentAsRunes[0] == '\'' {
-						print("foo")
 					} else {
 						fragmentAsRunes = append(fragmentAsRunes, ' ')
 					}
