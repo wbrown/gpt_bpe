@@ -439,19 +439,20 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 			"json"); unitrim != nil {
 			resources["unitrim.json"] = *unitrim
 		}
-		if config := GetEmbeddedResource(vocabId + "/config.json"); config != nil {
-			resources["config.json"] = *config
+		if config := GetEmbeddedResource(vocabId + "/encoder." +
+			"json"); config != nil {
+			resources["vocab.json"] = *config
 		}
-		if vocab := GetEmbeddedResource(vocabId + "/vocab.json"); vocab != nil {
-			resources["vocab.json"] = *vocab
+		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
+			resources["merges.txt"] = *vocab
 		}
-		if vocab_txt := GetEmbeddedResource(vocabId + "/vocab." +
-			"txt"); vocab_txt != nil {
-			resources["vocab.txt"] = *vocab_txt
+		if specials_t := GetEmbeddedResource(vocabId + "/specials.txt");
+			specials_t != nil {
+			resources["specials.txt"] = *specials_t
 		}
-		if specials := GetEmbeddedResource(vocabId + "/specials." +
-			"txt"); specials != nil {
-			resources["specials.txt"] = *specials
+		if specials := GetEmbeddedResource(vocabId + "/special_tokens_map." +
+			"json"); specials != nil {
+			resources["special_tokens_map.json"] = *specials
 		}
 		special_config := GetEmbeddedResource(vocabId + "/special_config.json")
 		if special_config != nil {
