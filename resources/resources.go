@@ -59,7 +59,9 @@ func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
 	if reqErr != nil {
 		return nil, reqErr
 	}
-	req.Header.Add("authorization", "Bearer "+auth)
+	if auth != "" {
+		req.Header.Add("Authorization", "Bearer "+auth)
+	}
 	resp, remoteErr := http.DefaultClient.Do(req)
 	if remoteErr != nil {
 		return nil, remoteErr
@@ -71,7 +73,6 @@ func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-
 // SizeHTTP
 // Get the size of a resource from a remote HTTP server with bearer token auth.
 func SizeHTTP(uri string, rsrc string, auth string) (uint, error) {
@@ -79,7 +80,9 @@ func SizeHTTP(uri string, rsrc string, auth string) (uint, error) {
 	if reqErr != nil {
 		return 0, reqErr
 	}
-	req.Header.Add("authorization", "Bearer "+auth)
+	if auth != "" {
+		req.Header.Add("Authorization", "Bearer "+auth)
+	}
 	resp, remoteErr := http.DefaultClient.Do(req)
 	if remoteErr != nil {
 		return 0, remoteErr
