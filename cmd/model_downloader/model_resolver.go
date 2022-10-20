@@ -30,12 +30,15 @@ func main() {
 		rsrcType = resources.RESOURCETYPE_DIFFUSERS
 	default:
 		flag.Usage()
-		log.Fatal("Invalid -type")
+		log.Fatalf("Invalid model type: %s", *modelType)
 	}
+	
+	// get HF_API_TOKEN from env for huggingface auth
+	hfApiToken := os.Getenv("HF_API_TOKEN")
 
 	os.MkdirAll(*destPath, 0755)
 	_, rsrcErr := resources.ResolveResources(*modelId, destPath,
-		resources.RESOURCE_MODEL, rsrcType)
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
 		fmt.Sprintf("Error downloading model resources: %s", rsrcErr)
 	}

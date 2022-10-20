@@ -97,7 +97,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 	case RESOURCETYPE_DIFFUSERS:
 		return ResourceEntryDefs{
 			"feature_extractor/preprocessor_config.json": RESOURCE_REQUIRED,
-			"safety_checker/config.json":				  RESOURCE_OPTIONAL,
+			"safety_checker/config.json":                 RESOURCE_OPTIONAL,
 			"safety_checker/pytorch_model.json":          RESOURCE_OPTIONAL,
 			"scheduler/scheduler_config.json":            RESOURCE_OPTIONAL,
 			"text_encoder/config.json":                   RESOURCE_REQUIRED,
@@ -105,7 +105,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"tokenizer/merges.txt":                       RESOURCE_REQUIRED,
 			"tokenizer/special_tokens_map.json":          RESOURCE_REQUIRED,
 			"tokenizer/tokenizer_config.json":            RESOURCE_REQUIRED,
-			"tokenizer/vocab.json":                   	  RESOURCE_REQUIRED,
+			"tokenizer/vocab.json":                       RESOURCE_REQUIRED,
 			"unet/config.json":                           RESOURCE_REQUIRED,
 			"unet/diffusion_pytorch_model.bin":           RESOURCE_MODEL,
 			"vae/config.json":                            RESOURCE_REQUIRED,
@@ -150,8 +150,7 @@ func isValidUrl(toTest string) bool {
 // file handle to the resource. If the resource is remote, or from
 // huggingface.co, it fetches the resource and returns a ReadCloser to the
 // fetched or cached resource.
-func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
-	token := os.Getenv("HF_API_TOKEN")
+func Fetch(uri string, rsrc string, token string) (io.ReadCloser, error) {
 	if isValidUrl(uri) {
 		return FetchHTTP(uri, rsrc, token)
 	} else if _, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
@@ -169,8 +168,7 @@ func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 
 // Size
 // Given a base URI and a resource name, determine the size of the resource.
-func Size(uri string, rsrc string) (uint, error) {
-	token := os.Getenv("HF_API_TOKEN")
+func Size(uri string, rsrc string, token string) (uint, error) {
 	if isValidUrl(uri) {
 		return SizeHTTP(uri, rsrc, token)
 	} else if fsz, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
@@ -286,7 +284,7 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 // ResolveResources resolves all resources at a given uri, and checks if they
 // exist in the given directory. If they don't exist, they are downloaded.
 func ResolveResources(uri string, dir *string,
-	rsrcLvl ResourceFlag, rsrcType ResourceType) (*Resources,
+	rsrcLvl ResourceFlag, rsrcType ResourceType, token string) (*Resources,
 	error) {
 	foundResources := make(Resources, 0)
 	resources := GetResourceEntries(rsrcType)
@@ -296,7 +294,7 @@ func ResolveResources(uri string, dir *string,
 		if flag <= rsrcLvl {
 			log.Printf("Resolving %s/%s... ", uri, file)
 			targetPath := path.Join(*dir, file)
-			rsrcSize, rsrcSizeErr := Size(uri, file)
+			rsrcSize, rsrcSizeErr := Size(uri, file, token)
 			if rsrcSizeErr != nil {
 				if flag&RESOURCE_REQUIRED != 0 {
 					log.Printf("%s/%s not found, required!",
@@ -324,7 +322,7 @@ func ResolveResources(uri string, dir *string,
 				} else {
 					rsrcFile = *openFile
 				}
-			} else if rsrcReader, rsrcErr := Fetch(uri, file); rsrcErr != nil {
+			} else if rsrcReader, rsrcErr := Fetch(uri, file, token); rsrcErr != nil {
 				return &foundResources, errors.New(
 					fmt.Sprintf(
 						"cannot retrieve `%s` from `%s`: %s",
@@ -402,14 +400,14 @@ type SpecialConfig struct {
 // ResolveConfig
 // Resolves a given vocabulary id, and returns the corresonding HuggingFace
 // configuration, and the resources for the tokenizer.
-func ResolveConfig(vocabId string) (config *HFConfig,
+func ResolveConfig(vocabId string, token string) (config *HFConfig,
 	resources *Resources, err error) {
 	dir, dirErr := ioutil.TempDir("", "resources")
 	if dirErr != nil {
 		return nil, nil, dirErr
 	}
 	defer os.RemoveAll(dir)
-	rslvdResources, rsrcErr := ResolveResources(vocabId, &dir, RESOURCE_DERIVED, RESOURCETYPE_TRANSFORMERS)
+	rslvdResources, rsrcErr := ResolveResources(vocabId, &dir, RESOURCE_DERIVED, RESOURCETYPE_TRANSFORMERS, token)
 	if rsrcErr != nil {
 		return nil, nil, rsrcErr
 	} else {
@@ -462,7 +460,7 @@ func ResolveConfig(vocabId string) (config *HFConfig,
 // ResolveVocabId
 // Resolves a vocabulary id to a set of resources, from embedded,
 // local filesystem, or remote.
-func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
+func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error) {
 	var resolvedVocabId string
 	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		endOfText := "<|endoftext|>"
@@ -485,8 +483,7 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
 			resources["merges.txt"] = *vocab
 		}
-		if specials_t := GetEmbeddedResource(vocabId + "/specials.txt");
-			specials_t != nil {
+		if specials_t := GetEmbeddedResource(vocabId + "/specials.txt"); specials_t != nil {
 			resources["specials.txt"] = *specials_t
 		}
 		if specials := GetEmbeddedResource(vocabId + "/special_tokens_map." +
@@ -508,7 +505,7 @@ func ResolveVocabId(vocabId string) (*HFConfig, *Resources, error) {
 	} else {
 		resolvedVocabId = vocabId
 	}
-	config, resources, err := ResolveConfig(vocabId)
+	config, resources, err := ResolveConfig(vocabId, token)
 	if err != nil {
 		return nil, nil, err
 	} else {
