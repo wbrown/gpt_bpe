@@ -16,6 +16,7 @@ import (
 )
 
 type ResourceFlag uint8
+type ResourceType uint8
 
 // WriteCounter counts the number of bytes written to it, and every 10 seconds,
 // it prints a message reporting the number of bytes written so far.
@@ -49,6 +50,12 @@ const (
 	RESOURCE_ONEOF
 )
 
+// Enumeration of different types of models
+const (
+	RESOURCETYPE_TRANSFORMERS ResourceType = 1 << iota
+	RESOURCETYPE_DIFFUSERS
+)
+
 type ResourceEntryDefs map[string]ResourceFlag
 type ResourceEntry struct {
 	file interface{}
@@ -71,32 +78,56 @@ func (rsrcs *Resources) Cleanup() {
 
 // GetResourceEntries
 // Returns a default map of resource entries that express what files are
-// required, optional, derived, and/or model resources.
-func GetResourceEntries() ResourceEntryDefs {
-	return ResourceEntryDefs{
-		"config.json":             RESOURCE_REQUIRED,
-		"vocab.json":              RESOURCE_REQUIRED,
-		"merges.txt":              RESOURCE_REQUIRED,
-		"special_tokens_map.json": RESOURCE_OPTIONAL,
-		"unitrim.json":            RESOURCE_OPTIONAL,
-		"wordtokens.json":         RESOURCE_OPTIONAL,
-		"specials.txt":            RESOURCE_OPTIONAL | RESOURCE_DERIVED,
-		"tokenizer_config.json":   RESOURCE_OPTIONAL,
-		"tokenizer.json":          RESOURCE_OPTIONAL,
-		"pytorch_model.bin":       RESOURCE_MODEL,
+// required, optional, derived, and/or model resources. Requires a resourcetype.
+func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
+	switch typ {
+	case RESOURCETYPE_TRANSFORMERS:
+		return ResourceEntryDefs{
+			"config.json":             RESOURCE_REQUIRED,
+			"vocab.json":              RESOURCE_REQUIRED,
+			"merges.txt":              RESOURCE_REQUIRED,
+			"special_tokens_map.json": RESOURCE_OPTIONAL,
+			"unitrim.json":            RESOURCE_OPTIONAL,
+			"wordtokens.json":         RESOURCE_OPTIONAL,
+			"specials.txt":            RESOURCE_OPTIONAL | RESOURCE_DERIVED,
+			"tokenizer_config.json":   RESOURCE_OPTIONAL,
+			"tokenizer.json":          RESOURCE_OPTIONAL,
+			"pytorch_model.bin":       RESOURCE_MODEL,
+		}
+	case RESOURCETYPE_DIFFUSERS:
+		return ResourceEntryDefs{
+			"feature_extractor/preprocessor_config.json": RESOURCE_REQUIRED,
+			"safety_checker/config.json":				  RESOURCE_OPTIONAL,
+			"safety_checker/pytorch_model.json":          RESOURCE_OPTIONAL,
+			"scheduler/scheduler_config.json":            RESOURCE_OPTIONAL,
+			"text_encoder/config.json":                   RESOURCE_REQUIRED,
+			"text_encoder/pytorch_model.bin":             RESOURCE_MODEL,
+			"tokenizer/merges.txt":                       RESOURCE_REQUIRED,
+			"tokenizer/special_tokens_map.json":          RESOURCE_REQUIRED,
+			"tokenizer/tokenizer_config.json":            RESOURCE_REQUIRED,
+			"tokenizer/vocab.json":                   	  RESOURCE_REQUIRED,
+			"unet/config.json":                           RESOURCE_REQUIRED,
+			"unet/diffusion_pytorch_model.bin":           RESOURCE_MODEL,
+			"vae/config.json":                            RESOURCE_REQUIRED,
+			"vae/diffusion_pytorch_model.bin":            RESOURCE_MODEL,
+		}
+	default:
+		return ResourceEntryDefs{}
 	}
 }
 
 // FetchHuggingFace
 // Wrapper around FetchHTTP that fetches a resource from huggingface.co.
 func FetchHuggingFace(id string, rsrc string) (io.ReadCloser, error) {
-	return FetchHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
+	token := os.Getenv("HF_API_TOKEN")
+	return FetchHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc, token)
 }
 
 // SizeHuggingFace
 // Wrapper around SizeHTTP that gets the size of a resource from huggingface.co.
 func SizeHuggingFace(id string, rsrc string) (uint, error) {
-	return SizeHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc)
+	token := os.Getenv("HF_API_TOKEN")
+	return SizeHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc, token)
 }
 
 func isValidUrl(toTest string) bool {
@@ -120,8 +151,9 @@ func isValidUrl(toTest string) bool {
 // huggingface.co, it fetches the resource and returns a ReadCloser to the
 // fetched or cached resource.
 func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
+	token := os.Getenv("HF_API_TOKEN")
 	if isValidUrl(uri) {
-		return FetchHTTP(uri, rsrc)
+		return FetchHTTP(uri, rsrc, token)
 	} else if _, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
 		if handle, fileErr := os.Open(path.Join(uri, rsrc)); fileErr != nil {
 			return nil, errors.New(
@@ -138,8 +170,9 @@ func Fetch(uri string, rsrc string) (io.ReadCloser, error) {
 // Size
 // Given a base URI and a resource name, determine the size of the resource.
 func Size(uri string, rsrc string) (uint, error) {
+	token := os.Getenv("HF_API_TOKEN")
 	if isValidUrl(uri) {
-		return SizeHTTP(uri, rsrc)
+		return SizeHTTP(uri, rsrc, token)
 	} else if fsz, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
 		return uint(fsz.Size()), nil
 	} else {
@@ -253,10 +286,10 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 // ResolveResources resolves all resources at a given uri, and checks if they
 // exist in the given directory. If they don't exist, they are downloaded.
 func ResolveResources(uri string, dir *string,
-	rsrcLvl ResourceFlag) (*Resources,
+	rsrcLvl ResourceFlag, rsrcType ResourceType) (*Resources,
 	error) {
 	foundResources := make(Resources, 0)
-	resources := GetResourceEntries()
+	resources := GetResourceEntries(rsrcType)
 
 	for file, flag := range resources {
 		var rsrcFile os.File
@@ -297,6 +330,12 @@ func ResolveResources(uri string, dir *string,
 						"cannot retrieve `%s` from `%s`: %s",
 						uri, file, rsrcErr))
 			} else {
+				if dirErr := os.MkdirAll(
+					path.Dir(path.Join(*dir, file)), 0755); dirErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("cannot create directory for '%s': %s",
+							file, dirErr))
+				}
 				openFile, rsrcFileErr := os.OpenFile(
 					path.Join(*dir, file),
 					os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
@@ -370,7 +409,7 @@ func ResolveConfig(vocabId string) (config *HFConfig,
 		return nil, nil, dirErr
 	}
 	defer os.RemoveAll(dir)
-	rslvdResources, rsrcErr := ResolveResources(vocabId, &dir, RESOURCE_DERIVED)
+	rslvdResources, rsrcErr := ResolveResources(vocabId, &dir, RESOURCE_DERIVED, RESOURCETYPE_TRANSFORMERS)
 	if rsrcErr != nil {
 		return nil, nil, rsrcErr
 	} else {
