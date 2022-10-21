@@ -36,12 +36,12 @@ func EmbeddedDirExists(path string) (bool, error) {
 
 // FetchHTTP
 // Stub for fetching a resource from a remote HTTP server.
-func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
+func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
 	return nil, errors.New("FetchHTTP not implemented")
 }
 
 // SizeHTTP
 // Stub for getting the size of a resource from a remote HTTP server.
-func SizeHTTP(uri string, rsrc string) (uint, error) {
+func SizeHTTP(uri string, rsrc string, auth string) (uint, error) {
 	return 0, errors.New("SizeHTTP not implemented")
 }
