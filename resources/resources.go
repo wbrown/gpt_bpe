@@ -53,12 +53,20 @@ func EmbeddedDirExists(path string) (bool, error) {
 }
 
 // FetchHTTP
-// Fetch a resource from a remote HTTP server.
-func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
-	resp, remoteErr := http.Get(uri + "/" + rsrc)
+// Fetch a resource from a remote HTTP server with bearer token auth.
+func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
+	req, reqErr := http.NewRequest("GET", uri+"/"+rsrc, nil)
+	if reqErr != nil {
+		return nil, reqErr
+	}
+	if auth != "" {
+		req.Header.Add("Authorization", "Bearer "+auth)
+	}
+	resp, remoteErr := http.DefaultClient.Do(req)
 	if remoteErr != nil {
 		return nil, remoteErr
-	} else if resp.StatusCode != 200 {
+	}
+	if resp.StatusCode != 200 {
 		return nil, errors.New(fmt.Sprintf("HTTP status code %d",
 			resp.StatusCode))
 	}
@@ -66,9 +74,16 @@ func FetchHTTP(uri string, rsrc string) (io.ReadCloser, error) {
 }
 
 // SizeHTTP
-// Get the size of a resource from a remote HTTP server.
-func SizeHTTP(uri string, rsrc string) (uint, error) {
-	resp, remoteErr := http.Head(uri + "/" + rsrc)
+// Get the size of a resource from a remote HTTP server with bearer token auth.
+func SizeHTTP(uri string, rsrc string, auth string) (uint, error) {
+	req, reqErr := http.NewRequest("HEAD", uri+"/"+rsrc, nil)
+	if reqErr != nil {
+		return 0, reqErr
+	}
+	if auth != "" {
+		req.Header.Add("Authorization", "Bearer "+auth)
+	}
+	resp, remoteErr := http.DefaultClient.Do(req)
 	if remoteErr != nil {
 		return 0, remoteErr
 	} else if resp.StatusCode != 200 {
