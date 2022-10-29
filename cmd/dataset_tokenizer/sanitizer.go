@@ -43,7 +43,7 @@ func (runeReader SanitizedRuneReader) nextBuffer() *bytes.Buffer {
 		} else if size == 0 {
 			// No valid rune, and we have stuff in our accumulator, so let's
 			// flush and finish up.
-			text = string((*acc)[:*idx])
+			text = string((*acc)[:idx])
 			*accIdx = 0
 			break
 		} else if r == '\r' {

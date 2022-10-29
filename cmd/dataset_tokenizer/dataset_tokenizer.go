@@ -166,7 +166,7 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 	}
 
 	if sortSpec != "" {
-		if sortSpec == "size_ascending" {
+		if sortSpec == "size_ascending" || sortSpec == "shuffle" {
 			SortPathInfoBySize(matches, true)
 		} else if sortSpec == "size_descending" {
 			SortPathInfoBySize(matches, false)
@@ -476,9 +476,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 // Consumes a ContextsIterator function and serializes the contexts to an
 // aligned binary file.
 func WriteContexts(outPath string, nextContext ContextsIterator,
-	encoder *gpt_bpe.GPTEncoder) (int, error) {
+	encoder *gpt_bpe.GPTEncoder, sampling int, sortSpec string) (int, error) {
 	totalTokens := 0
-	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE,
+	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE,
 		0755)
 	if err != nil {
 		return 0, err
@@ -492,7 +492,12 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 				close(contexts)
 				break
 			} else {
-				contexts <- *context
+				if sampling == 100 {
+					contexts <- *context
+				} else if rand.Intn(100) < sampling {
+					contexts <- *context
+				}
+
 				if encoder != nil {
 					println(len(*context))
 					println("=========================================")
@@ -502,17 +507,79 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 		}
 	}()
 
-	for {
-		context, more := <-contexts
-		if !more {
-			break
+	endpos := 0
+	var buf []byte
+	var contextSize int
+	var target int64
+
+	if sortSpec == "shuffle" {
+		fmt.Printf("Shuffling!\n")
+		for {
+			context, more := <-contexts
+			if !more {
+				break
+			}
+			binContext := context.ToBin()
+			if endpos == 0 {
+				contextSize = len(*binContext)
+				buf = make([]byte, contextSize)
+
+			}
+			if endpos >= 0 {
+				if endpos == 0 {
+					target = 0
+				} else if endpos == 1 {
+					target = int64(contextSize)
+				} else {
+					target = int64(rand.Intn(endpos-1) * contextSize)
+				}
+
+				_, err = outFile.Seek(target, 0)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if endpos > 1 {
+					_, err = outFile.Read(buf)
+					if err != nil {
+						log.Fatal(err)
+					}
+				}
+				_, err = outFile.Seek(target, 0)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if _, writeErr := outFile.Write(*binContext); writeErr != nil {
+					return totalTokens, writeErr
+				}
+
+				_, err = outFile.Seek(int64(endpos*contextSize), 0)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if endpos > 1 {
+					if _, writeErr := outFile.Write(buf[0:contextSize]); writeErr != nil {
+						return totalTokens, writeErr
+					}
+				}
+				totalTokens += len(context)
+			}
+			endpos += 1
+
 		}
-		binContext := context.ToBin()
-		if _, writeErr := outFile.Write(*binContext); writeErr != nil {
-			return totalTokens, writeErr
+	} else {
+		for {
+			context, more := <-contexts
+			if !more {
+				break
+			}
+			binContext := context.ToBin()
+			if _, writeErr := outFile.Write(*binContext); writeErr != nil {
+				return totalTokens, writeErr
+			}
+			totalTokens += len(context)
 		}
-		totalTokens += len(context)
 	}
+
 	return totalTokens, nil
 }
 
@@ -552,18 +619,25 @@ func main() {
 		"sanitize inputs of whitespace issues")
 	reorderPaths := flag.String("reorder", "",
 		"reorder input files to specification [size_ascending, "+
-			"size_descending, name_ascending, name_descending, random, none]")
+			"size_descending, name_ascending, name_descending, random, shuffle, none]")
+	sampling := flag.Int("sampling", 100, "a integer value from 0-100 which tells the tokenizer how many chunks to discard in %, 60 keeps 60% chunks")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
 		log.Fatal("Must provide -input for directory source")
 	}
+	if *sampling > 100 || *sampling < 0 {
+		log.Fatal("Sampling parameter out of the 0-100 bounds")
+	}
+
+	fmt.Printf("||%s||", *reorderPaths)
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&
 			*reorderPaths != "size_descending" &&
 			*reorderPaths != "name_ascending" &&
 			*reorderPaths != "name_descending" &&
 			*reorderPaths != "random" &&
+			*reorderPaths != "shuffle" &&
 			*reorderPaths != "none" {
 			log.Fatal("Invalid reorder specification")
 		}
@@ -623,7 +697,7 @@ func main() {
 		if *showContexts {
 			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
 		}
-		total, writeErr := WriteContexts(*outputFile, contexts, enc)
+		total, writeErr := WriteContexts(*outputFile, contexts, enc, *sampling, *reorderPaths)
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
