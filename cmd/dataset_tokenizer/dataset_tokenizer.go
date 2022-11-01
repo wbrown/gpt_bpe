@@ -5,8 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/wbrown/gpt_bpe"
-	"github.com/yargevad/filepathx"
 	"io"
 	"log"
 	"math/rand"
@@ -14,6 +12,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wbrown/gpt_bpe"
+	"github.com/yargevad/filepathx"
 )
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
@@ -165,8 +166,8 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 		return nil, err
 	}
 
-	if sortSpec != "" {
-		if sortSpec == "size_ascending" || sortSpec == "shuffle" {
+	if sortSpec != "" && sortSpec != "shuffle" {
+		if sortSpec == "size_ascending" {
 			SortPathInfoBySize(matches, true)
 		} else if sortSpec == "size_descending" {
 			SortPathInfoBySize(matches, false)
@@ -476,7 +477,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 // Consumes a ContextsIterator function and serializes the contexts to an
 // aligned binary file.
 func WriteContexts(outPath string, nextContext ContextsIterator,
-	encoder *gpt_bpe.GPTEncoder, sampling int, sortSpec string) (int, error) {
+	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool) (int, error) {
 	totalTokens := 0
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE,
 		0755)
@@ -486,6 +487,7 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	contexts := make(chan gpt_bpe.Tokens, 2)
 
 	go func() {
+		samplingidx := 0
 		for {
 			context := nextContext()
 			if context == nil {
@@ -494,10 +496,12 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 			} else {
 				if sampling == 100 {
 					contexts <- *context
-				} else if rand.Intn(100) < sampling {
+					//ignore every "sampling" percent context
+				} else if samplingidx%(100/sampling) == 0 {
 					contexts <- *context
-				}
 
+				}
+				samplingidx += 1
 				if encoder != nil {
 					println(len(*context))
 					println("=========================================")
@@ -512,72 +516,71 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	var contextSize int
 	var target int64
 
-	if sortSpec == "shuffle" {
-		fmt.Printf("Shuffling!\n")
-		for {
-			context, more := <-contexts
-			if !more {
-				break
-			}
-			binContext := context.ToBin()
+	//We need to shuffle all contexts as they are written
+	for {
+		context, more := <-contexts
+		if !more {
+			break
+		}
+		binContext := context.ToBin()
+		//We keep track of the final file position
+		if endpos == 0 && shuffle {
+			//On the first context, we write the context size and make the buffer
+			contextSize = len(*binContext)
+			buf = make([]byte, contextSize)
+
+		}
+
+		//We need to check the end position because rand.intn will panic if it is 0 or 1
+		if endpos >= 0 {
+			//We will find the random "target" position to write the context
 			if endpos == 0 {
-				contextSize = len(*binContext)
-				buf = make([]byte, contextSize)
-
+				target = 0
+			} else if endpos == 1 {
+				target = int64(contextSize)
+			} else {
+				target = int64(rand.Intn(endpos-1) * contextSize)
 			}
-			if endpos >= 0 {
-				if endpos == 0 {
-					target = 0
-				} else if endpos == 1 {
-					target = int64(contextSize)
-				} else {
-					target = int64(rand.Intn(endpos-1) * contextSize)
-				}
 
-				_, err = outFile.Seek(target, 0)
-				if err != nil {
-					log.Fatal(err)
+			//We read the context at the target position to the buffer
+			if shuffle {
+				if _, err := outFile.Seek(target, 0); err != nil {
+					return totalTokens, err
 				}
 				if endpos > 1 {
-					_, err = outFile.Read(buf)
-					if err != nil {
-						log.Fatal(err)
+					if _, err := outFile.Read(buf); err != nil {
+						return totalTokens, err
 					}
 				}
-				_, err = outFile.Seek(target, 0)
-				if err != nil {
-					log.Fatal(err)
-				}
-				if _, writeErr := outFile.Write(*binContext); writeErr != nil {
-					return totalTokens, writeErr
-				}
+			}
 
-				_, err = outFile.Seek(int64(endpos*contextSize), 0)
-				if err != nil {
-					log.Fatal(err)
+			//We seek back to the target position and write the context
+			if shuffle {
+				if _, err := outFile.Seek(target, 0); err != nil {
+					return totalTokens, err
+				}
+			}
+
+			if _, writeErr := outFile.Write(*binContext); writeErr != nil {
+				return totalTokens, writeErr
+			}
+
+			//We Seek back to the end of the file and write the buffer
+			if shuffle {
+				if _, err := outFile.Seek(int64(endpos*contextSize), 0); err != nil {
+					return totalTokens, err
 				}
 				if endpos > 1 {
 					if _, writeErr := outFile.Write(buf[0:contextSize]); writeErr != nil {
 						return totalTokens, writeErr
 					}
 				}
-				totalTokens += len(context)
 			}
-			endpos += 1
-
-		}
-	} else {
-		for {
-			context, more := <-contexts
-			if !more {
-				break
-			}
-			binContext := context.ToBin()
-			if _, writeErr := outFile.Write(*binContext); writeErr != nil {
-				return totalTokens, writeErr
-			}
+			//We increment the end position and the total tokens written
 			totalTokens += len(context)
 		}
+		endpos += 1
+
 	}
 
 	return totalTokens, nil
@@ -697,7 +700,7 @@ func main() {
 		if *showContexts {
 			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
 		}
-		total, writeErr := WriteContexts(*outputFile, contexts, enc, *sampling, *reorderPaths)
+		total, writeErr := WriteContexts(*outputFile, contexts, enc, *sampling, (*reorderPaths == "shuffle"))
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
