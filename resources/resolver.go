@@ -283,9 +283,16 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 
 // ResolveResources resolves all resources at a given uri, and checks if they
 // exist in the given directory. If they don't exist, they are downloaded.
-func ResolveResources(uri string, dir *string,
-	rsrcLvl ResourceFlag, rsrcType ResourceType, token string) (*Resources,
-	error) {
+func ResolveResources(
+	uri string,
+	dir *string,
+	rsrcLvl ResourceFlag,
+	rsrcType ResourceType,
+	token string,
+) (
+	*Resources,
+	error,
+) {
 	foundResources := make(Resources, 0)
 	resources := GetResourceEntries(rsrcType)
 
@@ -407,7 +414,12 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 		return nil, nil, dirErr
 	}
 	defer os.RemoveAll(dir)
-	rslvdResources, rsrcErr := ResolveResources(vocabId, &dir, RESOURCE_DERIVED, RESOURCETYPE_TRANSFORMERS, token)
+	rslvdResources, rsrcErr := ResolveResources(
+		vocabId,
+		&dir,
+		RESOURCE_DERIVED,
+		RESOURCETYPE_TRANSFORMERS,
+		token)
 	if rsrcErr != nil {
 		return nil, nil, rsrcErr
 	} else {
