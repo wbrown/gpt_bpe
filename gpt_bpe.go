@@ -163,7 +163,8 @@ func (root *RuneNode) evaluate(node *RuneNode, r rune) (*RuneNode, bool) {
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
-	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId)
+	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId,
+		"")
 	if vocabErr != nil {
 		return nil, vocabErr
 	}
