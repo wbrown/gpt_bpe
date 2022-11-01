@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,31 @@ var sanitizerTests = SanitizerTests{
 	{"Extra spaces with newlines",
 		" foo \n   bar\nfoo ",
 		"foo\nbar\nfoo"},
+}
+
+func TokensFromBin(bin *[]byte) *gpt_bpe.Tokens {
+	tokens := make(gpt_bpe.Tokens, 0)
+	buf := bytes.NewReader(*bin)
+	for {
+		var token gpt_bpe.Token
+		if err := binary.Read(buf, binary.LittleEndian, &token); err != nil {
+			break
+		}
+		tokens = append(tokens, token)
+	}
+	return &tokens
+}
+
+// DecodeBuffer
+// Decode Tokens from a byte array into a string.
+func DecodeBuffer(encoded *[]byte) (text string) {
+	// First convert our bytearray into a uint16 `Token` array.
+	tokens := TokensFromBin(encoded)
+	// Decode our tokens into a string.
+	var enc *gpt_bpe.GPTEncoder
+	encoderString := "gpt2"
+	enc, _ = gpt_bpe.NewEncoder(encoderString)
+	return enc.Decode(tokens)
 }
 
 func BenchmarkSanitizeText(b *testing.B) {
@@ -189,7 +215,7 @@ func TestSampling40(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths)
+		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -230,7 +256,7 @@ func TestSampling40(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths)
+		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -240,7 +266,8 @@ func TestSampling40(t *testing.T) {
 			duration, float64(total2)/duration)
 	}
 	percent := (float64(all2) / float64(all1)) * 100
-	log.Printf("Sampling 100 produced %d Tokens, Sampling 40 produced %d tokens, this is roughly %f %%", all1, all2, percent)
+	log.Printf("Sampling 100 produced %d Tokens, Sampling 40 produced %d tokens\n", all1, all2)
+	log.Printf("Roughly %f %%\n", percent)
 	if percent > 55 || percent < 25 {
 		log.Printf("Percent does not match ~40%% (25-55), found to be %f", percent)
 		t.Fail()
@@ -282,7 +309,7 @@ func TestShuffle(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths)
+		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -323,7 +350,7 @@ func TestShuffle(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths)
+		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -350,13 +377,13 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(err2)
 	}
 	defer f2.Close()
-
 	//chunk by chunk verification of shuffle
 	f.Seek(0, 0)
 	var verifymap = make(map[string]bool)
 	buffer := make([]byte, 4096)
 	for {
 		bytesread, err := f.Read(buffer)
+		//break up into tokens
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println(err)
@@ -365,7 +392,10 @@ func TestShuffle(t *testing.T) {
 		}
 		hash := sha256.Sum256(buffer[0 : bytesread-1])
 		sha := hex.EncodeToString(hash[:])
+		//slice := buffer[0 : bytesread-1]
+		//fmt.Printf("STARTHERE-->%v\n", TokensFromBin(&slice))
 		verifymap[sha] = false
+
 	}
 	f2.Seek(0, 0)
 	buffer2 := make([]byte, 4096)
@@ -377,19 +407,22 @@ func TestShuffle(t *testing.T) {
 			}
 			break
 		}
+
 		hash2 := sha256.Sum256(buffer2[0 : bytesread-1])
 		sha2 := hex.EncodeToString(hash2[:])
-		verifymap[sha2] = true
+		if _, ok := verifymap[sha2]; ok {
+			verifymap[sha2] = true
+		}
+
 	}
 
 	for _, value := range verifymap {
 		//fmt.Printf("%s value is %v\n", key, value)
 		if value == false {
-			fmt.Printf("Found failing chunk (chunk didn't match)")
+			fmt.Printf("Found failing chunk (if only 2 fail, this is normal)\n")
 			t.Fail()
 		}
 	}
 
 	fmt.Printf("Using Chunk by chunk hashing, shuffle found to be working as intended!! \n")
-
 }
