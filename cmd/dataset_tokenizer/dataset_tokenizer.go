@@ -494,12 +494,9 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 				close(contexts)
 				break
 			} else {
-				if sampling == 100 {
+				if sampling == 100 || (samplingidx%20) < int(sampling/5) {
 					contexts <- *context
-					//ignore every "sampling" percent context
-				} else if samplingidx%(100/sampling) == 0 {
-					contexts <- *context
-
+					//ignore every "sampling" percent context (rounded to int)
 				}
 				samplingidx += 1
 				if encoder != nil {
