@@ -243,13 +243,13 @@ func TestSampling40(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(inputDir, false,
+	if nextText2, err := ReadTexts(inputDir, false,
 		reorderPaths); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
+			nextText2)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -282,13 +282,13 @@ func TestShuffle(t *testing.T) {
 	textsTokenizer.ContextSize = 2048
 	textsTokenizer.TokenizerId = "gpt2"
 	textsTokenizer.EndOfText = ""
-	textsTokenizer.PadToken = ""
+	textsTokenizer.PadToken = "_"
 	textsTokenizer.Boundary = "\n"
 	textsTokenizer.Unitrim = true
 	textsTokenizer.BoundaryBegin = false
 
 	inputDir := "../../resources"
-	reorderPaths := "size_ascending"
+	reorderPaths := ""
 	sampling := 100
 	outputFile := "noshuffle.chunk"
 
@@ -296,7 +296,7 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(inputDir, false,
+	if nextText, err := ReadTexts(inputDir, true,
 		reorderPaths); err != nil {
 		log.Fatal(err)
 	} else {
@@ -323,7 +323,7 @@ func TestShuffle(t *testing.T) {
 	textsTokenizer2.ContextSize = 2048
 	textsTokenizer2.TokenizerId = "gpt2"
 	textsTokenizer2.EndOfText = ""
-	textsTokenizer2.PadToken = ""
+	textsTokenizer2.PadToken = "_"
 	textsTokenizer2.Boundary = "\n"
 	textsTokenizer2.Unitrim = true
 	textsTokenizer2.BoundaryBegin = false
@@ -337,20 +337,20 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(inputDir, false,
+	if nextText2, err := ReadTexts(inputDir, true,
 		reorderPaths); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
+		contexts2, tokErr := textsTokenizer.TokenizeTexts(
+			nextText2)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		var enc *gpt_bpe.GPTEncoder
+		var enc2 *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
+		total2, writeErr := WriteContexts(outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle")
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -378,6 +378,7 @@ func TestShuffle(t *testing.T) {
 	}
 	defer f2.Close()
 	//chunk by chunk verification of shuffle
+
 	f.Seek(0, 0)
 	var verifymap = make(map[string]bool)
 	buffer := make([]byte, 4096)
@@ -392,34 +393,35 @@ func TestShuffle(t *testing.T) {
 		}
 		hash := sha256.Sum256(buffer[0 : bytesread-1])
 		sha := hex.EncodeToString(hash[:])
-		//slice := buffer[0 : bytesread-1]
-		//fmt.Printf("STARTHERE-->%v\n", TokensFromBin(&slice))
 		verifymap[sha] = false
 
 	}
 	f2.Seek(0, 0)
 	buffer2 := make([]byte, 4096)
 	for {
-		bytesread, err := f2.Read(buffer2)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println(err)
+		bytesread2, err2 := f2.Read(buffer2)
+		if err2 != nil {
+			if err2 != io.EOF {
+				fmt.Println(err2)
 			}
 			break
 		}
 
-		hash2 := sha256.Sum256(buffer2[0 : bytesread-1])
+		hash2 := sha256.Sum256(buffer2[0 : bytesread2-1])
 		sha2 := hex.EncodeToString(hash2[:])
+		//fmt.Printf("SHA256: %s", sha2)
+		//slice2 := buffer2[0 : bytesread2-1]
+		//fmt.Printf("STARTHERE-->%v\n", TokensFromBin(&slice2))
+
 		if _, ok := verifymap[sha2]; ok {
 			verifymap[sha2] = true
 		}
 
 	}
 
-	for _, value := range verifymap {
-		//fmt.Printf("%s value is %v\n", key, value)
+	for key, value := range verifymap {
 		if value == false {
-			fmt.Printf("Found failing chunk (if only 2 fail, this is normal)\n")
+			fmt.Printf("Failed at %s\n", key)
 			t.Fail()
 		}
 	}
