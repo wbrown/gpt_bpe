@@ -521,57 +521,51 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 		}
 		binContext := context.ToBin()
 		//  We keep track of the final file position
-		if endpos == 0 && shuffle {
+		if endpos == 0 {
 			//  On the first context, we write the context size and make the buffer
 			contextSize = len(*binContext)
 			buf = make([]byte, contextSize)
 
 		}
 
-		//  We need to check the end position because rand.intn will panic if it is 0 or 1
-		if endpos >= 0 {
-			//We will find the random "target" position to write the context
-			if endpos == 0 {
-				target = 0
-			} else if endpos == 1 {
-				target = int64(contextSize)
-			} else {
-				target = int64(rand.Intn(endpos-1) * contextSize)
-			}
-
-			//  We read the context at the target position to the buffer
-			if _, err := outFile.Seek(target, 0); err != nil && shuffle {
-				return totalTokens, err
-				if endpos > 1 {
-					if _, err := outFile.Read(buf); err != nil {
-						return totalTokens, err
-					}
-				}
-			}
-
-			//  We seek back to the target position and write the context
-			if _, err := outFile.Seek(target, 0); err != nil && shuffle {
-				return totalTokens, err
-			}
-
-			if _, writeErr := outFile.Write(*binContext); writeErr != nil {
-				return totalTokens, writeErr
-			}
-
-			//  We Seek back to the end of the file and write the buffer
-			if _, err := outFile.Seek(int64(endpos*contextSize), 0); err != nil && shuffle {
-				return totalTokens, err
-				if endpos > 1 {
-					if _, writeErr := outFile.Write(buf[0:contextSize]); writeErr != nil {
-						return totalTokens, writeErr
-					}
-				}
-			}
-			//  We increment the end position and the total tokens written
-			totalTokens += len(context)
+		//we select a random position in the buffer that is a multiple of the context size
+		if endpos == 0 {
+			target = 0
+		} else {
+			target = int64(rand.Intn((endpos)/contextSize)) * int64(contextSize)
 		}
-		endpos += 1
 
+		//if shuffling, we store the context found at the target position in the buffer and write it to the end of the file, writing the new context to the target position
+		if endpos != 0 && shuffle {
+			if _, err := outFile.ReadAt(buf, target); err != nil {
+				return totalTokens, err
+			}
+		} else if shuffle {
+			//write the buffer to the end of the file
+			if _, err := outFile.Write(*binContext); err != nil {
+				return totalTokens, err
+			}
+		}
+
+		if endpos > 0 && shuffle {
+			//overwrite bincontxt to the to the location of the context we just read
+			if _, err := outFile.WriteAt(*binContext, target); err != nil {
+				return totalTokens, err
+			}
+
+			//write the context we just read to the end of the file
+			if _, err := outFile.Write(buf); err != nil {
+				return totalTokens, err
+			}
+		} else if !shuffle {
+			//else, just write the context to the end of the file
+			if _, err := outFile.Write(*binContext); err != nil {
+				return totalTokens, err
+			}
+		}
+
+		totalTokens += len(context)
+		endpos += len(*binContext)
 	}
 
 	return totalTokens, nil
