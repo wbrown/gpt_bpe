@@ -609,7 +609,7 @@ func main() {
 		"reorder input files to specification [size_ascending, "+
 			"size_descending, name_ascending, name_descending, random, shuffle, none]")
 	sampling := flag.Int("sampling", 100, "a integer value from 0-100 "+
-		"which tells the tokenizer how many chunks to discard in %, 60 keeps 60% chunks")
+		"which tells the tokenizer how many chunks to discard in %, 60 keeps 60%% chunks")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -619,7 +619,8 @@ func main() {
 		log.Fatal("Sampling parameter out of the 0-100 bounds")
 	}
 
-	fmt.Printf("||%s||", *reorderPaths)
+	fmt.Printf("Selected Tokenizer Reordering method: %s\n", *reorderPaths)
+	fmt.Printf("Selected Sampling amount (in %% tokens kept): %d\n", *sampling)
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&
 			*reorderPaths != "size_descending" &&
