@@ -16,7 +16,7 @@ import (
 	"unicode"
 )
 
-const BPE_LRU_SZ = 8192
+const BPE_LRU_SZ = 65536
 const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
 
@@ -35,7 +35,7 @@ type GPTEncoder struct {
 	runeToByte    map[rune]byte
 	specials      map[string]Tokens
 	specialsTree  *RuneNode
-	cache         *lru.Cache
+	cache         *lru.ARCCache
 	PuncRunes     []rune
 	Normalizer    *strings.Replacer
 	BosToken      Token
@@ -48,6 +48,10 @@ type GPTEncoder struct {
 	replacements  map[string]string
 	runeBufSz     int
 	wordChanSz    int
+	LruHits       int
+	LruMisses     int
+	LruEvictions  int
+	LruSize       int
 }
 
 type GPTPair struct {
@@ -309,7 +313,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		log.Fatalf(REGEX_ERROR, err)
 	}
 
-	cache, _ := lru.New(BPE_LRU_SZ)
+	cache, _ := lru.NewARC(BPE_LRU_SZ)
 
 	replacements := make(map[string]string, 0)
 	if hfConfig != nil && hfConfig.Newlinemode != nil && *hfConfig.
@@ -342,6 +346,10 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		replacements,
 		RUNEBUF_SZ,
 		WORDCHAN_SZ,
+		0,
+		0,
+		0,
+		BPE_LRU_SZ,
 	}
 	encoder.specialsTree = encoder.createRuneTree()
 	return encoder, nil
@@ -483,16 +491,21 @@ func findAllStringsIndexes(text string, strings []string) [][]int {
 }
 
 // toBPE
-// Given pre-split text, return a list of BPE tokens as strings.
-func (encoder *GPTEncoder) toBPE(text string) []string {
+// Given pre-split text, perform bigram ranking and merges, and returns Tokens
+func (encoder *GPTEncoder) toBPE(text string) Tokens {
 	if lookup, ok := encoder.cache.Get(text); ok {
-		return lookup.([]string)
+		encoder.LruHits++
+		return lookup.(Tokens)
+	} else {
+		encoder.LruMisses++
 	}
 	word := strings.Split(text, "")
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
 	if len(rankedPairs) == 0 {
-		return []string{text + encoder.endOfWord}
+		tokens := Tokens{encoder.encoder[word[0]]}
+		encoder.cache.Add(text, tokens)
+		return tokens
 	}
 	for {
 		bigram := rankedPairs[0].bigram
@@ -529,8 +542,12 @@ func (encoder *GPTEncoder) toBPE(text string) []string {
 		idx := len(word) - 1
 		word[idx] = word[idx]
 	}
-	encoder.cache.Add(text, word)
-	return word
+	tokens := make(Tokens, len(word))
+	for idx, token := range word {
+		tokens[idx] = encoder.encoder[token]
+	}
+	encoder.cache.Add(text, tokens)
+	return tokens
 }
 
 func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
@@ -684,8 +701,9 @@ func (encoder *GPTEncoder) toUnicode(text *string) string {
 }
 
 func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
+	encoded = make(Tokens, len(*tokens))
 	for idx := range *tokens {
-		encoded = append(encoded, encoder.encoder[(*tokens)[idx]])
+		encoded[idx] = encoder.encoder[(*tokens)[idx]]
 	}
 	return encoded
 }
@@ -734,8 +752,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				encodedTokens = Tokens{encoder.encoder[decodedSpecial]}
 			} else {
 				fragment := encoder.toUnicode(word)
-				token := encoder.toBPE(fragment)
-				encodedTokens = encoder.encodeTokens(&token)
+				encodedTokens = encoder.toBPE(fragment)
 			}
 			accumulator = append(accumulator, encodedTokens...)
 		}
