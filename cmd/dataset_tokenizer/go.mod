@@ -2,9 +2,11 @@ module github.com/wbrown/gpt_bpe/cmd/dataset_tokenizer
 
 go 1.18
 
+replace github.com/wbrown/gpt_bpe => ../../
+
 require (
 	github.com/stretchr/testify v1.7.1
-	github.com/wbrown/gpt_bpe v0.0.0-20220930153931-0b11191f2f74
+	github.com/wbrown/gpt_bpe v0.0.0-20221219163200-f4def400a5c4
 	github.com/yargevad/filepathx v1.0.0
 )
 
@@ -18,7 +20,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/sys v0.0.0-20221013171732-95e765b1cc43 // indirect
+	golang.org/x/sys v0.3.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
