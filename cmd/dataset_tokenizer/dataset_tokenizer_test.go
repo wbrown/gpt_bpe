@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/wbrown/gpt_bpe"
 	"os"
@@ -42,10 +43,12 @@ var sanitizerTests = SanitizerTests{
 		"foo\nbar\nfoo"},
 }
 
+const corpusPath = "../../resources/frankenstein.txt"
+
 func BenchmarkSanitizeText(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
-	path := "../../resources/frankenstein.txt"
+	path := corpusPath
 	if testFile, err := os.Open(path); err != nil {
 		b.Fail()
 	} else {
@@ -70,8 +73,7 @@ func BenchmarkStreamingEncode(b *testing.B) {
 	b.ResetTimer()
 	tokenizer := gpt_bpe.GPT2Encoder
 	for i := 0; i < 5; i++ {
-		if testFile, err := os.Open("../../all." +
-			"txt"); err != nil {
+		if testFile, err := os.Open(corpusPath); err != nil {
 			b.Fail()
 		} else {
 			start := time.Now()
@@ -88,8 +90,16 @@ func BenchmarkStreamingEncode(b *testing.B) {
 			b.StopTimer()
 			duration := time.Now().Sub(start)
 			tokensPerSecond := float64(tokensCt) / duration.Seconds()
-			b.Logf("%d tokens generated at %0.2f per second over %vms", tokensCt,
-				tokensPerSecond, duration.Milliseconds())
+			lruStats := fmt.Sprintf(" (LRU: Hits: %d, Misses: %d, "+
+				"Evictions: %d, %0.2f%% Hit Rate, Size: %d)",
+				tokenizer.LruHits, tokenizer.LruMisses,
+				tokenizer.LruEvictions, 100.0*float64(
+					tokenizer.LruHits)/float64(tokenizer.LruHits+
+					tokenizer.LruMisses), tokenizer.LruSize)
+			b.Logf("%d tokens generated at %0.2f per second over %vms%s",
+				tokensCt,
+				tokensPerSecond, duration.Milliseconds(),
+				lruStats)
 		}
 	}
 }
@@ -98,7 +108,7 @@ func BenchmarkStreamingEncodeSanitize(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
 	tokenizer := gpt_bpe.GPT2Encoder
-	path := "../../resources/frankenstein.txt"
+	path := corpusPath
 	if testFile, err := os.Open(path); err != nil {
 		b.Fail()
 	} else {
