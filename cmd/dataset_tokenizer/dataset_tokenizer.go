@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -608,19 +609,25 @@ func main() {
 	reorderPaths := flag.String("reorder", "",
 		"reorder input files to specification [size_ascending, "+
 			"size_descending, name_ascending, name_descending, random, shuffle, none]")
-	sampling := flag.Int("sampling", 100, "a integer value from 0-100 "+
+	sampling_str := flag.String("sampling", "100", "a integer value from 0-100 "+
 		"which tells the tokenizer how many chunks to discard in %, 60 keeps 60%% chunks")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
 		log.Fatal("Must provide -input for directory source")
 	}
-	if *sampling > 100 || *sampling < 0 {
+	sampling, err := strconv.Atoi(*sampling_str)
+	if err != nil {
+		log.Fatal("Sampling parameter must be an integer")
+	}
+
+	if sampling > 100 || sampling < 0 {
 		log.Fatal("Sampling parameter out of the 0-100 bounds")
 	}
 
 	fmt.Printf("Selected Tokenizer Reordering method: %s\n", *reorderPaths)
-	fmt.Printf("Selected Sampling amount (in %% tokens kept): %d\n", *sampling)
+	fmt.Printf("Selected Sampling amount (in %% tokens kept): %d\n", sampling)
+
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&
 			*reorderPaths != "size_descending" &&
@@ -687,7 +694,7 @@ func main() {
 		if *showContexts {
 			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
 		}
-		total, writeErr := WriteContexts(*outputFile, contexts, enc, *sampling,
+		total, writeErr := WriteContexts(*outputFile, contexts, enc, sampling,
 			*reorderPaths == "shuffle")
 		if writeErr != nil {
 			log.Fatal(writeErr)
