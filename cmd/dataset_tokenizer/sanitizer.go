@@ -107,7 +107,7 @@ func (runeReader SanitizedRuneReader) ReadRune() (r rune, size int,
 // to read scrubbed runes from the io.Reader.
 func CreateTextSanitizer(handle io.Reader) SanitizedRuneReader {
 	extraWhiteSpace := regexp.MustCompile("[[:space:]]+")
-	scanner := bufio.NewReader(handle)
+	scanner := bufio.NewReaderSize(handle, 8*1024*1024)
 	accumulator := make([]rune, 32769, 32769)
 	emptyBuffer := bytes.NewBufferString("")
 	lastRune := rune(0)
