@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -24,34 +25,35 @@ type Token uint16
 type Tokens []Token
 
 type GPTEncoder struct {
-	encoder       map[string]Token
-	decoder       map[Token][]byte
-	bpe_ranks     map[GPTPair]float64
-	unitrim       []int
-	pattern       *regexp.Regexp
-	puncPat       *regexp.Regexp
-	specialsPat   *regexp.Regexp
-	byteToRune    [256]rune
-	runeToByte    map[rune]byte
-	specials      map[string]Tokens
-	specialsTree  *RuneNode
-	cache         *lru.ARCCache
-	PuncRunes     []rune
-	Normalizer    *strings.Replacer
-	BosToken      Token
-	EosToken      Token
-	PadToken      Token
-	encloseEosBos bool
-	prefixSpace   bool
-	lowerCase     bool
-	endOfWord     string
-	replacements  map[string]string
-	runeBufSz     int
-	wordChanSz    int
-	LruHits       int
-	LruMisses     int
-	LruEvictions  int
-	LruSize       int
+	encoder         map[string]Token
+	decoder         map[Token][]byte
+	bpe_ranks       map[GPTPair]float64
+	unitrim         []int
+	pattern         *regexp.Regexp
+	puncPat         *regexp.Regexp
+	specialsPat     *regexp.Regexp
+	byteToRune      [256]rune
+	runeToByte      map[rune]byte
+	specials        map[string]Tokens
+	specialsTree    *RuneNode
+	cache           *lru.ARCCache
+	PuncRunes       []rune
+	Normalizer      *strings.Replacer
+	BosToken        Token
+	EosToken        Token
+	PadToken        Token
+	encloseEosBos   bool
+	prefixSpace     bool
+	lowerCase       bool
+	endOfWord       string
+	replacements    map[string]string
+	runeBufSz       int
+	wordChanSz      int
+	LruHits         int
+	LruMisses       int
+	LruEvictions    int
+	LruSize         int
+	SplitterThreads int
 }
 
 type GPTPair struct {
@@ -350,6 +352,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		0,
 		0,
 		BPE_LRU_SZ,
+		4,
 	}
 	encoder.specialsTree = encoder.createRuneTree()
 	return encoder, nil
@@ -567,8 +570,77 @@ func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
 type NextRuneFunc func() (rune, int, error)
 type WordCallback func(*string)
 
-func (encoder *GPTEncoder) makeWordSplitter(nextRuneFunc NextRuneFunc,
-	wordCallback WordCallback) func() {
+func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
+	specialToken bool, specialsNode *RuneNode, wg *sync.WaitGroup) {
+	defer close(ch)
+	// Some things such as KoboldAI have a 'replacement' rule, where
+	// they replace tokens such as `\n` with `</s>` for Fairseq
+	// handling.
+	for replaced, replacement := range encoder.replacements {
+		text = strings.ReplaceAll(text, replaced, replacement)
+	}
+
+	text = encoder.Normalizer.Replace(text)
+
+	idxes := encoder.pattern.FindAllStringIndex(text, -1)
+	for idx := range idxes {
+		word := text[idxes[idx][0]:idxes[idx][1]]
+		if encoder.lowerCase {
+			word = strings.ToLower(word)
+		}
+
+		if !encoder.prefixSpace {
+			word = strings.TrimSpace(word)
+		}
+
+		if len(word) > 0 {
+			ch <- &word
+		}
+	}
+
+	// Finally, if we have a special token, we cap it off.
+	if specialToken {
+		runeString := string(specialsNode.runes)
+		ch <- &runeString
+	}
+	wg.Done()
+}
+
+func (encoder *GPTEncoder) synchronousSplitterThread(
+	line string, specialToken bool, specialsNode *RuneNode,
+	wg *sync.WaitGroup) chan *string {
+	retCh := make(chan *string, 16)
+	go encoder.splitOntoChan(line, retCh, specialToken, specialsNode, wg)
+	return retCh
+}
+
+func (encoder *GPTEncoder) consumeSplitQueue(
+	queue chan chan *string,
+	cb WordCallback,
+	wg *sync.WaitGroup) {
+	for {
+		select {
+		case ch, ok := <-queue:
+			if !ok {
+				wg.Done()
+				return
+			}
+			for word := range ch {
+				cb(word)
+			}
+		}
+	}
+}
+
+func (encoder *GPTEncoder) makeWordSplitter(
+	nextRuneFunc NextRuneFunc,
+	wordCallback WordCallback,
+	completeCallback func()) func() {
+	workQueue := make(chan chan *string, encoder.SplitterThreads)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go encoder.consumeSplitQueue(workQueue, wordCallback, &wg)
+
 	return func() {
 		specialsRuneRoot := encoder.specialsTree
 		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
@@ -609,42 +681,19 @@ func (encoder *GPTEncoder) makeWordSplitter(nextRuneFunc NextRuneFunc,
 			}
 			runeAccumulator = runeAccumulator[:0]
 
-			// Some things such as KoboldAI have a 'replacement' rule, where
-			// they replace tokens such as `\n` with `</s>` for Fairseq
-			// handling.
-			for replaced, replacement := range encoder.replacements {
-				line = strings.ReplaceAll(line, replaced, replacement)
-			}
-
-			line = encoder.Normalizer.Replace(line)
 			// We split all words before the special token in question, and
 			// accumulate them.
-			idxes := encoder.pattern.FindAllStringIndex(line, -1)
-			for idx := range idxes {
-				word := line[idxes[idx][0]:idxes[idx][1]]
-				if encoder.lowerCase {
-					word = strings.ToLower(word)
-				}
-
-				if !encoder.prefixSpace {
-					word = strings.TrimSpace(word)
-				}
-
-				if len(word) > 0 {
-					wordCallback(&word)
-				}
-			}
-
-			// Finally, if we have a special token, we cap it off.
-			if specialToken {
-				runeString := string(specialsNode.runes)
-				wordCallback(&runeString)
-			}
+			wg.Add(1)
+			workQueue <- encoder.synchronousSplitterThread(line, specialToken,
+				specialsNode, &wg)
 
 			// Reset our special tokens state.
 			specialsNode = specialsRuneRoot
 			specialToken = false
 		}
+		close(workQueue)
+		wg.Wait()
+		completeCallback()
 	}
 }
 
@@ -661,9 +710,10 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 		func(word *string) {
 			if word != nil {
 				wordsAccumulator <- *word
-			} else {
-				close(wordsAccumulator)
 			}
+		},
+		func() {
+			close(wordsAccumulator)
 		})
 	go wordSplitter()
 

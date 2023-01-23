@@ -207,7 +207,8 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 				} else {
 					runeReaders <- namedRuneReader{
 						path.Path,
-						bufio.NewReader(fileReader)}
+						bufio.NewReaderSize(fileReader,
+							8*1024*1024)}
 				}
 			}
 		}

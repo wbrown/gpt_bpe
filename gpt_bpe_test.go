@@ -1,11 +1,13 @@
 package gpt_bpe
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -24,6 +26,8 @@ var gpt2Encoded *Tokens
 var pileEncoded *Tokens
 var clipEncoded *Tokens
 var unicodeTrimTests []*Tokens
+
+const largeCorpusPath = "resources/wiki.train.raw"
 
 func handleRead(path string) []byte {
 	if textBytes, err := os.ReadFile(path); err != nil {
@@ -248,6 +252,101 @@ func TestGPTEncoder_Split(t *testing.T) {
 		test := SplitTests[testIdx]
 		assert.Equal(t, test.Expected, *(gpt2Encoder.SplitWords(&test.Input)))
 	}
+}
+
+func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
+	b.StopTimer()
+	corpusHandle, err := os.Open(largeCorpusPath)
+	defer corpusHandle.Close()
+	if err != nil {
+		b.Error(err)
+	}
+	gpt2Encoder.SplitterThreads = 8
+	nextWord := gpt2Encoder.WordSplitter(bufio.NewReaderSize(corpusHandle,
+		8*1024*1024))
+
+	start := time.Now()
+	b.StartTimer()
+	wordCount := 0
+	for {
+		word := nextWord()
+		if word == nil {
+			break
+		}
+		wordCount++
+	}
+	b.StopTimer()
+	elapsed := time.Since(start)
+	numBytes, _ := corpusHandle.Seek(0, io.SeekCurrent)
+	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
+	b.ReportMetric(float64(wordCount), "words")
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+	b.ReportMetric(float64(numBytes), "bytes")
+}
+
+func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
+	b.StopTimer()
+	corpusHandle, err := os.Open(largeCorpusPath)
+	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
+	gpt2Encoder.SplitterThreads = 8
+	//defer corpusHandle.Close()
+	if err != nil {
+		b.Error(err)
+	}
+	wordCount := 0
+	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+	wordSplitter := gpt2Encoder.makeWordSplitter(
+		runeReader.ReadRune,
+		func(*string) {
+			wordCount++
+		},
+		func() {},
+	)
+	start := time.Now()
+	b.StartTimer()
+	wordSplitter()
+	b.StopTimer()
+	elapsed := time.Since(start)
+	//numBytes := int64(len(corpusText))
+	numBytes, _ := corpusHandle.Seek(0, io.SeekCurrent)
+	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
+	b.ReportMetric(float64(wordCount), "words")
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+	b.ReportMetric(float64(numBytes), "bytes")
+}
+
+func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
+	b.StopTimer()
+	corpusHandle, err := os.Open(largeCorpusPath)
+	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
+	gpt2Encoder.SplitterThreads = 32
+	//defer corpusHandle.Close()
+	if err != nil {
+		b.Error(err)
+	}
+	wordCount := 0
+	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+	wordSplitter := gpt2Encoder.makeWordSplitter(
+		runeReader.ReadRune,
+		func(word *string) {
+			if word != nil {
+				gpt2Encoder.toBPE(*word)
+			}
+			wordCount++
+		},
+		func() {},
+	)
+	start := time.Now()
+	b.StartTimer()
+	wordSplitter()
+	b.StopTimer()
+	elapsed := time.Since(start)
+	//numBytes := int64(len(corpusText))
+	numBytes, _ := corpusHandle.Seek(0, io.SeekCurrent)
+	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
+	b.ReportMetric(float64(wordCount), "words")
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+	b.ReportMetric(float64(numBytes), "bytes")
 }
 
 func BenchmarkGPTEncoder_Decode(b *testing.B) {
