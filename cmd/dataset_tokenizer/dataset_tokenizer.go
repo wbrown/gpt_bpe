@@ -626,8 +626,10 @@ func main() {
 		log.Fatal("Sampling parameter out of the 0-100 bounds")
 	}
 
-	fmt.Printf("Selected Tokenizer Reordering method: %s\n", *reorderPaths)
-	fmt.Printf("Selected Sampling amount (in %% tokens kept): %d\n", sampling)
+	log.Printf("Tokenizer definition: %s\n", *tokenizerId)
+	log.Printf("Tokenizer output: %s\n", *outputFile)
+	log.Printf("Tokenizer reordering method: %s\n", *reorderPaths)
+	log.Printf("Sampling amount (in % tokens kept): %d%\n", sampling)
 
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&

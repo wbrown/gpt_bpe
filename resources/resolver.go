@@ -84,8 +84,8 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 	case RESOURCETYPE_TRANSFORMERS:
 		return ResourceEntryDefs{
 			"config.json":             RESOURCE_REQUIRED,
-			"vocab.json":              RESOURCE_REQUIRED,
-			"merges.txt":              RESOURCE_REQUIRED,
+			"vocab.json":              RESOURCE_OPTIONAL,
+			"merges.txt":              RESOURCE_OPTIONAL,
 			"special_tokens_map.json": RESOURCE_OPTIONAL,
 			"unitrim.json":            RESOURCE_OPTIONAL,
 			"wordtokens.json":         RESOURCE_OPTIONAL,
