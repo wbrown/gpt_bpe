@@ -627,6 +627,7 @@ func main() {
 	}
 
 	log.Printf("Tokenizer definition: %s\n", *tokenizerId)
+        log.Printf("Tokenizer input source: %s\n", *inputDir)
 	log.Printf("Tokenizer output: %s\n", *outputFile)
 	log.Printf("Tokenizer reordering method: %s\n", *reorderPaths)
 	log.Printf("Sampling amount (in % tokens kept): %d%\n", sampling)
