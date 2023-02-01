@@ -554,6 +554,21 @@ func TestGPTEncoder_TokensReady(t *testing.T) {
 	}
 }
 
+func TestGPTEncoder_TokensReadyContext(t *testing.T) {
+	var tokens Tokens
+	badContext, err := os.ReadFile("resources/badcontext.json")
+	if err != nil {
+		t.Errorf("Could not read badcontext.json: %v", err)
+	}
+	unmarshalErr := json.Unmarshal(badContext, &tokens)
+	if unmarshalErr != nil {
+		t.Errorf("Could not unmarshal badcontext.json: %v", unmarshalErr)
+	}
+	if !pileEncoder.TokensReady(&tokens) {
+		t.Errorf("Expected TokensReady to be true for badcontext.json")
+	}
+}
+
 func TestGPTDecoder_Decode(t *testing.T) {
 	// TBD
 }
