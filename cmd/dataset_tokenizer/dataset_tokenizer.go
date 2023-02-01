@@ -627,10 +627,11 @@ func main() {
 	}
 
 	log.Printf("Tokenizer definition: %s\n", *tokenizerId)
-        log.Printf("Tokenizer input source: %s\n", *inputDir)
+	log.Printf("Tokenizer input source: %s\n", *inputDir)
 	log.Printf("Tokenizer output: %s\n", *outputFile)
 	log.Printf("Tokenizer reordering method: %s\n", *reorderPaths)
-	log.Printf("Sampling amount (in % tokens kept): %d%\n", sampling)
+	log.Printf("Sampling amount (in %s tokens kept): %d%s\n",
+		"%", sampling, "%")
 
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&
