@@ -110,6 +110,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"unet/diffusion_pytorch_model.bin":           RESOURCE_MODEL,
 			"vae/config.json":                            RESOURCE_REQUIRED,
 			"vae/diffusion_pytorch_model.bin":            RESOURCE_MODEL,
+			"model_index.json":                           RESOURCE_REQUIRED,
 		}
 	default:
 		return ResourceEntryDefs{}
