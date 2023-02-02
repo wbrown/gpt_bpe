@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dustin/go-humanize"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -13,6 +12,8 @@ import (
 	"os"
 	"path"
 	"time"
+
+	"github.com/dustin/go-humanize"
 )
 
 type ResourceFlag uint8
@@ -528,4 +529,98 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		}
 		return config, resources, nil
 	}
+}
+
+func DestructureTokenizerJSON(dir string) {
+	//This function is used to destruct the tokenizer.json
+	//file into the vocab.json and merges.txt files
+	//This is done if HF uses the new tokenizer.json format
+
+	//We get the Directory of all the files
+	tokenizerPath := path.Join(dir, "tokenizer.json")
+	mergesPath := path.Join(dir, "merges.txt")
+	vocabPath := path.Join(dir, "vocab.json")
+
+	// Open the file
+	file, err := os.Open(tokenizerPath)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	// Decode the JSON data into a map
+	var data map[string]interface{}
+	err = json.NewDecoder(file).Decode(&data)
+	if err != nil {
+		log.Println("Error decoding JSON:", err)
+		return
+	}
+
+	// Access the data at the specified path
+	model, ok := data["model"].(map[string]interface{})
+	if !ok {
+		log.Println("Error: Could not convert value to map")
+		return
+	}
+	vocab, ok := model["vocab"].(map[string]interface{})
+	if !ok {
+		log.Println("Error: Could not convert value to map")
+		return
+	}
+
+	merges, ok := model["merges"].([]interface{})
+	if !ok {
+		log.Println("Error: Could not convert value to map")
+		return
+	}
+
+	// Convert the slice of interfaces to a slice of strings
+	var mergesStr []string
+	for _, v := range merges {
+		mergesStr = append(mergesStr, v.(string))
+	}
+
+	// Marshal the vocab map into a JSON string with indentation
+	b_vocab, err := json.MarshalIndent(vocab, "", "  ")
+	if err != nil {
+		log.Println("Error marshaling JSON:", err)
+		return
+	}
+
+	// Create the file
+	vocabfile, err := os.Create(vocabPath)
+	if err != nil {
+		log.Println("Error creating file:", err)
+		return
+	}
+	defer vocabfile.Close()
+
+	// Write the JSON string to the file
+	_, err = vocabfile.Write(b_vocab)
+	if err != nil {
+		log.Println("Error writing to file:", err)
+		return
+	}
+
+	log.Println("Vocab written to vocab.json from tokenizer.json")
+
+	// Create the file
+	mergesfile, err := os.Create(mergesPath)
+	if err != nil {
+		log.Println("Error creating file:", err)
+		return
+	}
+	defer mergesfile.Close()
+
+	// Write each merge string to a new line in the file
+	for _, v := range merges {
+		_, err = mergesfile.WriteString(v.(string) + "\n")
+		if err != nil {
+			log.Println("Error writing to file:", err)
+			return
+		}
+	}
+
+	log.Println("Merges written to merges.txt from tokenizer.json")
 }
