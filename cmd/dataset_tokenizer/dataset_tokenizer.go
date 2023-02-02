@@ -228,13 +228,14 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 // TextsTokenizer
 // A struct that encapsulates the configuration for a streaming tokenizer.
 type TextsTokenizer struct {
-	TokenizerId   string
-	ContextSize   int
-	Boundary      string
-	BoundaryBegin bool
-	PadToken      string
-	EndOfText     string
-	Unitrim       bool
+	TokenizerId     string
+	ContextSize     int
+	Boundary        string
+	BoundaryBegin   bool
+	BoundaryOverlap int
+	PadToken        string
+	EndOfText       string
+	Unitrim         bool
 }
 
 // NewTextsTokenizer
@@ -245,8 +246,9 @@ func NewTextsTokenizer() TextsTokenizer {
 		2048,
 		"\n",
 		false,
+		-1,
 		"<|endoftext|>",
-		"<|endoftext|>",
+		"<|padding|>",
 		true,
 	}
 }
@@ -286,6 +288,57 @@ func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
 		}
 	}
 	return tokenizerPtr, nil
+}
+
+func (tt *TextsTokenizer) PartitionBoundary(
+	boundaryIdxes *[]int,
+	begin int,
+	idx int,
+) int {
+	if tt.Boundary == "" && tt.BoundaryOverlap >= 0 {
+		idx = begin + tt.BoundaryOverlap
+	} else if len(*boundaryIdxes) > 0 {
+		var boundaryIdx int
+		if tt.BoundaryOverlap == -1 {
+			boundaryIdx = (*boundaryIdxes)[len(*boundaryIdxes)-1]
+		} else {
+			// Find the closest boundary token to the index
+			// of the BoundaryOverlap.
+			smaller := 0
+			larger := 0
+			for _, boundaryIdx = range *boundaryIdxes {
+				if boundaryIdx < begin+tt.BoundaryOverlap {
+					smaller = boundaryIdx
+				} else {
+					larger = boundaryIdx
+					break
+				}
+			}
+			if smaller == 0 {
+				boundaryIdx = larger
+			} else if larger == 0 {
+				boundaryIdx = smaller
+			} else {
+				if tt.BoundaryOverlap-smaller <
+					larger-tt.BoundaryOverlap {
+					boundaryIdx = smaller
+				} else {
+					boundaryIdx = larger
+				}
+			}
+		}
+
+		if boundaryIdx > 0 && boundaryIdx <= begin+tt.ContextSize {
+			boundaryOffset := 0
+			if !tt.BoundaryBegin {
+				boundaryOffset = 1
+			}
+			if idx-boundaryIdx+boundaryOffset <= tt.ContextSize {
+				idx = boundaryIdx + boundaryOffset
+			}
+		}
+	}
+	return idx
 }
 
 // TokenizeTexts
@@ -337,7 +390,8 @@ func (tt TextsTokenizer) TokenizeTexts(
 
 	var tokens gpt_bpe.Tokens
 	var done bool
-	var numTokens, idx, begin, boundaryIdx int
+	var numTokens, idx, begin int
+	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 4)
@@ -406,9 +460,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 			// Iterate until we reach the end of this text's tokens.
 			for idx < numTokens {
 				token := (tokens)[idx]
-				// Mark the position of the last `boundary` token we've seen.
+				// If this is a 'boundary' token, add it to our list.
 				if token == boundary {
-					boundaryIdx = idx
+					boundaryIdxes = append(boundaryIdxes, idx)
 				}
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
@@ -435,24 +489,29 @@ func (tt TextsTokenizer) TokenizeTexts(
 							chunk = append(chunk, padToken)
 						}
 					}
-					// We had a boundary token in our last context, so set the
-					// `idx` to one past the boundary token or on the boundary
-					// token depending on `BoundaryBegin`.
-					// This effectively copies the chunk from that point on
-					// into the next returned context.
-					if boundaryIdx > 0 && boundaryIdx <= begin+contextSize {
-						boundaryOffset := 0
-						if !tt.BoundaryBegin {
-							boundaryOffset = 1
+					// We had one or more boundary tokens in our last context,
+					// so depending on the BoundaryOverlap, use the last
+					// boundary or the boundary closest to the BounderOverlap
+					// index. This effectively copies the chunk from that point
+					// on into the next returned context.
+					idx = tt.PartitionBoundary(&boundaryIdxes, begin, idx)
+
+					// We were given a hard index to use as the chunk boundary,
+					// and it may not be a complete unicode character, so we
+					// need to align it to a valid unicode character.
+					if boundary == 65535 && doUnitrim {
+						// Ensure that our next chunk is aligned to valid
+						// unicode.
+						_, offset := tokenizer.AlignAndSizeTokens(&chunk,
+							idx-begin)
+						idx = begin + offset
+						if offset != tt.BoundaryOverlap {
+							println("idx: ", idx, " offset:", offset)
 						}
-						if idx-boundaryIdx+boundaryOffset <= contextSize {
-							newIdx := boundaryIdx + boundaryOffset
-							if newIdx != begin+boundaryOffset {
-								idx = newIdx
-							}
-						}
-						boundaryIdx = 0
 					}
+
+					boundaryIdxes = boundaryIdxes[:0]
+
 					// Reset the `begin` offsets, move idx, to set up the
 					// state for the next invocation of this function.
 					if idx > contextSize*6 {
@@ -489,23 +548,23 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	contexts := make(chan gpt_bpe.Tokens, 2)
 
 	go func() {
-		samplingidx := 0
+		samplingIdx := 0
 		for {
 			context := nextContext()
 			if context == nil {
 				close(contexts)
 				break
 			} else {
-				if sampling == 100 || (samplingidx%20) < int(sampling/5) {
+				// Ignore every `sampling` percent context (rounded to int)
+				if sampling == 100 || (samplingIdx%20) < int(sampling/5) {
 					contexts <- *context
-					//ignore every "sampling" percent context (rounded to int)
+					if encoder != nil {
+						println(len(*context))
+						println("======================================")
+						println(encoder.Decode(context))
+					}
 				}
-				samplingidx += 1
-				if encoder != nil {
-					println(len(*context))
-					println("=========================================")
-					println(encoder.Decode(context))
-				}
+				samplingIdx += 1
 			}
 		}
 	}()
@@ -515,29 +574,34 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	var contextSize int
 	var target int64
 
-	//  We need to shuffle all contexts as they are written
+	// Sometimes it is requested that we shuffle all contexts as they are
+	// written
 	for {
 		context, more := <-contexts
 		if !more {
 			break
 		}
 		binContext := context.ToBin()
-		//  We keep track of the final file position
+		// We keep track of the final file position
 		if endpos == 0 {
-			//  On the first context, we write the context size and make the buffer
+			// On the first context, we discern the context size and make the
+			// appropriately sized buffer
 			contextSize = len(*binContext)
 			buf = make([]byte, contextSize)
 
 		}
 
-		//we select a random position in the buffer that is a multiple of the context size
+		// We select a random position in the buffer that is a multiple of the
+		// context size
 		if endpos == 0 {
 			target = 0
 		} else {
 			target = int64(rand.Intn((endpos)/contextSize)) * int64(contextSize)
 		}
 
-		//if shuffling, we store the context found at the target position in the buffer and write it to the end of the file, writing the new context to the target position
+		// If shuffling, we store the context found at the target position in
+		// the buffer and write it to the end of the file, writing the new
+		// context to the target position
 		if endpos != 0 && shuffle {
 			if _, err := outFile.ReadAt(buf, target); err != nil {
 				return totalTokens, err
@@ -550,17 +614,18 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 		}
 
 		if endpos > 0 && shuffle {
-			//overwrite bincontxt to the to the location of the context we just read
+			// Overwrite binContext to the location of the context we just read
 			if _, err := outFile.WriteAt(*binContext, target); err != nil {
 				return totalTokens, err
 			}
 
-			//write the context we just read to the end of the file
+			// Write the context we just read and replaced to the end of the
+			// file
 			if _, err := outFile.Write(buf); err != nil {
 				return totalTokens, err
 			}
 		} else if !shuffle {
-			//else, just write the context to the end of the file
+			// Else, we just write the context to the end of the file as usual
 			if _, err := outFile.Write(*binContext); err != nil {
 				return totalTokens, err
 			}
@@ -597,6 +662,9 @@ func main() {
 	boundaryBegin := flag.Bool("boundary_begin", false,
 		"whether to treat the boundary token as a beginning token for"+
 			"a context")
+	boundaryOverlap := flag.Int("boundary_overlap", -1,
+		"token index in context to approximately overlap contexts on, "+
+			"-1 for last boundary token in context")
 	outputFile := flag.String("output", "tokenized.chunk",
 		"tokenized output file")
 	inputDir := flag.String("input", "",
@@ -651,8 +719,9 @@ func main() {
 	textsTokenizer.EndOfText = *endOfText
 	textsTokenizer.PadToken = *padToken
 	textsTokenizer.Boundary = *boundaryToken
-	textsTokenizer.Unitrim = !*unitrimBool
 	textsTokenizer.BoundaryBegin = *boundaryBegin
+	textsTokenizer.BoundaryOverlap = *boundaryOverlap
+	textsTokenizer.Unitrim = !*unitrimBool
 
 	if !*forceRetokenization {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
