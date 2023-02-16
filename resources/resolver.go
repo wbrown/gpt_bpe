@@ -85,14 +85,14 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 	case RESOURCETYPE_TRANSFORMERS:
 		return ResourceEntryDefs{
 			"config.json":             RESOURCE_REQUIRED,
-			"vocab.json":              RESOURCE_REQUIRED,
-			"merges.txt":              RESOURCE_REQUIRED,
+			"vocab.json":              RESOURCE_OPTIONAL,
+			"merges.txt":              RESOURCE_OPTIONAL,
 			"special_tokens_map.json": RESOURCE_OPTIONAL,
 			"unitrim.json":            RESOURCE_OPTIONAL,
 			"wordtokens.json":         RESOURCE_OPTIONAL,
 			"specials.txt":            RESOURCE_OPTIONAL | RESOURCE_DERIVED,
 			"tokenizer_config.json":   RESOURCE_OPTIONAL,
-			"tokenizer.json":          RESOURCE_OPTIONAL,
+			"tokenizer.json":          RESOURCE_REQUIRED,
 			"pytorch_model.bin":       RESOURCE_MODEL,
 		}
 	case RESOURCETYPE_DIFFUSERS:
@@ -194,27 +194,27 @@ func (rsrcs *Resources) AddEntry(name string, file *os.File) error {
 }
 
 // Specials
-// Map of special tokens such as `<|pad|>`, `<|endoftext|>`, etc.
+// Map of special tokens such as <|pad|>, <|endoftext|>, etc.
 type Specials map[string]string
 
 // ResolveSpecialTokens
-// If `specials.json` does not exist in `dir`, create it from the
-// `special_tokens_map.json` file.
+// If specials.json does not exist in dir, create it from the
+// special_tokens_map.json file.
 func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 	realizedSpecials Specials, err error) {
 	realizedSpecials = make(Specials, 0)
-	// If we already have `specials.json`, we don't need to generate it.
+	// If we already have specials.json, we don't need to generate it.
 	if _, ok := (*rsrcs)["specials.json"]; ok {
 		if specErr := json.Unmarshal(*(*rsrcs)["specials.json"].Data,
 			&realizedSpecials); specErr != nil {
 			return nil, errors.New(
-				fmt.Sprintf("cannot unmarshal `specials.json`: %s",
+				fmt.Sprintf("cannot unmarshal specials.json: %s",
 					specErr))
 		}
 		return realizedSpecials, nil
 	}
 
-	// We can only generate `specials.json` if we have `special_tokens_map`
+	// We can only generate specials.json if we have special_tokens_map
 	specialsJson, ok := (*rsrcs)["special_tokens_map.json"]
 	if !ok {
 		return nil, nil
@@ -252,26 +252,26 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 			os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
 		if specialFileErr != nil {
 			return nil, errors.New(
-				fmt.Sprintf("cannot generate `specials.json`: %s",
+				fmt.Sprintf("cannot generate specials.json: %s",
 					specialFileErr))
 		}
 		specialsJsonBytes, specialsErr := json.Marshal(realizedSpecials)
 		if specialsErr != nil {
 			specialsFile.Close()
 			return nil, errors.New(
-				fmt.Sprintf("cannot marshal `specials.json`: %s",
+				fmt.Sprintf("cannot marshal specials.json: %s",
 					specialsErr))
 		}
 		if _, writeErr := specialsFile.Write(
 			specialsJsonBytes); writeErr != nil {
 			specialsFile.Close()
 			return nil, errors.New(
-				fmt.Sprintf("cannot write `specials.json`: %s",
+				fmt.Sprintf("cannot write specials.json: %s",
 					specialsErr))
 		}
 		if _, seekErr := specialsFile.Seek(0, 0); seekErr != nil {
 			return nil, errors.New(
-				fmt.Sprintf("cannot seek `specials.json`: %s",
+				fmt.Sprintf("cannot seek specials.json: %s",
 					seekErr))
 		}
 		if mmapErr := rsrcs.AddEntry("specials.json",
@@ -309,7 +309,7 @@ func ResolveResources(
 						uri, file)
 					return &foundResources, errors.New(
 						fmt.Sprintf(
-							"cannot retrieve required `%s` from `%s`: %s",
+							"cannot retrieve required `%s from %s`: %s",
 							uri, file, rsrcSizeErr))
 				} else {
 					log.Printf("Resolved %s/%s... not there, not required.",
@@ -333,7 +333,7 @@ func ResolveResources(
 			} else if rsrcReader, rsrcErr := Fetch(uri, file, token); rsrcErr != nil {
 				return &foundResources, errors.New(
 					fmt.Sprintf(
-						"cannot retrieve `%s` from `%s`: %s",
+						"cannot retrieve `%s from %s`: %s",
 						uri, file, rsrcErr))
 			} else {
 				if dirErr := os.MkdirAll(
@@ -377,7 +377,54 @@ func ResolveResources(
 			}
 		}
 	}
+
+	flagVocabExists := CheckFileDoesNotExist(path.Join(*dir, "vocab.json"))
+
+	if flagVocabExists {
+		model, err := ExtractModelFromTokenizer(dir)
+		if err != nil {
+			return &foundResources, errors.New(
+				fmt.Sprintf("Could not extract model from tokenizer %s",
+					err))
+		}
+
+		err = ExtractVocabFromTokenizer(model, dir)
+		if err != nil {
+			return &foundResources, errors.New(
+				fmt.Sprintf("Could not extract vocab from tokenizer %s",
+					err))
+		}
+	}
+
+	flagMergesExists := CheckFileDoesNotExist(path.Join(*dir, "merges.txt"))
+
+	if flagMergesExists {
+		model, err := ExtractModelFromTokenizer(dir)
+		if err != nil {
+			return &foundResources, errors.New(
+				fmt.Sprintf("Could not extract model from tokenizer %s",
+					err))
+		}
+
+		err = ExtractMergesFromTokenizer(model, dir)
+		if err != nil {
+			return &foundResources, errors.New(
+				fmt.Sprintf("Could not extract merges from tokenizer %s",
+					err))
+		}
+	}
+
 	return &foundResources, nil
+}
+
+func CheckFileDoesNotExist(path string) bool {
+	_, err := os.Stat(path)
+
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	} else {
+		return false
+	}
 }
 
 // HFConfig contains the tokenizer configuration that gpt_bpe uses.
@@ -432,7 +479,7 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 		&hfConfig); configErr != nil {
 		resources.Cleanup()
 		return nil, nil, errors.New(fmt.Sprintf(
-			"error unmarshalling `config.json`: %s", configErr))
+			"error unmarshalling config.json: %s", configErr))
 	}
 
 	specialTokens, specialsErr := resources.ResolveSpecialTokens(dir)
@@ -531,48 +578,76 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 	}
 }
 
-func DestructureTokenizerJSON(dir string) {
-	//This function is used to destruct the tokenizer.json
-	//file into the vocab.json and merges.txt files
-	//This is done if HF uses the new tokenizer.json format
-
-	//We get the Directory of all the files
-	tokenizerPath := path.Join(dir, "tokenizer.json")
-	mergesPath := path.Join(dir, "merges.txt")
-	vocabPath := path.Join(dir, "vocab.json")
-
+func ExtractModelFromTokenizer(dir *string) (map[string]interface{}, error) {
+	tokenizerPath := path.Join(*dir, "tokenizer.json")
 	// Open the file
-	file, err := os.Open(tokenizerPath)
+	tokenizerFile, err := os.Open(tokenizerPath)
 	if err != nil {
-		log.Println("Error opening file:", err)
-		return
+		log.Println("Error opening tokenizer:", err)
+		// return an empty map and the error
+		return nil, err
 	}
-	defer file.Close()
+	defer tokenizerFile.Close()
 
 	// Decode the JSON data into a map
 	var data map[string]interface{}
-	err = json.NewDecoder(file).Decode(&data)
+	err = json.NewDecoder(tokenizerFile).Decode(&data)
 	if err != nil {
-		log.Println("Error decoding JSON:", err)
-		return
+		log.Println("Error decoding JSON from tokenizer:", err)
+		return nil, err
 	}
 
 	// Access the data at the specified path
 	model, ok := data["model"].(map[string]interface{})
-	if !ok {
-		log.Println("Error: Could not convert value to map")
-		return
+	if ok {
+		return model, nil
+	} else {
+		log.Println("Error: Could not convert model in tokenizer to map")
+		return nil, errors.New("Could not convert model in tokenizer to map")
 	}
+}
+
+func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string) error {
 	vocab, ok := model["vocab"].(map[string]interface{})
 	if !ok {
-		log.Println("Error: Could not convert value to map")
-		return
+		log.Println("Error: Could not convert vocab in model to map")
+		return errors.New("Could not convert vocab in model to map")
 	}
 
+	vocabPath := path.Join(*dir, "vocab.json")
+
+	// Create the file
+	vocabFile, err := os.Create(vocabPath)
+	if err != nil {
+		log.Println("Error creating vocab.json:", err)
+		return err
+	}
+	defer vocabFile.Close()
+
+	// Marshal the vocab map into a JSON string with indentation
+	vocabJsonString, err := json.MarshalIndent(vocab, "", " ")
+	if err != nil {
+		fmt.Println("Error marshaling JSON:", err)
+		return err
+	}
+
+	// Write the JSON string to the file
+	_, err = vocabFile.Write(vocabJsonString)
+	if err != nil {
+		log.Println("Error writing to vocab.json:", err)
+		return err
+	}
+
+	log.Println("Vocab written to vocab.json from tokenizer.json")
+
+	return nil
+}
+
+func ExtractMergesFromTokenizer(model map[string]interface{}, dir *string) error {
 	merges, ok := model["merges"].([]interface{})
 	if !ok {
-		log.Println("Error: Could not convert value to map")
-		return
+		log.Println("Error: Could not convert merges in model to map")
+		return errors.New("Could not convert merges in model to map")
 	}
 
 	// Convert the slice of interfaces to a slice of strings
@@ -581,46 +656,26 @@ func DestructureTokenizerJSON(dir string) {
 		mergesStr = append(mergesStr, v.(string))
 	}
 
-	// Marshal the vocab map into a JSON string with indentation
-	b_vocab, err := json.MarshalIndent(vocab, "", "  ")
-	if err != nil {
-		log.Println("Error marshaling JSON:", err)
-		return
-	}
+	mergesPath := path.Join(*dir, "merges.txt")
 
 	// Create the file
-	vocabfile, err := os.Create(vocabPath)
+	mergesFile, err := os.Create(mergesPath)
 	if err != nil {
 		log.Println("Error creating file:", err)
-		return
+		return err
 	}
-	defer vocabfile.Close()
-
-	// Write the JSON string to the file
-	_, err = vocabfile.Write(b_vocab)
-	if err != nil {
-		log.Println("Error writing to file:", err)
-		return
-	}
-
-	log.Println("Vocab written to vocab.json from tokenizer.json")
-
-	// Create the file
-	mergesfile, err := os.Create(mergesPath)
-	if err != nil {
-		log.Println("Error creating file:", err)
-		return
-	}
-	defer mergesfile.Close()
+	defer mergesFile.Close()
 
 	// Write each merge string to a new line in the file
 	for _, v := range merges {
-		_, err = mergesfile.WriteString(v.(string) + "\n")
+		_, err = mergesFile.WriteString(v.(string) + "\n")
 		if err != nil {
 			log.Println("Error writing to file:", err)
-			return
+			return err
 		}
 	}
 
 	log.Println("Merges written to merges.txt from tokenizer.json")
+
+	return nil
 }
