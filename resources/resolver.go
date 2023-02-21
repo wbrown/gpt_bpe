@@ -97,10 +97,10 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 		}
 	case RESOURCETYPE_DIFFUSERS:
 		return ResourceEntryDefs{
-			"feature_extractor/preprocessor_config.json": RESOURCE_REQUIRED,
+			"feature_extractor/preprocessor_config.json": RESOURCE_OPTIONAL,
 			"safety_checker/config.json":                 RESOURCE_OPTIONAL,
-			"safety_checker/pytorch_model.json":          RESOURCE_OPTIONAL,
-			"scheduler/scheduler_config.json":            RESOURCE_OPTIONAL,
+			"safety_checker/pytorch_model.bin":           RESOURCE_OPTIONAL,
+			"scheduler/scheduler_config.json":            RESOURCE_REQUIRED,
 			"text_encoder/config.json":                   RESOURCE_REQUIRED,
 			"text_encoder/pytorch_model.bin":             RESOURCE_MODEL,
 			"tokenizer/merges.txt":                       RESOURCE_REQUIRED,
@@ -111,6 +111,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"unet/diffusion_pytorch_model.bin":           RESOURCE_MODEL,
 			"vae/config.json":                            RESOURCE_REQUIRED,
 			"vae/diffusion_pytorch_model.bin":            RESOURCE_MODEL,
+			"model_index.json":                           RESOURCE_REQUIRED,
 		}
 	default:
 		return ResourceEntryDefs{}
