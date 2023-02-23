@@ -379,9 +379,10 @@ func ResolveResources(
 		}
 	}
 
-	flagVocabNotExist := CheckFileDoesNotExist(path.Join(*dir, "vocab.json"))
+	flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
 
-	if !flagVocabNotExist {
+	//if vocab does not exist, extract it from tokenizer
+	if !flagVocabExist {
 		model, err := ExtractModelFromTokenizer(dir)
 		if err != nil {
 			return &foundResources, errors.New(
@@ -397,9 +398,10 @@ func ResolveResources(
 		}
 	}
 
-	flagMergesNotExists := CheckFileDoesNotExist(path.Join(*dir, "merges.txt"))
+	flagMergesExists := CheckFileExist(path.Join(*dir, "merges.txt"))
 
-	if !flagMergesNotExists {
+	//if merges does not exist, extract it from tokenizer
+	if !flagMergesExists {
 		model, err := ExtractModelFromTokenizer(dir)
 		if err != nil {
 			return &foundResources, errors.New(
@@ -418,13 +420,13 @@ func ResolveResources(
 	return &foundResources, nil
 }
 
-func CheckFileDoesNotExist(path string) bool {
+func CheckFileExist(path string) bool {
 	_, err := os.Stat(path)
 
 	if errors.Is(err, os.ErrNotExist) {
-		return true
-	} else {
 		return false
+	} else {
+		return true
 	}
 }
 
