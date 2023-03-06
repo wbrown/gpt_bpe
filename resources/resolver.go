@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -84,16 +86,17 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 	switch typ {
 	case RESOURCETYPE_TRANSFORMERS:
 		return ResourceEntryDefs{
-			"config.json":             RESOURCE_REQUIRED,
-			"vocab.json":              RESOURCE_OPTIONAL,
-			"merges.txt":              RESOURCE_OPTIONAL,
-			"special_tokens_map.json": RESOURCE_OPTIONAL,
-			"unitrim.json":            RESOURCE_OPTIONAL,
-			"wordtokens.json":         RESOURCE_OPTIONAL,
-			"specials.txt":            RESOURCE_OPTIONAL | RESOURCE_DERIVED,
-			"tokenizer_config.json":   RESOURCE_OPTIONAL,
-			"tokenizer.json":          RESOURCE_REQUIRED,
-			"pytorch_model.bin":       RESOURCE_MODEL,
+			"config.json":                  RESOURCE_REQUIRED,
+			"vocab.json":                   RESOURCE_OPTIONAL,
+			"merges.txt":                   RESOURCE_OPTIONAL,
+			"special_tokens_map.json":      RESOURCE_OPTIONAL,
+			"unitrim.json":                 RESOURCE_OPTIONAL,
+			"wordtokens.json":              RESOURCE_OPTIONAL,
+			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
+			"tokenizer_config.json":        RESOURCE_OPTIONAL,
+			"pytorch_model.bin.index.json": RESOURCE_OPTIONAL,
+			"tokenizer.json":               RESOURCE_REQUIRED,
+			"pytorch_model.bin":            RESOURCE_MODEL,
 		}
 	case RESOURCETYPE_DIFFUSERS:
 		return ResourceEntryDefs{
@@ -300,11 +303,14 @@ func ResolveResources(
 
 	for file, flag := range resources {
 		var rsrcFile os.File
+
+		// Resolve the resource
 		if flag <= rsrcLvl {
 			log.Printf("Resolving %s/%s... ", uri, file)
 			targetPath := path.Join(*dir, file)
 			rsrcSize, rsrcSizeErr := Size(uri, file, token)
 			if rsrcSizeErr != nil {
+				// If the resource is required, we cannot continue.
 				if flag&RESOURCE_REQUIRED != 0 {
 					log.Printf("%s/%s not found, required!",
 						uri, file)
@@ -313,10 +319,10 @@ func ResolveResources(
 							"cannot retrieve required `%s from %s`: %s",
 							uri, file, rsrcSizeErr))
 				} else {
-					log.Printf("Resolved %s/%s... not there, not required.",
-						uri, file)
+					// Otherwise, we can skip it.
 					continue
 				}
+				// If the resource exists, and is the correct size, we can skip it.
 			} else if targetStat, targetStatErr := os.Stat(targetPath); !os.IsNotExist(
 				targetStatErr) && uint(targetStat.Size()) == rsrcSize {
 				log.Printf("Skipping %s/%s... already exists, "+
@@ -328,6 +334,9 @@ func ResolveResources(
 					return &foundResources, errors.New(
 						fmt.Sprintf("error opening '%s' for write: %s",
 							file, skipFileErr))
+
+					// If the resource exists, but is the wrong size, we need to
+					// download it.
 				} else {
 					rsrcFile = *openFile
 				}
@@ -381,7 +390,7 @@ func ResolveResources(
 
 	flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
 
-	//if vocab does not exist, extract it from tokenizer
+	// if vocab does not exist, extract it from tokenizer
 	if !flagVocabExist {
 		model, err := ExtractModelFromTokenizer(dir)
 		if err != nil {
@@ -400,7 +409,7 @@ func ResolveResources(
 
 	flagMergesExists := CheckFileExist(path.Join(*dir, "merges.txt"))
 
-	//if merges does not exist, extract it from tokenizer
+	// if merges does not exist, extract it from tokenizer
 	if !flagMergesExists {
 		model, err := ExtractModelFromTokenizer(dir)
 		if err != nil {
@@ -417,6 +426,131 @@ func ResolveResources(
 		}
 	}
 
+	// Check if we already got the pytorch model file
+	flagModelExists := CheckFileExist(path.Join(*dir, "pytorch_model.bin"))
+	log.Printf("Pytorch Model File exists: %t\n", flagModelExists)
+
+	// if model does not exist, check if we have the sharded config
+	if !flagModelExists {
+		flagShardConfigExists := CheckFileExist(path.Join(*dir, "pytorch_model.bin.index.json"))
+		log.Printf("Shard config exists: %t", flagShardConfigExists)
+		//if sharded config exists, attempt to download the shards
+		if flagShardConfigExists {
+			numShards, err := FindNumberOfShardsFromConfig(path.Join(*dir, "pytorch_model.bin.index.json"))
+			if err != nil {
+				log.Printf("Could not find number of shards from config: %s\n", err)
+				return &foundResources, errors.New("could not find number of shards from config")
+			}
+
+			// pad the number of shards to 5 digits
+			log.Printf("Found %d shards\n", numShards)
+			paddedTotalShards := fmt.Sprintf("%05d", numShards)
+
+			// loop through shards and download them
+			for i := 1; i <= numShards; i++ {
+				var rsrcFile os.File
+
+				paddedShardString := fmt.Sprintf("%05d", i)
+				// Construct the shard path
+				shardPath := fmt.Sprintf("pytorch_model-%s-of-%s.bin", paddedShardString, paddedTotalShards)
+				log.Printf("Resolving shard %s\n", shardPath)
+
+				targetPath := path.Join(*dir, shardPath)
+				rsrcSize, rsrcSizeErr := Size(uri, shardPath, token)
+				if rsrcSizeErr != nil {
+					fmt.Printf("Could not get size of shard %s: %s\n", shardPath, rsrcSizeErr)
+					return &foundResources, errors.New("could not get size of shard")
+				}
+				//print size of shard
+				log.Printf("Remote Size of shard %s is %s\n", shardPath, humanize.Bytes(uint64(rsrcSize)))
+
+				//check if shard exists locally
+				flagShardExists := CheckFileExist(targetPath)
+				if flagShardExists {
+					//check if shard local size is correct compared to remote size
+					localShardInfo, err := os.Stat(targetPath)
+					if err != nil {
+						fmt.Printf("Could not get size of local shard %s: %s\n", shardPath, err)
+						return &foundResources, errors.New("could not get size of local shard")
+					}
+					if (rsrcSize > 0) && (rsrcSize == uint(localShardInfo.Size())) {
+						log.Printf("Skipping Shard %s, exists and is of correct size...\n", shardPath)
+						continue
+					}
+				}
+
+				//fetch shard
+				var rsrcReader io.ReadCloser
+				rsrcReader, err = Fetch(uri, shardPath, token)
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to fetch file: %s",
+							err))
+				}
+
+				//create shard file
+				var rsrcFilePtr *os.File
+				rsrcFilePtr, err = os.Create(targetPath)
+				rsrcFile = *rsrcFilePtr
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to create file: %s",
+							err))
+				}
+
+				//copy shard to file
+				counter := &WriteCounter{
+					Last: time.Now(),
+					Path: fmt.Sprintf("%s/%s", uri, shardPath),
+					Size: uint64(rsrcSize),
+				}
+				bytesDownloaded, ioErr := io.Copy(&rsrcFile,
+					io.TeeReader(rsrcReader, counter))
+				rsrcReader.Close()
+				if ioErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error downloading '%s': %s",
+							shardPath, ioErr))
+				} else {
+					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
+						"%s completed.", uri, shardPath,
+						humanize.Bytes(uint64(bytesDownloaded))))
+				}
+
+				//close shard file
+				err = rsrcFile.Close()
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to close file: %s",
+							err))
+				}
+
+				//close shard reader
+				err = rsrcReader.Close()
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to close reader: %s",
+							err))
+				}
+
+				//check if shard local size is correct compared to remote size
+				var localShardInfo os.FileInfo
+				localShardInfo, err = os.Stat(targetPath)
+				if err != nil {
+					fmt.Printf("Could not get size of local shard %s: %s\n", shardPath, err)
+					return &foundResources, errors.New("could not get size of local shard")
+				}
+				if (rsrcSize > 0) && (rsrcSize != uint(localShardInfo.Size())) {
+					return &foundResources, errors.New("shard was not downloaded correctly")
+				}
+				log.Printf("Shard %s downloaded correctly, size is %s\n", shardPath, humanize.Bytes(uint64(localShardInfo.Size())))
+
+			}
+			log.Printf("Downloaded %d shards\n", numShards)
+
+		}
+
+	}
 	return &foundResources, nil
 }
 
@@ -681,4 +815,46 @@ func ExtractMergesFromTokenizer(model map[string]interface{}, dir *string) error
 	log.Println("Merges written to merges.txt from tokenizer.json")
 
 	return nil
+}
+
+func FindNumberOfShardsFromConfig(configPath string) (int, error) {
+	// Open the file
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		log.Println("Error opening config:", err)
+		return -1, err
+	}
+	defer configFile.Close()
+
+	// Decode the JSON data into a map
+	var data map[string]interface{}
+	err = json.NewDecoder(configFile).Decode(&data)
+	if err != nil {
+		log.Println("Error decoding JSON from config:", err)
+		return -1, err
+	}
+
+	// Access the data at the specified path
+	weight_map, ok := data["weight_map"].(map[string]interface{})
+	if !ok {
+		fmt.Println("Error: Could not convert data to weight_map")
+		return -1, errors.New(" could not convert data to weight_map")
+	}
+	embed_out, ok := weight_map["embed_out.weight"]
+	if !ok {
+		fmt.Println("Error: Could not convert weight_map to embed_out")
+
+		return -1, errors.New(" could not convert weight_map to embed_out")
+	}
+	r, _ := regexp.Compile(`[^\d]*[\d]+[^\d]+([\d]+)`)
+	// convert to interface -> string -> int
+	embed_out_int, err := strconv.Atoi(
+		r.FindStringSubmatch(fmt.Sprintf("%v", embed_out))[1])
+
+	if err != nil {
+		fmt.Println("Error: Could not convert embed_out to int")
+		return -1, errors.New(" could not convert embed_out to int")
+	}
+
+	return embed_out_int, nil
 }
