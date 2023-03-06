@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/wbrown/gpt_bpe/resources"
 	"io"
 	"log"
 	"os"
@@ -574,4 +575,257 @@ func TestGPTDecoder_Decode(t *testing.T) {
 }
 
 func TestRankPairs(t *testing.T) {
+}
+
+func TestModelDownload(t *testing.T) {
+	// Download the model
+	modelId := "gpt2"
+	destPath := "./TestModelDownload"
+	destPathPTR := &destPath
+
+	var rsrcType resources.ResourceType
+	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
+	hfApiToken := os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// config.json, pytorch_model.bin,
+	// tokenizer.json, vocab.json
+
+	// Check for config.json
+	configPath := destPath + "/config.json"
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Println("config.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("config.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for config.json")
+	}
+
+	// Check for pytorch_model.bin
+	modelPath := destPath + "/pytorch_model.bin"
+	if _, err := os.Stat(modelPath); err == nil {
+		fmt.Println("pytorch_model.bin exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model.bin does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model.bin")
+	}
+
+	// Check for tokenizer.json
+	tokenizerConfigPath := destPath + "/tokenizer.json"
+	if _, err := os.Stat(tokenizerConfigPath); err == nil {
+		fmt.Println("tokenizer.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("tokenizer.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for tokenizer.json")
+	}
+
+	// Check for vocab.json
+	vocabPath := destPath + "/vocab.json"
+	if _, err := os.Stat(vocabPath); err == nil {
+		fmt.Println("vocab.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("vocab.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for vocab.json")
+	}
+
+	// Clean up by removing the downloaded folder
+	os.RemoveAll(destPath)
+	fmt.Println("All Exists - Looks good.")
+}
+
+func TestModelDownloadPythia(t *testing.T) {
+	// Pythia uses a slightly different file structure, where
+	// the vocab.json and merges.txt files are stored in the
+	// tokenizer.json file. We want to check if we are able to
+	// download the model and extract the vocab.json and merges.txt
+	modelId := "EleutherAI/pythia-70m"
+	destPath := "./TestModelDownloadPythia"
+	destPathPTR := &destPath
+
+	var rsrcType resources.ResourceType
+	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
+	hfApiToken := os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// config.json, pytorch_model.bin,
+	// tokenizer.json, vocab.json
+
+	// Check for config.json
+	configPath := destPath + "/config.json"
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Println("config.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("config.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for config.json")
+	}
+
+	// Check for pytorch_model.bin
+	modelPath := destPath + "/pytorch_model.bin"
+	if _, err := os.Stat(modelPath); err == nil {
+		fmt.Println("pytorch_model.bin exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model.bin does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model.bin")
+	}
+
+	// Check for tokenizer.json
+	tokenizerConfigPath := destPath + "/tokenizer.json"
+	if _, err := os.Stat(tokenizerConfigPath); err == nil {
+		fmt.Println("tokenizer.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("tokenizer.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for tokenizer.json")
+	}
+
+	// Check for vocab.json
+	vocabPath := destPath + "/vocab.json"
+	if _, err := os.Stat(vocabPath); err == nil {
+		fmt.Println("vocab.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("vocab.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for vocab.json")
+	}
+
+	// Clean up by removing the downloaded folder
+	os.RemoveAll(destPath)
+	fmt.Println("All Exists - Looks good.")
+}
+
+func TestModelDownloadPythiaSharded(t *testing.T) {
+	// This tests the model downloader's ability
+	// to download a sharded model.
+
+	modelId := "EleutherAI/pythia-6.9b"
+	destPath := "./TestModelDownloadPythiaSharded"
+	destPathPTR := &destPath
+
+	var rsrcType resources.ResourceType
+	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
+	hfApiToken := os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// pytorch_model-00001-of-00002.bin, pytorch_model-00002-of-00002.bin,
+	// pytorch_model.bin.index.json
+
+	// Check for pytorch_model-00001-of-00002.bin
+	model1Path := destPath + "/pytorch_model-00001-of-00002.bin"
+	if _, err := os.Stat(model1Path); err == nil {
+		fmt.Println("pytorch_model-00001-of-00002.bin exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model-00001-of-00002.bin does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model-00001-of-00002.bin")
+	}
+
+	// Check for pytorch_model-00002-of-00002.bin
+	model2Path := destPath + "/pytorch_model-00002-of-00002.bin"
+	if _, err := os.Stat(model2Path); err == nil {
+		fmt.Println("pytorch_model-00002-of-00002.bin exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model-00002-of-00002.bin does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model-00002-of-00002.bin")
+	}
+
+	// Check for pytorch_model.bin.index.json
+	shardconfigPath := destPath + "/pytorch_model.bin.index.json"
+	if _, err := os.Stat(shardconfigPath); err == nil {
+		fmt.Println("pytorch_model.bin.index.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model.bin.index.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model.bin.index.json")
+	}
+
+	// Clean up by removing the downloaded folder
+	os.RemoveAll(destPath)
+	fmt.Println("All Exists - Looks good.")
+
+}
+
+func TestFunctionForShards(t *testing.T) {
+	// path to the folder containing the shards
+	path := "./TestModelDownloadPythiaSharded/pytorch_model.bin.index.json"
+
+	numofshards, err := resources.FindNumberOfShardsFromConfig(path)
+	if err != nil {
+		t.Errorf("Error finding number of shards: %s", err)
+	}
+
+	fmt.Println("Number of shards: ", numofshards)
 }
