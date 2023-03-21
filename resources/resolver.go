@@ -674,13 +674,14 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			"json"); unitrim != nil {
 			resources["unitrim.json"] = *unitrim
 		}
-		if encoderJson := GetEmbeddedResource(vocabId + "/encoder." +
-			"json"); encoderJson != nil {
-			resources["encoder.json"] = *encoderJson
-		}
+		//if encoderJson := GetEmbeddedResource(vocabId + "/encoder." +
+		//	"json"); encoderJson != nil {
+		//	resources["encoder.json"] = *encoderJson
+		//}
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
 			"json"); config != nil {
 			resources["vocab.json"] = *config
+			resources["encoder.json"] = *config
 		}
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
 			resources["merges.txt"] = *vocab
