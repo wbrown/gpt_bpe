@@ -91,6 +91,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"merges.txt":                   RESOURCE_OPTIONAL,
 			"special_tokens_map.json":      RESOURCE_OPTIONAL,
 			"unitrim.json":                 RESOURCE_OPTIONAL,
+			"encoder.json":                 RESOURCE_OPTIONAL,
 			"wordtokens.json":              RESOURCE_OPTIONAL,
 			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
 			"tokenizer_config.json":        RESOURCE_OPTIONAL,
@@ -673,6 +674,10 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			"json"); unitrim != nil {
 			resources["unitrim.json"] = *unitrim
 		}
+		if encoderJson := GetEmbeddedResource(vocabId + "/encoder." +
+			"json"); encoderJson != nil {
+			resources["encoder.json"] = *encoderJson
+		}
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
 			"json"); config != nil {
 			resources["vocab.json"] = *config
@@ -710,6 +715,10 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		if _, exists := (*resources)["unitrim.json"]; !exists {
 			(*resources)["unitrim.json"] = *GetEmbeddedResource(
 				"gpt2-tokenizer/unitrim.json")
+		}
+		if _, exists := (*resources)["encoder.json"]; !exists {
+			(*resources)["encoder.json"] = *GetEmbeddedResource(
+				"gpt2-tokenizer/encoder.json")
 		}
 		return config, resources, nil
 	}
