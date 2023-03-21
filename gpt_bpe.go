@@ -5,8 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	lru "github.com/hashicorp/golang-lru"
-	"github.com/wbrown/gpt_bpe/resources"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -15,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	lru "github.com/hashicorp/golang-lru"
+	"github.com/wbrown/gpt_bpe/resources"
 )
 
 const BPE_LRU_SZ = 65536
@@ -210,11 +212,18 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		normalizer = strings.NewReplacer(norms...)
 	}
 
-	// Read token unicode trimming definitions
-	unitrimArr := make([]int, 0)
-	if json.Unmarshal(*rsrcs["unitrim.json"].Data, &unitrimArr) != nil {
-		log.Fatal("Error unmarshalling `unitrim.json`")
+	// Unmarshal the encoder mappings from json to (int: string) map.
+	encoderMappings := make(map[string]int)
+	// check if the encoder.json file is present
+	if _, ok := rsrcs["encoder.json"]; !ok {
+		return nil, fmt.Errorf("encoder.json not found for vocabId: %s", vocabId)
 	}
+	if json.Unmarshal(*rsrcs["encoder.json"].Data, &encoderMappings) != nil {
+		log.Fatal("Error unmarshalling `encoder.json`")
+	}
+
+	// Build the unitrim array dynamically.
+	unitrimArr := makeUnitrimArr(encoderMappings)
 
 	// Build the bytes to unicode tables.
 	bytesUnicodeMap := make(map[byte]rune)
@@ -356,6 +365,141 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	encoder.specialsTree = encoder.createRuneTree()
 	return encoder, nil
+}
+
+// makeUnitrimArr creates a lookup table for unicode trimming
+// it replaces the method of generating it in advanced (unitrim.json)
+func makeUnitrimArr(encoderMap map[string]int) []int {
+	// get reverse mappings
+	reverseEncoderMap := make(map[int]string)
+	for k, v := range encoderMap {
+		reverseEncoderMap[v] = k
+	}
+
+	//make the maps needed
+	preMapList := make([]int, 512)
+	for i := 0; i < 512; i++ {
+		preMapList[i] = -1
+	}
+	postMapList := make([]int, 512)
+
+	// fill the maps with the unicode values
+	postMapIdx, preMapIdx := 0, 0
+	for i := uint8('!'); i < uint8('~')+1; i++ {
+		preMapList[preMapIdx] = int(i)
+		preMapIdx += 1
+	}
+	for i := uint8('¡'); i < uint8('¬')+1; i++ {
+		preMapList[preMapIdx] = int(i)
+		preMapIdx += 1
+	}
+	for i := uint16('®'); i < uint16('ÿ')+1; i++ {
+		preMapList[preMapIdx] = int(i)
+		preMapIdx += 1
+	}
+	copy(postMapList, preMapList)
+	postMapIdx = preMapIdx
+
+	for i := 0; i < 256; i++ {
+		// if the value is not in the remapping list
+		if !intInSlice(i, preMapList) {
+			preMapList[preMapIdx] = i
+			preMapIdx += 1
+		}
+	}
+	preMapIdx = 0
+
+	for i := 0; postMapIdx+i < 256; i++ {
+		// continue incrementing until end of list
+		if postMapList[postMapIdx+i] == -1 {
+			postMapList[postMapIdx+i] = preMapList[postMapIdx+i]
+			preMapList[postMapIdx+i] = preMapIdx + 256
+			preMapIdx += 1
+		}
+
+	}
+
+	// map int to rune
+	charMap := make(map[int]rune)
+	for i := 0; i < len(postMapList); i++ {
+		charMap[postMapList[i]] = rune(postMapList[i])
+	}
+
+	// create the decode map
+	DecodeMap := make(map[rune]int)
+	for i := 0; i < 256; i++ {
+		value := postMapList[i]
+		key := rune(preMapList[i])
+		DecodeMap[key] = value
+	}
+
+	// create the ordered array of encodings
+	orderedArrayEncodings := make([]string, len(reverseEncoderMap))
+	for k, v := range reverseEncoderMap {
+		orderedArrayEncodings[k] = v
+	}
+
+	// create the need array (returned by this function)
+	needArray := make([]int, 0)
+
+	// for each encoding, get the need
+	for i := 0; i < len(orderedArrayEncodings); i++ {
+		need := 0
+		min_need := 0
+
+		// apply mapping
+		v := DecodeMapping(reverseEncoderMap, DecodeMap, i)
+		// get binary representation of each character
+		// and match it to the need
+		for _, c := range v {
+			if (c & 0b10000000) == 0 {
+				need = 0
+			} else if (c & 0b11000000) == 0b10000000 {
+				need -= 1
+			} else if (c & 0b11100000) == 0b11000000 {
+				need = 1
+			} else if (c & 0b11110000) == 0b11100000 {
+				need = 2
+			} else if (c & 0b11111000) == 0b11110000 {
+				need = 3
+			}
+			if need < 0 {
+				min_need = need
+			}
+
+			if need == 0 {
+				need = min_need
+			}
+		}
+		needArray = append(needArray, need)
+	}
+
+	return needArray
+}
+
+// helper for makeUnitrimArr
+func DecodeMapping(encodings map[int]string, mappings map[rune]int, input int) string {
+	// get original encoding
+	encoding := encodings[input]
+
+	// decode encoding by character
+	output_str := ""
+	for _, c := range encoding {
+		// get the mapping for the character
+		mapped := mappings[c]
+		output_str += fmt.Sprintf("%c", mapped)
+	}
+	return output_str
+}
+
+// helper for makeUnitrimArr
+func intInSlice(a int, list []int) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
 // insertAt inserts v into s at index i and returns the new slice.
@@ -939,6 +1083,7 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 		} else {
 			req = encoder.unitrim[(*tokens)[tokenIdx]]
 		}
+
 		if !(need+req < 0) {
 			need += req
 		}
