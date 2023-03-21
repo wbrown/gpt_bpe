@@ -1082,13 +1082,11 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 			req = 0
 		} else {
 			req = encoder.unitrim[(*tokens)[tokenIdx]]
-			fmt.Printf("req: %d for token: %d, %s\n", req, tok, encoder.decoder[tok])
 		}
 
 		if !(need+req < 0) {
 			need += req
 		}
-		fmt.Printf("need: %d, req: %d\n", need, req)
 		if req == 0 {
 			// reset need to 0 to avoid being stuck when we have invalid
 			// unicode being generated.
@@ -1098,43 +1096,6 @@ func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
 			good = tokenIdx + 1
 		}
 	}
-	fmt.Printf("good: %d, len: %d\n", good, len(*tokens))
-	return good == len(*tokens)
-}
-
-// Determine if the sequence of Tokens given is ready to be serialized
-// to string, based on if the sequence will produce valid Unicode runes.
-func (encoder *GPTEncoder) TokensReadyRevised(tokens *Tokens) bool {
-	good := 0
-	need := 0
-	//for each token, we add up the number required to complete it
-	for tokenIdx := range *tokens {
-		tok := (*tokens)[tokenIdx]
-		var req int
-		if int(tok) >= len(encoder.unitrim) {
-			// Don't error out on tokens that we don't know about.
-			req = 0
-		} else {
-			//we reference the unitrim array to get the number of tokens required to complete the current token
-			req = encoder.unitrim[(*tokens)[tokenIdx]]
-			fmt.Printf("req: %d for token: %d, %s\n", req, tok, encoder.decoder[tok])
-		}
-
-		if !(need+req < 0) {
-			need += req
-		}
-		fmt.Printf("need: %d, req: %d\n", need, req)
-		//if we require 0, we are ready to decode and return true, else false
-		if req == 0 {
-			// reset need to 0 to avoid being stuck when we have invalid
-			// unicode being generated.
-			need = 0
-		}
-		if need == 0 {
-			good = tokenIdx + 1
-		}
-	}
-	fmt.Printf("good: %d, len: %d\n", good, len(*tokens))
 	return good == len(*tokens)
 }
 

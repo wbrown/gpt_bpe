@@ -616,6 +616,7 @@ func TestUnitrimFunctionality(t *testing.T) {
 	for i := range needArray {
 		if needArray[i] != unitrim[i] {
 			fmt.Printf("Need array: %v and unitrim array: %v at index %d are not the same\n", needArray[i], unitrim[i], i)
+			fmt.Printf("mismatched unicode is: %c\n", rune(needArray[i]))
 			t.Errorf("Need array and unitrim array are not the same\n")
 		}
 	}
