@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/wbrown/gpt_bpe/resources"
 	"io"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/wbrown/gpt_bpe/resources"
 )
 
 var clipEncoder GPTEncoder
@@ -542,9 +543,11 @@ func TestPileEncoder_Decode(t *testing.T) {
 func TestGPTEncoder_TokensReady(t *testing.T) {
 	multiTokenAsterism := "⁂"
 	tokens := gpt2Encoder.Encode(&multiTokenAsterism)
+	fmt.Printf("Tokens: %v, len: %v\n", tokens, len(*tokens))
 	var idx int
 	for idx = range *tokens {
 		tokenSlice := (*tokens)[0 : idx+1]
+		fmt.Printf("TokenSlice: %v, len: %v\n", tokenSlice, len(tokenSlice))
 		if gpt2Encoder.TokensReady(&tokenSlice) {
 			break
 		}
@@ -568,6 +571,58 @@ func TestGPTEncoder_TokensReadyContext(t *testing.T) {
 	if !pileEncoder.TokensReady(&tokens) {
 		t.Errorf("Expected TokensReady to be true for badcontext.json")
 	}
+}
+
+func TestUnitrimFunctionality(t *testing.T) {
+	// get need array for gpt2 unitrim
+	encoderFile := "resources/data/clip-tokenizer/encoder.json"
+	unitrimFile := "resources/data/clip-tokenizer/unitrim.json"
+
+	// make sure the files exist
+	if _, err := os.Stat(encoderFile); os.IsNotExist(err) {
+		t.Errorf("Could not find file %s\n", encoderFile)
+	}
+	if _, err := os.Stat(unitrimFile); os.IsNotExist(err) {
+		t.Errorf("Could not find file %s\n", unitrimFile)
+	}
+
+	// read in the encoder and unitrim files
+	encoderBytes, err := os.ReadFile(encoderFile)
+	// unmarshal the encoder file
+	var encoder map[string]int
+	err = json.Unmarshal(encoderBytes, &encoder)
+	if err != nil {
+		t.Errorf("Could not unmarshal encoder file: %v\n", err)
+	}
+
+	// read in the unitrim file
+	unitrimBytes, err := os.ReadFile(unitrimFile)
+	// unmarshal the unitrim file
+	var unitrim []int
+	err = json.Unmarshal(unitrimBytes, &unitrim)
+	if err != nil {
+		t.Errorf("Could not unmarshal unitrim file: %v\n", err)
+	}
+
+	// get need array for gpt2 unitrim with the makeUnitrimArr function
+	needArray := makeUnitrimArr(encoder)
+
+	// check that the need array is the same as the unitrim array
+	fmt.Printf("Need array length: %d, unitrim array length: %d\n", len(needArray), len(unitrim))
+	if len(needArray) != len(unitrim) {
+		t.Errorf("Need array and unitrim array are not the same length\n")
+	}
+
+	for i := range needArray {
+		if needArray[i] != unitrim[i] {
+			fmt.Printf("Need array: %v and unitrim array: %v at index %d are not the same\n", needArray[i], unitrim[i], i)
+			fmt.Printf("mismatched unicode is: %c\n", rune(needArray[i]))
+			t.Errorf("Need array and unitrim array are not the same\n")
+		}
+	}
+
+	fmt.Printf("Length and contents of need array and unitrim array are the same\n")
+
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {
@@ -816,16 +871,4 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 	os.RemoveAll(destPath)
 	fmt.Println("All Exists - Looks good.")
 
-}
-
-func TestFunctionForShards(t *testing.T) {
-	// path to the folder containing the shards
-	path := "./TestModelDownloadPythiaSharded/pytorch_model.bin.index.json"
-
-	numofshards, err := resources.FindNumberOfShardsFromConfig(path)
-	if err != nil {
-		t.Errorf("Error finding number of shards: %s", err)
-	}
-
-	fmt.Println("Number of shards: ", numofshards)
 }
