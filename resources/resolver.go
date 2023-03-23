@@ -698,8 +698,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			resources["special_config.json"] = *special_config
 		}
 		return hf, &resources, nil
-	} else {
-		log.Printf("%v", vocabErr)
 	}
 	if isValidUrl(vocabId) {
 		u, _ := url.Parse(vocabId)
