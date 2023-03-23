@@ -507,7 +507,13 @@ func ResolveResources(
 				}
 				bytesDownloaded, ioErr := io.Copy(&rsrcFile,
 					io.TeeReader(rsrcReader, counter))
-				rsrcReader.Close()
+				//close shard reader
+				err = rsrcReader.Close()
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to close reader: %s",
+							err))
+				}
 				if ioErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error downloading '%s': %s",
@@ -523,14 +529,6 @@ func ResolveResources(
 				if err != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error trying to close file: %s",
-							err))
-				}
-
-				//close shard reader
-				err = rsrcReader.Close()
-				if err != nil {
-					return &foundResources, errors.New(
-						fmt.Sprintf("error trying to close reader: %s",
 							err))
 				}
 
