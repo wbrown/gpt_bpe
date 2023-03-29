@@ -805,7 +805,7 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 	// This tests the model downloader's ability
 	// to download a sharded model.
 
-	modelId := "EleutherAI/pythia-6.9b"
+	modelId := "EleutherAI/pythia-6.9b-deduped"
 	destPath := "./TestModelDownloadPythiaSharded"
 	destPathPTR := &destPath
 
@@ -871,4 +871,87 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 	os.RemoveAll(destPath)
 	fmt.Println("All Exists - Looks good.")
 
+}
+
+func TestModelDownloadFairseq(t *testing.T) {
+	// Koboldai's fairseq models are stored in a different format
+	// it has merges and vocab but no tokenizer.json
+	modelId := "KoboldAI/fairseq-dense-355M"
+	destPath := "./TestModelDownloadFairseq"
+	destPathPTR := &destPath
+
+	var rsrcType resources.ResourceType
+	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
+	hfApiToken := os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// vocab, config. merges, pytorch_model
+
+	// Check for config.json
+	configPath := destPath + "/config.json"
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Println("config.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("config.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for config.json")
+	}
+
+	// Check for pytorch_model.bin
+	modelPath := destPath + "/pytorch_model.bin"
+	if _, err := os.Stat(modelPath); err == nil {
+		fmt.Println("pytorch_model.bin exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("pytorch_model.bin does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for pytorch_model.bin")
+	}
+
+	// Check for vocab.json
+	vocabPath := destPath + "/vocab.json"
+	if _, err := os.Stat(vocabPath); err == nil {
+		fmt.Println("vocab.json exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("vocab.json does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for vocab.json")
+	}
+
+	// Check for merges.txt
+	mergesPath := destPath + "/merges.txt"
+	if _, err := os.Stat(mergesPath); err == nil {
+		fmt.Println("merges.txt exists")
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		os.RemoveAll(destPath)
+		t.Errorf("merges.txt does not exist")
+
+	} else {
+		os.RemoveAll(destPath)
+		t.Errorf("Error checking for merges.txt")
+	}
+
+	// Clean up by removing the downloaded folder
+	os.RemoveAll(destPath)
+	fmt.Println("All Exists - Looks good (Fairseq Download).")
 }

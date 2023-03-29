@@ -96,7 +96,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
 			"tokenizer_config.json":        RESOURCE_OPTIONAL,
 			"pytorch_model.bin.index.json": RESOURCE_OPTIONAL,
-			"tokenizer.json":               RESOURCE_REQUIRED,
+			"tokenizer.json":               RESOURCE_OPTIONAL,
 			"pytorch_model.bin":            RESOURCE_MODEL,
 		}
 	case RESOURCETYPE_DIFFUSERS:
@@ -389,41 +389,71 @@ func ResolveResources(
 		}
 	}
 
-	flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
-
-	// if vocab does not exist, extract it from tokenizer
-	if !flagVocabExist {
-		model, err := ExtractModelFromTokenizer(dir)
-		if err != nil {
+	// check if tokenizer exists by checking if tokenizer.json exists
+	// and has data in it
+	flagTokenizerExist := CheckFileExist(path.Join(*dir, "tokenizer.json"))
+	if flagTokenizerExist {
+		// check size of tokenizer.json
+		targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.json"))
+		if targetStatErr != nil {
 			return &foundResources, errors.New(
-				fmt.Sprintf("Could not extract model from tokenizer %s",
-					err))
+				fmt.Sprintf("cannot stat tokenizer.json: %s",
+					targetStatErr))
 		}
-
-		err = ExtractVocabFromTokenizer(model, dir)
-		if err != nil {
-			return &foundResources, errors.New(
-				fmt.Sprintf("Could not extract vocab from tokenizer %s",
-					err))
+		if targetStat.Size() == 0 {
+			flagTokenizerExist = false
 		}
 	}
 
+	// if tokenizer exists, but vocab and merges do not exist, extract them
+	// from tokenizer, else if vocab and merges exist, do nothing,
+	// if both do not exist, fail
+	flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
 	flagMergesExists := CheckFileExist(path.Join(*dir, "merges.txt"))
 
-	// if merges does not exist, extract it from tokenizer
-	if !flagMergesExists {
-		model, err := ExtractModelFromTokenizer(dir)
-		if err != nil {
-			return &foundResources, errors.New(
-				fmt.Sprintf("Could not extract model from tokenizer %s",
-					err))
+	if flagTokenizerExist {
+		// if vocab does not exist, extract it from tokenizer
+		if !flagVocabExist {
+			model, err := ExtractModelFromTokenizer(dir)
+			if err != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf("Could not extract model from tokenizer %s",
+						err))
+			}
+
+			err = ExtractVocabFromTokenizer(model, dir)
+			if err != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf("Could not extract vocab from tokenizer %s",
+						err))
+			}
 		}
 
-		err = ExtractMergesFromTokenizer(model, dir)
-		if err != nil {
+		// if merges does not exist, extract it from tokenizer
+		if !flagMergesExists {
+			model, err := ExtractModelFromTokenizer(dir)
+			if err != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf("Could not extract model from tokenizer %s",
+						err))
+			}
+
+			err = ExtractMergesFromTokenizer(model, dir)
+			if err != nil {
+				return &foundResources, errors.New(
+					fmt.Sprintf("Could not extract merges from tokenizer %s",
+						err))
+			}
+		}
+	} else if !flagTokenizerExist {
+		// if tokenizer does not exist, check if vocab and merges exist
+		if flagVocabExist && flagMergesExists {
+			// if both exist, do nothing
+			log.Println("Vocab and merges exist, but tokenizer does not... OK")
+		} else {
+			// if either does not exist, fail
 			return &foundResources, errors.New(
-				fmt.Sprintf("Could not extract merges from tokenizer %s",
-					err))
+				fmt.Sprintf("Tokenizer, vocab, and merges do not exist ... Fail"))
 		}
 	}
 
@@ -550,6 +580,7 @@ func ResolveResources(
 		}
 
 	}
+	log.Printf("Model downloaded to %s\n", *dir)
 	return &foundResources, nil
 }
 
@@ -668,14 +699,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
-		if unitrim := GetEmbeddedResource(vocabId + "/unitrim." +
-			"json"); unitrim != nil {
-			resources["unitrim.json"] = *unitrim
-		}
-		//if encoderJson := GetEmbeddedResource(vocabId + "/encoder." +
-		//	"json"); encoderJson != nil {
-		//	resources["encoder.json"] = *encoderJson
-		//}
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
 			"json"); config != nil {
 			resources["vocab.json"] = *config
