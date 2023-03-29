@@ -541,6 +541,11 @@ func ResolveResources(
 				err = rsrcReader.Close()
 				if err != nil {
 					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to close file: %s",
+							err))
+				}
+				if err != nil {
+					return &foundResources, errors.New(
 						fmt.Sprintf("error trying to close reader: %s",
 							err))
 				}
@@ -552,14 +557,6 @@ func ResolveResources(
 					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
 						"%s completed.", uri, shardPath,
 						humanize.Bytes(uint64(bytesDownloaded))))
-				}
-
-				//close shard file
-				err = rsrcFile.Close()
-				if err != nil {
-					return &foundResources, errors.New(
-						fmt.Sprintf("error trying to close file: %s",
-							err))
 				}
 
 				//check if shard local size is correct compared to remote size
@@ -734,10 +731,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		return nil, nil, err
 	} else {
 		config.ModelId = &resolvedVocabId
-		if _, exists := (*resources)["unitrim.json"]; !exists {
-			(*resources)["unitrim.json"] = *GetEmbeddedResource(
-				"gpt2-tokenizer/unitrim.json")
-		}
 		if _, exists := (*resources)["encoder.json"]; !exists {
 			(*resources)["encoder.json"] = *GetEmbeddedResource(
 				"gpt2-tokenizer/encoder.json")
