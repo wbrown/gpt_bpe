@@ -906,6 +906,7 @@ func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
 // returns an iterator function that will return Tokens on each call.
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
+
 	accumulator := make(Tokens, 0, 16384)
 	eosReturned := false
 	if encoder.encloseEosBos {
@@ -986,6 +987,7 @@ func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) *[]byte {
 // Encode encodes a string into a sequence of tokens.
 func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 	runeReader := strings.NewReader(*text)
+
 	return encoder.EncodeReader(runeReader)
 }
 

@@ -384,7 +384,7 @@ var GPTEncoderTests = []EncoderTest{
 		Tokens{209, 0, 187, 0, 12110},
 		Tokens{49406, 49407, 49407, 23435, 49407}},
 	{" <|padding|>test",
-		Tokens{1279, 91, 39231, 91, 29, 9288},
+		Tokens{220, 50257, 9288},
 		Tokens{209, 1, 2566},
 		Tokens{49406, 27, 347, 3798, 796, 91, 285, 1628, 49407},
 	},
@@ -418,6 +418,13 @@ func TestGPTEncoder_Encode(t *testing.T) {
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].GPT2Expected)
 	}
+}
+
+func TestGPTEncoder_EncodeRex(t *testing.T) {
+	tokensPtr := *gpt2Encoder.Encode(&(GPTEncoderTests[3].Input))
+	fmt.Printf("tokensPtr: %v ", tokensPtr)
+	assert.Equal(t, tokensPtr, GPTEncoderTests[3].GPT2Expected)
+
 }
 
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
