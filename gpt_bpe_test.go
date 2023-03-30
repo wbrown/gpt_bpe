@@ -420,13 +420,6 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	}
 }
 
-func TestGPTEncoder_EncodeRex(t *testing.T) {
-	tokensPtr := *gpt2Encoder.Encode(&(GPTEncoderTests[3].Input))
-	fmt.Printf("tokensPtr: %v ", tokensPtr)
-	assert.Equal(t, tokensPtr, GPTEncoderTests[3].GPT2Expected)
-
-}
-
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	start := time.Now()
 	corpusRunes := strings.NewReader(corpus)
