@@ -577,7 +577,6 @@ func ResolveResources(
 		}
 
 	}
-	log.Printf("Model downloaded to %s\n", *dir)
 	return &foundResources, nil
 }
 
