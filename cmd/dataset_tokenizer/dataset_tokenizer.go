@@ -191,9 +191,9 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 		reader io.RuneReader
 	}
 
-	// We pre-emptively do the work to set up the buffers for the next file,
-	// while the pror file is being consumed.
-	runeReaders := make(chan namedRuneReader, 1)
+	// We pre-emptively do the work to set up the buffers for the next files,
+	// while the prior file is being consumed.
+	runeReaders := make(chan namedRuneReader, 4)
 	go func() {
 		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
 			path := matches[matchIdx]
