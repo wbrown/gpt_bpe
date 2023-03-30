@@ -90,7 +90,6 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"vocab.json":                   RESOURCE_OPTIONAL,
 			"merges.txt":                   RESOURCE_OPTIONAL,
 			"special_tokens_map.json":      RESOURCE_OPTIONAL,
-			"unitrim.json":                 RESOURCE_OPTIONAL,
 			"encoder.json":                 RESOURCE_OPTIONAL,
 			"wordtokens.json":              RESOURCE_OPTIONAL,
 			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
@@ -696,6 +695,7 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
+
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
 			"json"); config != nil {
 			resources["vocab.json"] = *config
@@ -716,8 +716,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			resources["special_config.json"] = *special_config
 		}
 		return hf, &resources, nil
-	} else {
-		log.Printf("%v", vocabErr)
 	}
 	if isValidUrl(vocabId) {
 		u, _ := url.Parse(vocabId)
