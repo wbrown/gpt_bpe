@@ -20,6 +20,7 @@ import (
 var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
+var nerdstashEncoder GPTEncoder
 var corpus string
 var clipCorpus string
 
@@ -27,6 +28,7 @@ var clipCorpus string
 var gpt2Encoded *Tokens
 var pileEncoded *Tokens
 var clipEncoded *Tokens
+var nerdstashEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
 const largeCorpusPath = "resources/wiki.train.raw"
@@ -85,6 +87,7 @@ func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
 	clipEncoder = NewCLIPEncoder()
+	nerdstashEncoder = NewNerdstashEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
@@ -332,7 +335,7 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 		runeReader.ReadRune,
 		func(word *string) {
 			if word != nil {
-				gpt2Encoder.toBPE(*word)
+				gpt2Encoder.ToBPE(*word)
 			}
 			wordCount++
 		},
@@ -364,29 +367,34 @@ func BenchmarkGPTEncoder_Decode(b *testing.B) {
 }
 
 type EncoderTest struct {
-	Input        string
-	GPT2Expected Tokens
-	PileExpected Tokens
-	CLIPExpected Tokens
+	Input             string
+	GPT2Expected      Tokens
+	PileExpected      Tokens
+	CLIPExpected      Tokens
+	NerdstashExpected Tokens
 }
 
 var GPTEncoderTests = []EncoderTest{
 	{"… …",
 		Tokens{1399, 3926},
 		Tokens{2866, 8139},
-		Tokens{49406, 959, 959, 49407}},
+		Tokens{49406, 959, 959, 49407},
+		Tokens{49289, 5512}},
 	{"<|endoftext|>",
 		Tokens{50256},
 		Tokens{0},
-		Tokens{49406, 49407, 49407}},
+		Tokens{49406, 49407, 49407},
+		Tokens{3}},
 	{" <|endoftext|>\n<|endoftext|>foo",
 		Tokens{220, 50256, 198, 50256, 21943},
 		Tokens{209, 0, 187, 0, 12110},
-		Tokens{49406, 49407, 49407, 23435, 49407}},
+		Tokens{49406, 49407, 49407, 23435, 49407},
+		Tokens{49209, 3, 85, 3, 49225, 3292}},
 	{" <|padding|>test",
 		Tokens{1279, 91, 39231, 91, 29, 9288},
 		Tokens{209, 1, 2566},
 		Tokens{49406, 27, 347, 3798, 796, 91, 285, 1628, 49407},
+		Tokens{3252, 49376, 42545, 49376, 49405, 10180},
 	},
 }
 
@@ -461,6 +469,27 @@ func TestPileEncoder_Encode(t *testing.T) {
 		tokensPtr := *pileEncoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, GPTEncoderTests[testIdx].PileExpected, tokensPtr)
+	}
+}
+
+func TestNerdstashEncoder_Encode(t *testing.T) {
+	start := time.Now()
+	tokenCt := len(*nerdstashEncoder.Encode(&corpus))
+	duration := time.Since(start)
+	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
+	for testIdx := range GPTEncoderTests {
+		tokensPtr := *nerdstashEncoder.Encode(
+			&(GPTEncoderTests[testIdx].Input))
+		assert.Equal(t, GPTEncoderTests[testIdx].NerdstashExpected, tokensPtr)
+	}
+}
+
+func TestNerdstashEncoder_Decode(t *testing.T) {
+	for testIdx := range GPTEncoderTests {
+		decodedStr := nerdstashEncoder.Decode(
+			&(GPTEncoderTests[testIdx].NerdstashExpected))
+		assert.Equal(t, GPTEncoderTests[testIdx].Input, decodedStr)
 	}
 }
 
@@ -575,7 +604,7 @@ func TestGPTEncoder_TokensReadyContext(t *testing.T) {
 
 func TestUnitrimFunctionality(t *testing.T) {
 	// get need array for gpt2 unitrim
-	encoderFile := "resources/data/clip-tokenizer/encoder.json"
+	encoderFile := "resources/data/clip-tokenizer/Encoder.json"
 	unitrimFile := "resources/data/clip-tokenizer/unitrim.json"
 
 	// make sure the files exist
@@ -586,13 +615,13 @@ func TestUnitrimFunctionality(t *testing.T) {
 		t.Errorf("Could not find file %s\n", unitrimFile)
 	}
 
-	// read in the encoder and unitrim files
+	// read in the Encoder and unitrim files
 	encoderBytes, err := os.ReadFile(encoderFile)
-	// unmarshal the encoder file
-	var encoder map[string]int
+	// unmarshal the Encoder file
+	var encoder map[string]Token
 	err = json.Unmarshal(encoderBytes, &encoder)
 	if err != nil {
-		t.Errorf("Could not unmarshal encoder file: %v\n", err)
+		t.Errorf("Could not unmarshal Encoder file: %v\n", err)
 	}
 
 	// read in the unitrim file

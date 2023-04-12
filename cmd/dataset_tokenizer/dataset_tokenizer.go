@@ -642,6 +642,7 @@ func init() {
 	tokenizers = make(map[string]*gpt_bpe.GPTEncoder, 0)
 	tokenizers["gpt2"] = &gpt_bpe.GPT2Encoder
 	tokenizers["pile"] = &gpt_bpe.PileEncoder
+	tokenizers["nerdstash"] = &gpt_bpe.NerdStashEncoder
 }
 
 func main() {

@@ -11,6 +11,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -27,9 +28,10 @@ type Token uint16
 type Tokens []Token
 
 type GPTEncoder struct {
-	encoder         map[string]Token
-	decoder         map[Token][]byte
-	bpe_ranks       map[GPTPair]float64
+	Encoder         map[string]Token
+	Decoder         map[Token][]byte
+	BpeRanks        map[GPTPair]float64
+	BytesEncoder    *map[byte]Token
 	unitrim         []int
 	pattern         *regexp.Regexp
 	puncPat         *regexp.Regexp
@@ -38,9 +40,10 @@ type GPTEncoder struct {
 	runeToByte      map[rune]byte
 	specials        map[string]Tokens
 	specialsTree    *RuneNode
-	cache           *lru.ARCCache
+	Cache           *lru.ARCCache
 	PuncRunes       []rune
 	Normalizer      *strings.Replacer
+	DecodeExtra     *strings.Replacer
 	BosToken        Token
 	EosToken        Token
 	PadToken        Token
@@ -59,8 +62,8 @@ type GPTEncoder struct {
 }
 
 type GPTPair struct {
-	left  string
-	right string
+	Left  string
+	Right string
 }
 
 type BGERank struct {
@@ -100,6 +103,11 @@ func NewPileEncoder() GPTEncoder {
 
 func NewCLIPEncoder() GPTEncoder {
 	encoder, _ := NewEncoder("clip-tokenizer")
+	return *encoder
+}
+
+func NewNerdstashEncoder() GPTEncoder {
+	encoder, _ := NewEncoder("nerdstash-tokenizer")
 	return *encoder
 }
 
@@ -189,6 +197,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		PrefixSpace:   true,
 		LowerCase:     false,
 		EndOfWord:     "",
+		DecodeExtra:   nil,
 	}
 	if special, ok := (rsrcs)["special_config.json"]; ok {
 		if special.Data != nil {
@@ -211,15 +220,24 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		}
 		normalizer = strings.NewReplacer(norms...)
 	}
+	decodeExtra := strings.NewReplacer()
+	if specialConfig.DecodeExtra != nil {
+		decode := make([]string, 0)
+		for k, v := range *specialConfig.DecodeExtra {
+			decode = append(decode, string(k), string(v))
+		}
+		decodeExtra = strings.NewReplacer(decode...)
+	}
 
-	// Unmarshal the encoder mappings from json to (int: string) map.
-	encoderMappings := make(map[string]int)
-	// check if the encoder.json file is present
+	// Unmarshal the Encoder mappings from json to (int: string) map.
+	encoderMappings := make(map[string]Token)
+	// check if the Encoder.json file is present
 	if _, ok := rsrcs["encoder.json"]; !ok {
-		return nil, fmt.Errorf("encoder.json not found for vocabId: %s", vocabId)
+		return nil, fmt.Errorf("encoder.json not found for vocabId: %s",
+			vocabId)
 	}
 	if json.Unmarshal(*rsrcs["encoder.json"].Data, &encoderMappings) != nil {
-		log.Fatal("Error unmarshalling `encoder.json`")
+		log.Fatal("Error unmarshalling `Encoder.json`")
 	}
 
 	// Build the unitrim array dynamically.
@@ -251,29 +269,61 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		bytesUnicode[b] = bytesUnicodeMap[uint8(b)]
 	}
 
-	// Read encoder mappings and also generate reverse mappings.
+	// Go through the encoderMappings for possible byte runes.
+	// Read Encoder mappings and also generate reverse mappings.
+	bytesEncoder := make(map[byte]Token)
 	encoderTokens := make(map[string]Token)
 	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
 		log.Fatal("Error unmarshalling `vocab.json`")
 	}
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
-		tokensEncoder[token] = []byte(text)
+		if strings.HasPrefix(text, "0x") && len(text) == 4 {
+			// Convert the hexstring to a byte
+			byteValue, err := strconv.ParseUint(text[2:], 16, 8)
+			if err != nil {
+				panic(err)
+			}
+			tokensEncoder[token] = []byte{byte(byteValue)}
+			bytesEncoder[byte(byteValue)] = token
+			delete(encoderTokens, text)
+		} else {
+			tokensEncoder[token] = []byte(text)
+		}
+	}
+	bytesEncoderPtr := &bytesEncoder
+	if len(bytesEncoder) == 0 {
+		bytesEncoderPtr = nil
 	}
 
-	// Read vocabulary into bpe_ranks
+	// Read merge table into BpeRanks
 	bpeRanks := make(map[GPTPair]float64)
-	scanner := bufio.NewScanner(bytes.NewBuffer(*rsrcs["merges.txt"].Data))
-	idx := uint16(0)
-	firstLine := true
-	for scanner.Scan() {
-		if firstLine == true {
-			firstLine = false
-			continue
+	if mergesTxt, ok := rsrcs["merges.txt"]; ok {
+		scanner := bufio.NewScanner(bytes.NewBuffer(*mergesTxt.Data))
+		idx := uint16(0)
+		firstLine := true
+		for scanner.Scan() {
+			if firstLine == true {
+				firstLine = false
+				continue
+			}
+			left_right := strings.SplitN(scanner.Text(), " ", 2)
+			bpeRanks[GPTPair{
+				left_right[0],
+				left_right[1]}] = float64(idx)
+			idx += 1
 		}
-		left_right := strings.SplitN(scanner.Text(), " ", 2)
-		bpeRanks[GPTPair{left_right[0], left_right[1]}] = float64(idx)
-		idx += 1
+	} else if mergesJson, ok := rsrcs["merges.json"]; ok {
+		var mergesTable [][]string
+		err := json.Unmarshal(*mergesJson.Data, &mergesTable)
+		if err != nil {
+			panic(err)
+		}
+		// Iterate over the merges and add them to the BPE ranks
+		for rank, merge := range mergesTable {
+			bpeRanks[GPTPair{merge[0], merge[1]}] =
+				float64(rank)
+		}
 	}
 
 	// Handle special tokens. Special tokens are removed from the input before
@@ -336,6 +386,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens,
 		tokensEncoder,
 		bpeRanks,
+		bytesEncoderPtr,
 		unitrimArr,
 		pat,
 		puncPat,
@@ -347,6 +398,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		cache,
 		puncRunes,
 		normalizer,
+		decodeExtra,
 		encoderTokens[*hfConfig.BosTokenStr],
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
@@ -369,9 +421,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 // makeUnitrimArr creates a lookup table for unicode trimming
 // it replaces the method of generating it in advanced (unitrim.json)
-func makeUnitrimArr(encoderMap map[string]int) []int {
+func makeUnitrimArr(encoderMap map[string]Token) []int {
 	// get reverse mappings
-	reverseEncoderMap := make(map[int]string)
+	reverseEncoderMap := make(map[Token]string)
 	for k, v := range encoderMap {
 		reverseEncoderMap[v] = k
 	}
@@ -478,9 +530,13 @@ func makeUnitrimArr(encoderMap map[string]int) []int {
 }
 
 // helper for makeUnitrimArr
-func DecodeMapping(encodings map[int]string, mappings map[rune]int, input int) string {
+func DecodeMapping(
+	encodings map[Token]string,
+	mappings map[rune]int,
+	input int,
+) string {
 	// get original encoding
-	encoding := encodings[input]
+	encoding := encodings[Token(input)]
 
 	// decode encoding by character
 	output_str := ""
@@ -564,7 +620,7 @@ func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 	for idx := begin; idx < len(word); idx++ {
 		present := word[idx]
 		pair := GPTPair{prev, present}
-		bpe, ok := encoder.bpe_ranks[pair]
+		bpe, ok := encoder.BpeRanks[pair]
 		if !ok {
 			bpe = math.Inf(1)
 		}
@@ -581,7 +637,7 @@ func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 func (encoder *GPTEncoder) rankPairs(pairs []GPTPair) BGERanks {
 	rankedPairs := make(BGERanks, 0)
 	for idx := range pairs {
-		bpe, ok := encoder.bpe_ranks[pairs[idx]]
+		bpe, ok := encoder.BpeRanks[pairs[idx]]
 		if !ok {
 			bpe = math.Inf(1)
 		}
@@ -637,10 +693,10 @@ func findAllStringsIndexes(text string, strings []string) [][]int {
 	return indexes
 }
 
-// toBPE
+// ToBPE
 // Given pre-split text, perform bigram ranking and merges, and returns Tokens
-func (encoder *GPTEncoder) toBPE(text string) Tokens {
-	if lookup, ok := encoder.cache.Get(text); ok {
+func (encoder *GPTEncoder) ToBPE(text string) Tokens {
+	if lookup, ok := encoder.Cache.Get(text); ok {
 		encoder.LruHits++
 		return lookup.(Tokens)
 	} else {
@@ -650,17 +706,29 @@ func (encoder *GPTEncoder) toBPE(text string) Tokens {
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
 	if len(rankedPairs) == 0 {
-		tokens := Tokens{encoder.encoder[word[0]]}
-		encoder.cache.Add(text, tokens)
+		var tokens Tokens
+		if token, ok := encoder.Encoder[word[0]]; ok {
+			tokens = Tokens{token}
+		} else if encoder.BytesEncoder != nil {
+			tokens = make(Tokens, 0)
+			rune_bytes := []byte(word[0])
+			// Then encode each byte as a token.
+			for _, b := range rune_bytes {
+				tokens = append(tokens, (*encoder.BytesEncoder)[b])
+			}
+		} else {
+			tokens = Tokens{encoder.Encoder[word[0]]}
+		}
+		encoder.Cache.Add(text, tokens)
 		return tokens
 	}
 	for {
 		bigram := rankedPairs[0].bigram
-		if _, ok := encoder.bpe_ranks[bigram]; !ok {
+		if _, ok := encoder.BpeRanks[bigram]; !ok {
 			break
 		}
-		first := bigram.left
-		second := bigram.right
+		first := bigram.Left
+		second := bigram.Right
 		newWord := make([]string, 0, len(word))
 		for i := 0; i < len(word); {
 			j := pos(word, first, i)
@@ -689,11 +757,22 @@ func (encoder *GPTEncoder) toBPE(text string) Tokens {
 		idx := len(word) - 1
 		word[idx] = word[idx]
 	}
-	tokens := make(Tokens, len(word))
-	for idx, token := range word {
-		tokens[idx] = encoder.encoder[token]
+	tokens := make(Tokens, 0)
+	for _, token := range word {
+		if lookup, ok := encoder.Encoder[token]; ok {
+			tokens = append(tokens, lookup)
+		} else if encoder.BytesEncoder != nil {
+			// If we can't find the token in the encoder, we'll
+			// encode it in byte-level BPE. First convert the rune
+			// into 8-bit bytes.
+			rune_bytes := []byte(token)
+			// Then encode each byte as a token.
+			for _, b := range rune_bytes {
+				tokens = append(tokens, (*encoder.BytesEncoder)[b])
+			}
+		}
 	}
-	encoder.cache.Add(text, tokens)
+	encoder.Cache.Add(text, tokens)
 	return tokens
 }
 
@@ -871,7 +950,7 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 	}
 }
 
-// SplitWords splits a string into words according to BPE encoder rules.
+// SplitWords splits a string into words according to BPE Encoder rules.
 func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 	words := make([]string, 0)
 	nextWord := encoder.WordSplitter(strings.NewReader(*text))
@@ -886,6 +965,10 @@ func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
 }
 
 func (encoder *GPTEncoder) toUnicode(text *string) string {
+	if encoder.BytesEncoder != nil {
+		runes := []rune(*text)
+		return string(runes)
+	}
 	textBytes := []byte(*text)
 	outArr := make([]rune, len(*text))
 	for idx := range textBytes {
@@ -897,12 +980,12 @@ func (encoder *GPTEncoder) toUnicode(text *string) string {
 func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
 	encoded = make(Tokens, len(*tokens))
 	for idx := range *tokens {
-		encoded[idx] = encoder.encoder[(*tokens)[idx]]
+		encoded[idx] = encoder.Encoder[(*tokens)[idx]]
 	}
 	return encoded
 }
 
-// StreamingEncode is a streaming encoder. It takes an io.RuneReader and
+// StreamingEncode is a streaming Encoder. It takes an io.RuneReader and
 // returns an iterator function that will return Tokens on each call.
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
@@ -942,11 +1025,11 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			var encodedTokens Tokens
 			specialToken, isSpecial := encoder.specials[*word]
 			if isSpecial {
-				decodedSpecial := string(encoder.decoder[specialToken[0]])
-				encodedTokens = Tokens{encoder.encoder[decodedSpecial]}
+				decodedSpecial := string(encoder.Decoder[specialToken[0]])
+				encodedTokens = Tokens{encoder.Encoder[decodedSpecial]}
 			} else {
 				fragment := encoder.toUnicode(word)
-				encodedTokens = encoder.toBPE(fragment)
+				encodedTokens = encoder.ToBPE(fragment)
 			}
 			accumulator = append(accumulator, encodedTokens...)
 		}
@@ -990,10 +1073,10 @@ func (encoder *GPTEncoder) Encode(text *string) *Tokens {
 }
 
 // Get
-// Looks up text in the encoder, and returns the Token representation of it. If
+// Looks up text in the Encoder, and returns the Token representation of it. If
 // the text is not found, then nil is returned.
 func (encoder *GPTEncoder) Get(text string) *Token {
-	if token, ok := encoder.encoder[text]; !ok {
+	if token, ok := encoder.Encoder[text]; !ok {
 		return nil
 	} else {
 		return &token
@@ -1016,42 +1099,48 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 		if encoder.TokensReady(&tokensAcc) {
 			bs := make([]byte, 0, 32)
 			for _, safeToken := range tokensAcc {
-				if v, ok := encoder.decoder[safeToken]; ok {
+				if v, ok := encoder.Decoder[safeToken]; ok {
 					bs = append(bs, v...)
 				}
 			}
 			// Convert our bytearray to string, interpreting as UTF-8 and then
 			// to 32-bit runes.
-			runes := []rune(string(bs))
-			decoded := make([]byte, len(runes))
-			// Convert our runes into 8-bit bytes using a 256-slot lookup table.
-			for runeIdx := range runes {
-				decoded[runeIdx] = encoder.runeToByte[runes[runeIdx]]
+			// If we don't have a BytesEncoder, then we are using GPT BPE's
+			// byte encoding for Unicode.
+			var runes = []rune(string(bs))
+			var fragment string
+			if encoder.BytesEncoder == nil {
+				decoded := make([]byte, len(runes))
+				// Convert our runes into 8-bit bytes using a 256-slot table.
+				for runeIdx := range runes {
+					decoded[runeIdx] = encoder.runeToByte[runes[runeIdx]]
+				}
+				fragment = string(decoded)
+				runes = []rune(fragment)
+			} else {
+				fragment = string(bs)
+				runes = []rune(fragment)
 			}
 			// Decode our final token representation into a Unicode string.
-			fragment := string(decoded)
-			fragmentAsRunes := []rune(fragment)
-
 			if convertEndOfWord {
 				if strings.HasSuffix(fragment, encoder.endOfWord) {
-					fragmentAsRunes = fragmentAsRunes[:len(fragmentAsRunes)-len(
-						encoder.endOfWord)]
-					if len(fragmentAsRunes) == 1 && fragmentAsRunes[0] == '\'' {
+					runes = runes[:len(runes)-len(encoder.endOfWord)]
+					if len(runes) == 1 && runes[0] == '\'' {
 					} else {
-						fragmentAsRunes = append(fragmentAsRunes, ' ')
+						runes = append(runes, ' ')
 					}
 				}
-				if len(fragmentAsRunes) == 1 &&
-					unicode.IsNumber(fragmentAsRunes[0]) {
-					fragmentAsRunes = append(fragmentAsRunes, ' ')
+				if len(runes) == 1 &&
+					unicode.IsNumber(runes[0]) {
+					runes = append(runes, ' ')
 				}
-				if len(runesAcc) > 1 && runeIsIn(fragmentAsRunes[0],
+				if len(runesAcc) > 1 && runeIsIn(runes[0],
 					encoder.PuncRunes) && unicode.IsSpace(runesAcc[len(
 					runesAcc)-1]) {
 					runesAcc = runesAcc[:len(runesAcc)-1]
 				}
 			}
-			runesAcc = append(runesAcc, fragmentAsRunes...)
+			runesAcc = append(runesAcc, runes...)
 			tokensAcc = tokensAcc[:0]
 		}
 	}
@@ -1072,6 +1161,9 @@ func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
 // Determine if the sequence of Tokens given is ready to be serialized
 // to string, based on if the sequence will produce valid Unicode runes.
 func (encoder *GPTEncoder) TokensReady(tokens *Tokens) bool {
+	if encoder.BytesEncoder != nil {
+		return true
+	}
 	good := 0
 	need := 0
 	for tokenIdx := range *tokens {
@@ -1119,6 +1211,7 @@ func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
 var GPT2Encoder = NewGPT2Encoder()
 var PileEncoder = NewPileEncoder()
 var CLIPEncoder = NewCLIPEncoder()
+var NerdstashEncoder = NewNerdstashEncoder()
 var blankString = ""
 var _ = GPT2Encoder.Encode(&blankString)
 var _ = PileEncoder.Encode(&blankString)

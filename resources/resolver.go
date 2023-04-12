@@ -585,6 +585,7 @@ type SpecialConfig struct {
 	PrefixSpace   bool               `json:"prefix_space"`
 	LowerCase     bool               `json:"lower_case"`
 	EndOfWord     string             `json:"end_of_word"`
+	DecodeExtra   *map[string]string `json:"decode_extra"`
 }
 
 // ResolveConfig
@@ -675,6 +676,9 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		}
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
 			resources["merges.txt"] = *vocab
+		}
+		if mergesJson := GetEmbeddedResource(vocabId + "/merges.json"); mergesJson != nil {
+			resources["merges.json"] = *mergesJson
 		}
 		if specials_t := GetEmbeddedResource(vocabId + "/specials.txt"); specials_t != nil {
 			resources["specials.txt"] = *specials_t
