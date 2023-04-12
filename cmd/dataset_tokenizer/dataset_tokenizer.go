@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,21 +31,27 @@ type PathInfo struct {
 }
 
 // GlobTexts
-// Given a directory path, recursively finds all `.txt` files, returning a
-// slice of PathInfo.
+// Given a directory path, recursively finds all `.txt` and `.jsonl` files,
+// returning a slice of PathInfo.
 func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
 	textPaths, err := filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
 	}
-	numMatches := len(textPaths)
+	jsonlPaths, err := filepathx.Glob(dirPath + "/**/*.jsonl")
+	if err != nil {
+		return nil, err
+	}
+	filePaths := append(textPaths, jsonlPaths...)
+
+	numMatches := len(filePaths)
 	if numMatches == 0 {
 		return nil, errors.New(fmt.Sprintf(
-			"%s does not contain any .txt files", dirPath))
+			"%s does not contain any .txt or .jsonl files", dirPath))
 	}
 	pathInfos = make([]PathInfo, numMatches)
-	for matchIdx := range textPaths {
-		currPath := textPaths[matchIdx]
+	for matchIdx := range filePaths {
+		currPath := filePaths[matchIdx]
 		if stat, statErr := os.Stat(currPath); statErr != nil {
 			return nil, statErr
 		} else {
@@ -193,13 +200,56 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 4)
+	runeReaders := make(chan namedRuneReader, 16)
 	go func() {
 		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
 			path := matches[matchIdx]
 			if fileReader, openErr := os.Open(path.Path); openErr != nil {
 				log.Fatal(openErr)
 			} else {
+				if strings.HasSuffix(path.Path, ".jsonl") {
+					// Split JSONL files into individual JSON objects.
+					jsonlReader := bufio.NewReader(fileReader)
+					idx := 0
+					for {
+						jsonObject, err := jsonlReader.ReadBytes('\n')
+						if err != nil {
+							if err == io.EOF {
+								break
+							} else {
+								log.Fatal(err)
+							}
+						}
+						// Decode the JSON object.
+						var jsonObjectMap map[string]interface{}
+						if err := json.Unmarshal(jsonObject, &jsonObjectMap); err != nil {
+							log.Printf("JSONL object %d in %s is not valid JSON: %s",
+								idx, path.Path, err)
+							continue
+						}
+						// Extract the text field.
+						text, ok := jsonObjectMap["text"]
+						if !ok {
+							log.Fatal("JSONL object missing text field")
+						}
+						textString, ok := text.(string)
+						if !ok {
+							log.Fatal("JSONL object text field not a string")
+						}
+						subPath := fmt.Sprintf("%s[%d]", path.Path, idx)
+						// Create our rune reader.
+						if sanitize {
+							runeReaders <- namedRuneReader{
+								subPath,
+								CreateTextSanitizer(strings.NewReader(textString))}
+						} else {
+							runeReaders <- namedRuneReader{
+								subPath,
+								strings.NewReader(textString)}
+						}
+						idx++
+					}
+				}
 				if sanitize {
 					runeReaders <- namedRuneReader{
 						path.Path,
@@ -394,7 +444,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 4)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
 	nextTokenized := func() {
 		for {
 			runeReader := nextText()
@@ -642,7 +692,7 @@ func init() {
 	tokenizers = make(map[string]*gpt_bpe.GPTEncoder, 0)
 	tokenizers["gpt2"] = &gpt_bpe.GPT2Encoder
 	tokenizers["pile"] = &gpt_bpe.PileEncoder
-	tokenizers["nerdstash"] = &gpt_bpe.NerdStashEncoder
+	tokenizers["nerdstash"] = &gpt_bpe.NerdstashEncoder
 }
 
 func main() {
