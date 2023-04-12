@@ -604,7 +604,7 @@ func TestGPTEncoder_TokensReadyContext(t *testing.T) {
 
 func TestUnitrimFunctionality(t *testing.T) {
 	// get need array for gpt2 unitrim
-	encoderFile := "resources/data/clip-tokenizer/Encoder.json"
+	encoderFile := "resources/data/clip-tokenizer/encoder.json"
 	unitrimFile := "resources/data/clip-tokenizer/unitrim.json"
 
 	// make sure the files exist

@@ -1216,3 +1216,4 @@ var blankString = ""
 var _ = GPT2Encoder.Encode(&blankString)
 var _ = PileEncoder.Encode(&blankString)
 var _ = CLIPEncoder.Encode(&blankString)
+var _ = NerdstashEncoder.Encode(&blankString)
