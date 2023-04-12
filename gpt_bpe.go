@@ -31,6 +31,7 @@ type GPTEncoder struct {
 	Encoder         map[string]Token
 	Decoder         map[Token][]byte
 	BpeRanks        map[GPTPair]float64
+	TokenMerges     map[TokenPair]Token
 	BytesEncoder    *map[byte]Token
 	unitrim         []int
 	pattern         *regexp.Regexp
@@ -39,6 +40,7 @@ type GPTEncoder struct {
 	byteToRune      [256]rune
 	runeToByte      map[rune]byte
 	specials        map[string]Tokens
+	specialsArr     []string
 	specialsTree    *RuneNode
 	Cache           *lru.ARCCache
 	PuncRunes       []rune
@@ -64,6 +66,11 @@ type GPTEncoder struct {
 type GPTPair struct {
 	Left  string
 	Right string
+}
+
+type TokenPair struct {
+	Left  Token
+	Right Token
 }
 
 type BGERank struct {
@@ -134,7 +141,7 @@ func (encoder *GPTEncoder) createRuneTree() *RuneNode {
 		childs: make(map[rune]*RuneNode, 0),
 	}
 
-	for k := range encoder.specials {
+	for _, k := range encoder.specialsArr {
 		keyRunes := []rune(k)
 		keyLen := len(keyRunes)
 		node := runeTree
@@ -325,11 +332,20 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 				float64(rank)
 		}
 	}
+	// Build our TokenMerges
+	tokenMerges := make(map[TokenPair]Token)
+	for pair, _ := range bpeRanks {
+		tokenMerges[TokenPair{
+			encoderTokens[pair.Left],
+			encoderTokens[pair.Right]}] =
+			encoderTokens[pair.Left+pair.Right]
+	}
 
 	// Handle special tokens. Special tokens are removed from the input before
 	// tokenization, so we need to search for them before we tokenize.
 	specialsRegexTokens := make([]string, 0)
 	specials := make(map[string]Tokens, 0)
+	specialsArr := make([]string, 0)
 
 	if specialsTxt, ok := rsrcs["specials.txt"]; ok {
 		specialsScanner := bufio.NewScanner(bytes.NewBuffer(*specialsTxt.Data))
@@ -339,6 +355,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 				continue
 			}
 			specials[specialToken] = Tokens{encoderTokens[specialToken]}
+			specialsArr = append(specialsArr, specialToken)
 			quotedToken := regexp.QuoteMeta(specialToken)
 			specialsRegexTokens = append(specialsRegexTokens, quotedToken)
 		}
@@ -386,6 +403,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens,
 		tokensEncoder,
 		bpeRanks,
+		tokenMerges,
 		bytesEncoderPtr,
 		unitrimArr,
 		pat,
@@ -394,6 +412,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		bytesUnicode,
 		unicodeBytes,
 		specials,
+		specialsArr,
 		nil,
 		cache,
 		puncRunes,
@@ -998,7 +1017,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 		for {
 			// If we have enough tokens, then we return them, and reset the
 			// accumulator.
-			if len(accumulator) > desiredTokens {
+			if len(accumulator) > desiredTokens+1 {
 				chunk := accumulator[:desiredTokens]
 				accumulator = accumulator[desiredTokens:]
 				return &chunk
@@ -1032,6 +1051,30 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				encodedTokens = encoder.ToBPE(fragment)
 			}
 			accumulator = append(accumulator, encodedTokens...)
+			if len(accumulator)-len(encodedTokens) > 0 {
+				idx := len(accumulator) - len(encodedTokens) - 1
+				for {
+					pair := TokenPair{accumulator[idx],
+						accumulator[idx+1]}
+					if merged, ok := encoder.TokenMerges[pair]; ok {
+						before := accumulator[:idx]
+						var after Tokens
+						if idx+2 < len(accumulator) {
+							after = accumulator[idx+2:]
+						}
+						accumulator = append(before, merged)
+						accumulator = append(accumulator, after...)
+						if idx > 0 {
+							idx -= 1
+						}
+					} else {
+						idx += 1
+					}
+					if idx >= len(accumulator)-1 {
+						break
+					}
+				}
+			}
 		}
 	}
 }
