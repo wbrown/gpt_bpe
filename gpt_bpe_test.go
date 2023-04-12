@@ -3,6 +3,7 @@ package gpt_bpe
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,6 +110,7 @@ type TrimTest struct {
 const sent1 = "This is test sentence 1.  This is test sentence 2.  This is test sentence 3."
 const sent2 = "\nThis is test sentence 4.\nThis is test sentence 5.\nThis is test sentence 6.\n"
 const hindiSentence = "व्याकरण शास्त्रीय परिभाषाएँ : डॉ. पर्णदत्त सिंह द्वारा हिंदी पीडीऍफ़ पुस्तक"
+const jpSentence = "「そんな心構えで、本当に俺の『未練』を果たせるのか？　知ってのとおり、俺の『未練』は『<|rubycover|>相川渦波<|rubystart|>おまえ<|rubyend|>の成長を最後まで見届けること』だ。……言っとくが、俺は年季が入ってる上に、拗らせに拗らせた元神学者。俺の『大いなる<|rubycover|>救世主<|rubystart|>マグナ・メサイア<|rubyend|>』の『理想』は高いぞ？　少なくとも、この『血陸』を止められないようじゃ、任せ切れないな」\n<|mtsentence|><|mtsenglish|>Please check if the meat is being roasted at the right heat.<|mtsjapanese|>焼き肉の火加減を見なさい。<|mtsentenceend|>\n<|mtvocab|><|mtvjapanese|>[ぶんけんがく] 文献学<|mtvenglish|>(n) philology<|mtvocabend|>"
 
 var TrimSentencesTests = []TrimTest{
 	{sent1, TrimTop, 10,
@@ -484,6 +486,67 @@ func TestNerdstashEncoder_Encode(t *testing.T) {
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, GPTEncoderTests[testIdx].NerdstashExpected, tokensPtr)
 	}
+}
+
+func TestNerdstashEncoder_Encode2(t *testing.T) {
+	// read the jsonl test file in
+	testFile, err := os.Open("resources/subset.jsonl")
+	if err != nil {
+		t.Error(err)
+	}
+	defer testFile.Close()
+	scanner := bufio.NewScanner(testFile)
+	scanner.Split(bufio.ScanLines)
+	type testLineStruct struct {
+		Text    *string `json:"text"`
+		Hex     *string `json:"hex"`
+		Encoded Tokens  `json:"encoded"`
+	}
+
+	passCt := 0
+	failCt := 0
+
+	for scanner.Scan() {
+		jsonLine := scanner.Text()
+		testLine := testLineStruct{}
+		err := json.Unmarshal([]byte(jsonLine), &testLine)
+		if err != nil {
+			t.Error(err)
+		}
+		expected := testLine.Encoded
+		var inputStr string
+		if testLine.Hex != nil {
+			inputBytes, hexErr := hex.DecodeString(*testLine.Hex)
+			if hexErr != nil {
+				t.Error(hexErr)
+			}
+			inputStr = string(inputBytes)
+		} else {
+			inputStr = *testLine.Text
+		}
+		// encode the string
+		encoded := nerdstashEncoder.Encode(&inputStr)
+		// check that the encoded string is the same as the expected
+		if !assert.Equal(t, expected, *encoded) {
+			t.Log(fmt.Sprintf("failure on input: `%v`", inputStr))
+			expectedRepr := []string{}
+			for _, token := range expected {
+				expectedRepr = append(expectedRepr,
+					string(nerdstashEncoder.Decoder[token]))
+			}
+			actualRepr := []string{}
+			for _, token := range *encoded {
+				actualRepr = append(actualRepr,
+					string(nerdstashEncoder.Decoder[token]))
+			}
+			t.Log(fmt.Sprintf("expected: |%s", strings.Join(expectedRepr, "|")))
+			t.Log(fmt.Sprintf("actual:   |%s", strings.Join(actualRepr, "|")))
+			failCt += 1
+		} else {
+			passCt += 1
+		}
+	}
+	t.Log(fmt.Sprintf("pass: %v, fail: %v", passCt, failCt))
 }
 
 func TestNerdstashEncoder_Decode(t *testing.T) {
