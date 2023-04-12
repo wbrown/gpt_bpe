@@ -1,4 +1,5 @@
 //go:build !js
+// +build !js
 
 package resources
 
@@ -24,6 +25,9 @@ import (
 //go:embed data/clip-tokenizer/unitrim.json
 //go:embed data/clip-tokenizer/specials.txt
 //go:embed data/clip-tokenizer/special_config.json
+//go:embed data/nerdstash-tokenizer/encoder.json
+//go:embed data/nerdstash-tokenizer/merges.json
+//go:embed data/nerdstash-tokenizer/specials.txt
 var f embed.FS
 
 // GetEmbeddedResource
