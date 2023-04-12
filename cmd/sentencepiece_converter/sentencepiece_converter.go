@@ -91,14 +91,17 @@ func GenerateVocab(
 			sentencepiece.ModelProto_SentencePiece_BYTE
 		pieceIsControl := piece.GetType() ==
 			sentencepiece.ModelProto_SentencePiece_CONTROL
+		pieceIsUser := piece.GetType() ==
+			sentencepiece.ModelProto_SentencePiece_USER_DEFINED
 		if pieceIsByte {
 			hexRepr := piece.GetPiece()[3:5]
 			encodedRepr, _ := hex.DecodeString(hexRepr)
 			repr = string(encodedRepr)
-		} else if pieceIsControl {
-			*specials = append(*specials, repr)
 		} else {
 			repr = spaceReplacer.Replace(repr)
+			if pieceIsControl || pieceIsUser {
+				*specials = append(*specials, repr)
+			}
 		}
 		if dupeEntry, ok := vocab.PieceToToken[repr]; ok {
 			var dupeIdx gpt_bpe.Token
@@ -150,6 +153,7 @@ func GenerateVocab(
 func GenerateMergeTable(
 	vocab *SentencePieceVocab,
 ) map[gpt_bpe.GPTPair]gpt_bpe.Token {
+	// Build the merge table
 	mergeTable := make(map[gpt_bpe.GPTPair]gpt_bpe.Token, 0)
 
 	// Loop over the model and print out the pieces
@@ -356,12 +360,20 @@ func WriteSpecials(
 	name string,
 	specials *[]string,
 ) {
+	// Sort the specials by length
+	sort.Slice(*specials, func(i, j int) bool {
+		return len((*specials)[i]) < len((*specials)[j])
+	})
+
 	specialsFile, err := os.Create(fmt.Sprintf("%s.txt", name))
 	if err != nil {
 		panic(err)
 	}
-	for _, special := range *specials {
-		specialsFile.WriteString(fmt.Sprintf("%s\n", special))
+	for idx, special := range *specials {
+		if idx != 0 {
+			specialsFile.WriteString("\n")
+		}
+		specialsFile.WriteString(fmt.Sprintf("%s", special))
 	}
 	specialsFile.Close()
 }
@@ -376,8 +388,8 @@ func ConvertSentencepieceFiles(modelPath string) {
 
 	vocab, duplicates, specials := GenerateVocab(&model)
 	WriteVocabFile("vocab", vocab, false)
-	WriteDuplicates("duplicates", duplicates)
 	WriteSpecials("specials", specials)
+	WriteDuplicates("duplicates", duplicates)
 	mergeTable := GenerateMergeTable(vocab)
 	mergeEntries := GenerateMergeEntries(vocab, mergeTable)
 	WriteMergeFiles("merges", mergeEntries, false)
