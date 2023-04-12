@@ -384,12 +384,6 @@ func ConvertSentencepieceFiles(modelPath string) {
 }
 
 func main() {
-	sp, err := sentencepiece.NewSentencepieceFromFile("../../"+
-		"resources/data/nerdstash-tokenizer/v5.model", false)
-	if err != nil {
-		fmt.Println(err)
-	}
-	s := sentencepiece.NewEmptySentencepiece(false)
 	ConvertSentencepieceFiles("../../" +
 		"resources/data/nerdstash-tokenizer/nerdstash.model")
 }
