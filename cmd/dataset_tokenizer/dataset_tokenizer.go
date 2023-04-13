@@ -173,8 +173,11 @@ type namedRuneReader struct {
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
-func ReadTexts(dirPath string, sanitize bool,
-	sortSpec string) (chan namedRuneReader, error) {
+func ReadTexts(dirPath string,
+	sanitize bool,
+	sortSpec string,
+	numReaderThreads int,
+) (chan namedRuneReader, error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
@@ -272,7 +275,7 @@ func ReadTexts(dirPath string, sanitize bool,
 		}
 		wg.Done()
 	}
-	for readerIdx := 0; readerIdx < 2; readerIdx++ {
+	for readerIdx := 0; readerIdx < numReaderThreads; readerIdx++ {
 		wg.Add(1)
 		go startReader()
 	}
@@ -840,6 +843,8 @@ func main() {
 			"rather than buffering into contexts")
 	numThreads := flag.Int("threads", 4,
 		"number of tokenization threads to use")
+	numReaderThreads := flag.Int("reader_threads", 2,
+		"number of I/O reader threads to use")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -914,7 +919,7 @@ func main() {
 	}
 
 	if textReaders, err := ReadTexts(*inputDir, *sanitizeBool,
-		*reorderPaths); err != nil {
+		*reorderPaths, *numReaderThreads); err != nil {
 		log.Fatal(err)
 	} else {
 		numTokens := 0
@@ -948,13 +953,8 @@ func main() {
 		} else {
 			var contexts chan gpt_bpe.Tokens
 			var tokErr error
-			if *streaming_encode {
-				indexFilePath := *outputFile + ".index"
-				contexts, tokErr = textsTokenizer.TokenizeTexts(textReaders,
-					indexFilePath)
-			} else {
-				contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
-					textReaders)
+			contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
+				textReaders)
 			}
 			if tokErr != nil {
 				log.Fatal(tokErr)
