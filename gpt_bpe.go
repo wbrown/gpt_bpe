@@ -82,9 +82,7 @@ func (bs BGERanks) Less(i, j int) bool {
 	return bs[i].rank < bs[j].rank
 }
 
-const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L" +
-	"}+| ?\\p{N}+| ?[^\\s\\p{L" +
-	"}\\p{N}]+|\\s+(\\S){0}|\\s+"
+const SPLIT_REGEX = "<\\|startoftext\\|>|<\\|endoftext\\|>|'s|'t|'re|'ve|'m|'ll|'d|[\\p{L}]+|[\\p{N}]|[^\\s\\p{L}\\p{N}]+"
 const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
@@ -723,7 +721,6 @@ func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
 	for replaced, replacement := range encoder.replacements {
 		text = strings.ReplaceAll(text, replaced, replacement)
 	}
-
 	text = encoder.Normalizer.Replace(text)
 
 	idxes := encoder.pattern.FindAllStringIndex(text, -1)
@@ -738,6 +735,7 @@ func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
 		}
 
 		if len(word) > 0 {
+
 			ch <- &word
 		}
 	}
@@ -1047,6 +1045,10 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 					unicode.IsNumber(fragmentAsRunes[0]) {
 					fragmentAsRunes = append(fragmentAsRunes, ' ')
 				}
+
+				// If we have a punctuation character, and the previous
+				// character is a space, then we remove the space.
+				// This is to handle cases like " ,".
 				if len(runesAcc) > 1 && runeIsIn(fragmentAsRunes[0],
 					encoder.PuncRunes) && unicode.IsSpace(runesAcc[len(
 					runesAcc)-1]) {

@@ -490,6 +490,12 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	assert.Equal(t, corpus, decoded)
 }
 
+//BUG: CLIP TOKENIZER has a bug that causes 'the to be split into
+// "'t<w>he<w>" instead of "'<w>the<w>".  This causes the
+// clipCorpus to be different from the corpus.  This is a bug in
+// the CLIP tokenizer from huggingface that was used to generate
+// the clipCorpus. The decoded corpus is correct in this test.
+
 func TestCLIPEncoder_Decode(t *testing.T) {
 	if clipEncoded == nil {
 		corpEncoded := clipEncoder.Encode(&corpus)
@@ -501,8 +507,6 @@ func TestCLIPEncoder_Decode(t *testing.T) {
 	tokenNumBytes := len(decoded)
 	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
 		len(*clipEncoded), tokenNumBytes, duration))
-	// clipCorpusChunks := Chunks(clipCorpus, 80)
-	// decodedChunks := Chunks(decoded, 80)
 	for idx := range clipCorpus {
 		if clipCorpus[idx] != decoded[idx] {
 			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
