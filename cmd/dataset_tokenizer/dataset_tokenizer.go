@@ -391,11 +391,63 @@ func (tt *TextsTokenizer) PartitionBoundary(
 	return idx
 }
 
-// TokenizeTexts
+func (tt TextsTokenizer) TokenizeTexts(
+	nextText TextsIterator) (ContextsIterator, error) {
+	tokenizerPtr, tokErr := tt.InitTokenizer()
+	if tokErr != nil {
+		return nil, tokErr
+	}
+	tokenizer := *tokenizerPtr
+	var endOfText gpt_bpe.Token
+	if tt.EndOfText == "" {
+		endOfText = tokenizer.EosToken
+	} else {
+		var eotErr error
+		if endOfText, eotErr = getAndCheckToken(&tokenizer,
+			tt.EndOfText, "EndOfText"); eotErr != nil {
+			return nil, eotErr
+		}
+	}
+
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
+
+	nextTokenized := func() {
+		for {
+			runeReader := nextText()
+			if runeReader != nil {
+				encodeChunk := tokenizer.StreamingEncode(runeReader)
+				for {
+					tokenized := encodeChunk(16384)
+					if tokenized == nil {
+						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						break
+					}
+					tokenizedTexts <- *tokenized
+				}
+			} else {
+				close(tokenizedTexts)
+				break
+			}
+		}
+	}
+	go nextTokenized()
+
+	nextContext := func() *gpt_bpe.Tokens {
+		tokenized, ok := <-tokenizedTexts
+		if !ok {
+			return nil
+		}
+		return &tokenized
+	}
+
+	return nextContext, nil
+}
+
+// TokenizeTextsToContexts
 // Consumes a TextsIterator and produces a ContextsIterator iterator function
 // that returns tokenized contexts that are fixed and padded out to
 // `contextSize`.
-func (tt TextsTokenizer) TokenizeTexts(
+func (tt TextsTokenizer) TokenizeTextsToContexts(
 	nextText TextsIterator) (ContextsIterator, error) {
 	tokenizerPtr, tokErr := tt.InitTokenizer()
 	if tokErr != nil {
@@ -731,6 +783,9 @@ func main() {
 			"size_descending, name_ascending, name_descending, random, shuffle, none]")
 	sampling_str := flag.String("sampling", "100", "a integer value from 0-100 "+
 		"which tells the tokenizer how many chunks to discard in %, 60 keeps 60%% chunks")
+	streaming_encode := flag.Bool("streaming_encode", false,
+		"use streaming encode, which writes to disk as it encodes, "+
+			"rather than buffering into contexts")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -809,8 +864,14 @@ func main() {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
+		var contexts ContextsIterator
+		var tokErr error
+		if *streaming_encode {
+			contexts, tokErr = textsTokenizer.TokenizeTexts(nextText)
+		} else {
+			contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
+				nextText)
+		}
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
