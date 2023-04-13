@@ -955,7 +955,6 @@ func main() {
 			var tokErr error
 			contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
 				textReaders)
-			}
 			if tokErr != nil {
 				log.Fatal(tokErr)
 			}
