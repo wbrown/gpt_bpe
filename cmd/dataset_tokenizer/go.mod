@@ -2,11 +2,9 @@ module github.com/wbrown/gpt_bpe/cmd/dataset_tokenizer
 
 go 1.18
 
-replace github.com/wbrown/gpt_bpe => ../../
-
 require (
 	github.com/stretchr/testify v1.7.1
-	github.com/wbrown/gpt_bpe v0.0.0-20221219163200-f4def400a5c4
+	github.com/wbrown/gpt_bpe v0.0.0-20230413171224-cf69a4ae0ba1
 	github.com/yargevad/filepathx v1.0.0
 )
 
