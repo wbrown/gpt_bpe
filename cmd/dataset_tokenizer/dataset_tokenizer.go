@@ -301,6 +301,7 @@ type TextsTokenizer struct {
 	PadToken        string
 	EndOfText       string
 	Unitrim         bool
+	ExcludeTokens   []string
 }
 
 // NewTextsTokenizer
@@ -315,6 +316,7 @@ func NewTextsTokenizer() TextsTokenizer {
 		"<|endoftext|>",
 		"<|padding|>",
 		true,
+		[]string{},
 	}
 }
 
@@ -412,6 +414,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	indexPath string,
 ) (chan gpt_bpe.Tokens, error) {
 	tokenizerPtr, tokErr := tt.InitTokenizer()
+
 	if tokErr != nil {
 		return nil, tokErr
 	}
@@ -424,6 +427,30 @@ func (tt TextsTokenizer) TokenizeTexts(
 		if endOfText, eotErr = getAndCheckToken(&tokenizer,
 			tt.EndOfText, "EndOfText"); eotErr != nil {
 			return nil, eotErr
+		}
+	}
+
+	// Remove excluded tokens from the tokenizer.
+	for _, excludeToken := range tt.ExcludeTokens {
+		var excludeTokenId gpt_bpe.Token
+		var excludeErr error
+		if excludeTokenId, excludeErr = getAndCheckToken(&tokenizer,
+			excludeToken, "ExcludeToken"); excludeErr != nil {
+			return nil, excludeErr
+		} else {
+			delete(tokenizer.Encoder, excludeToken)
+			// Remove from merges.
+			for i, merge := range tokenizer.TokenMerges {
+				// Check if the token is in the merge, if it is, remove it
+				if merge == excludeTokenId {
+					mergePair := gpt_bpe.GPTPair{
+						string(tokenizer.Decoder[i.Left]),
+						string(tokenizer.Decoder[i.Right]),
+					})
+					delete(tokenizer.TokenMerges, i)
+					delete(tokenizer.BpeRanks, mergePair)
+				}
+			}
 		}
 	}
 
@@ -845,6 +872,8 @@ func main() {
 		"number of tokenization threads to use")
 	numReaderThreads := flag.Int("reader_threads", 2,
 		"number of I/O reader threads to use")
+	excludeTokens := flag.String("exclude_tokens", "",
+		"comma separated list of tokens to exclude from the vocabulary")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -878,6 +907,11 @@ func main() {
 		}
 	}
 
+	var excludeTokensList []string
+	if *excludeTokens != "" {
+		excludeTokensList = strings.Split(*excludeTokens, ",")
+	}
+
 	textsTokenizer := NewTextsTokenizer()
 	textsTokenizer.ContextSize = *contextSize
 	textsTokenizer.TokenizerId = *tokenizerId
@@ -887,6 +921,7 @@ func main() {
 	textsTokenizer.BoundaryBegin = *boundaryBegin
 	textsTokenizer.BoundaryOverlap = *boundaryOverlap
 	textsTokenizer.Unitrim = !*unitrimBool
+	textsTokenizer.ExcludeTokens = excludeTokensList
 
 	if !*forceRetokenization {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
