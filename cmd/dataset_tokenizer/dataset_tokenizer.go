@@ -451,6 +451,12 @@ func (tt TextsTokenizer) TokenizeTexts(
 					delete(tokenizer.BpeRanks, mergePair)
 				}
 			}
+			// Remove from specials
+			for i, special := range tokenizer {
+				if special == excludeTokenId {
+					delete(tokenizer.SpecialTokens, i)
+				}
+			}
 		}
 	}
 
