@@ -446,7 +446,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 					mergePair := gpt_bpe.GPTPair{
 						string(tokenizer.Decoder[i.Left]),
 						string(tokenizer.Decoder[i.Right]),
-					})
+					}
 					delete(tokenizer.TokenMerges, i)
 					delete(tokenizer.BpeRanks, mergePair)
 				}
