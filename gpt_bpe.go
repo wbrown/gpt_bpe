@@ -39,7 +39,7 @@ type GPTEncoder struct {
 	specialsPat     *regexp.Regexp
 	byteToRune      [256]rune
 	runeToByte      map[rune]byte
-	specials        map[string]Tokens
+	Specials        map[string]Tokens
 	specialsArr     []string
 	specialsTree    *RuneNode
 	Cache           *lru.ARCCache
@@ -740,7 +740,7 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 
 func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
 	lenMap := make(map[int][][]rune)
-	for k := range encoder.specials {
+	for k := range encoder.Specials {
 		keyLen := len(k)
 		keyRunes := []rune(k)
 		if entry, ok := lenMap[keyLen]; ok {
@@ -1090,7 +1090,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			// Otherwise, we add the word to the accumulator. We have to handle
 			// the special tokens here, since they're not in the vocab.
 			var encodedTokens Tokens
-			specialToken, isSpecial := encoder.specials[*word]
+			specialToken, isSpecial := encoder.Specials[*word]
 			if isSpecial {
 				decodedSpecial := string(encoder.Decoder[specialToken[0]])
 				encodedTokens = Tokens{encoder.Encoder[decodedSpecial]}
