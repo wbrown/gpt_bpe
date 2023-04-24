@@ -452,9 +452,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 				}
 			}
 			// Remove from specials
-			for i, special := range tokenizer {
+			for i, special := range tokenizer.Specials {
 				if special == excludeTokenId {
-					delete(tokenizer.SpecialTokens, i)
+					delete(tokenizer.Specials, i)
 				}
 			}
 		}
