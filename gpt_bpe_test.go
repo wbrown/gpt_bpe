@@ -327,18 +327,19 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
 	corpusHandle, err := os.Open(largeCorpusPath)
 	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
-	gpt2Encoder.SplitterThreads = 32
+	nerdstashEncoder.SplitterThreads = 1
 	//defer corpusHandle.Close()
 	if err != nil {
 		b.Error(err)
 	}
 	wordCount := 0
+	tokensCount := 0
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
-	wordSplitter := gpt2Encoder.makeWordSplitter(
+	wordSplitter := nerdstashEncoder.makeWordSplitter(
 		runeReader.ReadRune,
 		func(word *string) {
 			if word != nil {
-				gpt2Encoder.ToBPE(*word)
+				tokensCount += len(gpt2Encoder.ToBPE(*word))
 			}
 			wordCount++
 		},
@@ -355,6 +356,45 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.ReportMetric(float64(wordCount), "words")
 	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
 	b.ReportMetric(float64(numBytes), "bytes")
+	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
+	b.ReportMetric(float64(tokensCount), "tokens")
+}
+
+func BenchmarkGPTEncoder_WordSplitterTokensChan(b *testing.B) {
+	b.StopTimer()
+	corpusHandle, err := os.Open(largeCorpusPath)
+	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
+	nerdstashEncoder.SplitterThreads = 1
+	//defer corpusHandle.Close()
+	if err != nil {
+		b.Error(err)
+	}
+	wordCount := 0
+	tokensCount := 0
+	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+	wordsChan := make(chan *string, 1000)
+	go nerdstashEncoder.splitWordsOntoChan(runeReader.ReadRune,
+		wordsChan)
+	start := time.Now()
+	b.StartTimer()
+	for {
+		word := <-wordsChan
+		if word == nil {
+			break
+		}
+		tokensCount += len(gpt2Encoder.ToBPE(*word))
+		wordCount++
+	}
+	b.StopTimer()
+	elapsed := time.Since(start)
+	//numBytes := int64(len(corpusText))
+	numBytes, _ := corpusHandle.Seek(0, io.SeekCurrent)
+	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
+	b.ReportMetric(float64(wordCount), "words")
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+	b.ReportMetric(float64(numBytes), "bytes")
+	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
+	b.ReportMetric(float64(tokensCount), "tokens")
 }
 
 func BenchmarkGPTEncoder_Decode(b *testing.B) {
