@@ -282,6 +282,8 @@ github.com/urfave/cli v1.22.4/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtX
 github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1/go.mod h1:GlANpY4lgPZT+cpb0pkEJrTMbICKc74KleEZwEiGqmU=
 github.com/wbrown/gpt_bpe v0.0.0-20230413171224-cf69a4ae0ba1 h1:luQxlFQTVJYbzDJM79fZhORz6D5GZ5wW61GqEKZoQEM=
 github.com/wbrown/gpt_bpe v0.0.0-20230413171224-cf69a4ae0ba1/go.mod h1:cHrlaxIgBr6+Jzpi1Zw0/bf6Fq7+kTQBlOAtnD/0hu8=
+github.com/wbrown/gpt_bpe v0.0.0-20230424230754-e20ef60a2524 h1:HEk5Q2Pi5bNoaK6ntOiLCK8+9+k3690v3RdU5pKTzDg=
+github.com/wbrown/gpt_bpe v0.0.0-20230424230754-e20ef60a2524/go.mod h1:cHrlaxIgBr6+Jzpi1Zw0/bf6Fq7+kTQBlOAtnD/0hu8=
 github.com/yargevad/filepathx v1.0.0 h1:SYcT+N3tYGi+NvazubCNlvgIPbzAk7i7y2dwg3I5FYc=
 github.com/yargevad/filepathx v1.0.0/go.mod h1:BprfX/gpYNJHJfc35GjRRpVcwWXS89gGulUIU5tK3tA=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
