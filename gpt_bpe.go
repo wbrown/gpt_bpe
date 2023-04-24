@@ -118,70 +118,6 @@ func NewNerdstashEncoder() GPTEncoder {
 	return *encoder
 }
 
-type RuneNode struct {
-	rune      rune
-	runes     []rune
-	terminal  bool
-	childs    map[rune]*RuneNode
-	childsArr []*RuneNode
-}
-
-func runeIsIn(r rune, runes []rune) bool {
-	for _, rr := range runes {
-		if r == rr {
-			return true
-		}
-	}
-	return false
-}
-
-func (encoder *GPTEncoder) createRuneTree() *RuneNode {
-	runeTree := &RuneNode{
-		runes:  []rune{},
-		childs: make(map[rune]*RuneNode, 0),
-	}
-
-	for _, k := range encoder.specialsArr {
-		keyRunes := []rune(k)
-		keyLen := len(keyRunes)
-		node := runeTree
-		for i := 0; i < keyLen; i++ {
-			r := keyRunes[i]
-			childNode, ok := node.childs[r]
-			if !ok {
-				node.childs[r] = &RuneNode{
-					rune:      r,
-					runes:     keyRunes[:i+1],
-					terminal:  i == keyLen-1,
-					childs:    make(map[rune]*RuneNode, 0),
-					childsArr: make([]*RuneNode, 0),
-				}
-			} else if i == keyLen-1 {
-				childNode.terminal = true
-			}
-			if len(node.childs) != len(node.childsArr) {
-				node.childsArr = append(node.childsArr, node.childs[r])
-			}
-			node = node.childs[r]
-		}
-	}
-	return runeTree
-}
-
-func (root *RuneNode) evaluate(node *RuneNode, r rune) (*RuneNode, bool) {
-	for childIdx := range node.childsArr {
-		child := node.childsArr[childIdx]
-		if child.rune == r {
-			return child, child.terminal
-		}
-	}
-	if node != root {
-		return root.evaluate(root, r)
-	} else {
-		return root, false
-	}
-}
-
 // NewEncoder
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
@@ -205,6 +141,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		LowerCase:     false,
 		EndOfWord:     "",
 		DecodeExtra:   nil,
+		SplitRegex:    nil,
 	}
 	if special, ok := (rsrcs)["special_config.json"]; ok {
 		if special.Data != nil {
@@ -334,7 +271,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	// Build our TokenMerges
 	tokenMerges := make(map[TokenPair]Token)
-	for pair, _ := range bpeRanks {
+	for pair := range bpeRanks {
 		tokenMerges[TokenPair{
 			encoderTokens[pair.Left],
 			encoderTokens[pair.Right]}] =
@@ -382,7 +319,13 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	if err != nil {
 		log.Fatalf(REGEX_ERROR, err)
 	}
-	pat, err := regexp.Compile(SPLIT_REGEX)
+
+	var pat *regexp.Regexp
+	if specialConfig.SplitRegex != nil {
+		pat, err = regexp.Compile(*specialConfig.SplitRegex)
+	} else {
+		pat, err = regexp.Compile(SPLIT_REGEX)
+	}
 	if err != nil {
 		log.Fatalf(REGEX_ERROR, err)
 	}
@@ -809,12 +752,8 @@ func (encoder *GPTEncoder) getSpecials() map[int][][]rune {
 	return lenMap
 }
 
-type NextRuneFunc func() (rune, int, error)
-type WordCallback func(*string)
-
-func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
-	specialToken bool, specialsNode *RuneNode, wg *sync.WaitGroup) {
-	defer close(ch)
+func (encoder *GPTEncoder) splitWords(text string,
+	specialToken bool, specialsNode *RuneNode) []*string {
 	// Some things such as KoboldAI have a 'replacement' rule, where
 	// they replace tokens such as `\n` with `</s>` for Fairseq
 	// handling.
@@ -824,6 +763,7 @@ func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
 	text = encoder.Normalizer.Replace(text)
 
 	idxes := encoder.pattern.FindAllStringIndex(text, -1)
+	words := make([]*string, 0, len(idxes)+1)
 	for idx := range idxes {
 		word := text[idxes[idx][0]:idxes[idx][1]]
 		if encoder.lowerCase {
@@ -835,14 +775,27 @@ func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
 		}
 
 		if len(word) > 0 {
-			ch <- &word
+			words = append(words, &word)
 		}
 	}
 
 	// Finally, if we have a special token, we cap it off.
 	if specialToken {
 		runeString := string(specialsNode.runes)
-		ch <- &runeString
+		words = append(words, &runeString)
+	}
+	return words
+}
+
+type NextRuneFunc func() (rune, int, error)
+type WordCallback func(*string)
+
+func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
+	specialToken bool, specialsNode *RuneNode, wg *sync.WaitGroup) {
+	defer close(ch)
+	words := encoder.splitWords(text, specialToken, specialsNode)
+	for _, word := range words {
+		ch <- word
 	}
 	wg.Done()
 }
@@ -873,6 +826,62 @@ func (encoder *GPTEncoder) consumeSplitQueue(
 	}
 }
 
+func (encoder *GPTEncoder) splitWordsOntoChan(
+	nextRuneFunc NextRuneFunc,
+	wordsChan chan *string,
+) {
+	specialsRuneRoot := encoder.specialsTree
+	runeAccumulator := make([]rune, 0, encoder.runeBufSz)
+	specialToken := false
+	specialsNode := specialsRuneRoot
+	for {
+		// Let's collect runes until we reach the end of our IO stream, or
+		// hit a newline.
+		for {
+			r, size, err := nextRuneFunc()
+			if size == 0 || err != nil {
+				break
+			}
+
+			runeAccumulator = append(runeAccumulator, r)
+			specialsNode, specialToken = specialsRuneRoot.evaluate(
+				specialsNode, r)
+			if specialToken || r == '\n' {
+				break
+			}
+		}
+
+		// If we have no runes, then we've hit an error, or reached the end
+		// of our IO stream.
+		if len(runeAccumulator) == 0 {
+			close(wordsChan)
+			break
+		}
+
+		// If we've discovered a special token, then we need to split the
+		// runeAccumulator before the special token.
+		var line string
+		if specialToken {
+			line = string(runeAccumulator[:len(runeAccumulator)-len(
+				specialsNode.runes)])
+		} else {
+			line = string(runeAccumulator)
+		}
+		runeAccumulator = runeAccumulator[:0]
+
+		// We split all words before the special token in question, and
+		// accumulate them.
+		for _, word := range encoder.splitWords(line, specialToken,
+			specialsNode) {
+			wordsChan <- word
+		}
+
+		// Reset our special tokens state.
+		specialsNode = specialsRuneRoot
+		specialToken = false
+	}
+}
+
 func (encoder *GPTEncoder) makeWordSplitter(
 	nextRuneFunc NextRuneFunc,
 	wordCallback WordCallback,
@@ -886,7 +895,8 @@ func (encoder *GPTEncoder) makeWordSplitter(
 		specialsRuneRoot := encoder.specialsTree
 		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
 		specialToken := false
-		specialsNode := specialsRuneRoot
+		specialsCandidates := make([]*RuneNode, 0, 16)
+		candidateNode := specialsRuneRoot
 		for {
 			// Let's collect runes until we reach the end of our IO stream, or
 			// hit a newline.
@@ -897,10 +907,47 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				}
 
 				runeAccumulator = append(runeAccumulator, r)
-				specialsNode, specialToken = specialsRuneRoot.evaluate(
-					specialsNode, r)
-				if specialToken || r == '\n' {
+
+				if r == '\n' {
 					break
+				}
+
+				// Iterate over existing candidates, and see if we can
+				// find a match.
+				for idx, candidate := range specialsCandidates {
+					candidate, specialToken = candidate.
+						evaluate(candidate, r)
+					specialsCandidates[idx] = candidate
+					if specialToken {
+						candidateNode = candidate
+						break
+					}
+				}
+				// Clean out any candidates that are no longer valid.
+				for idx := 0; idx < len(specialsCandidates); idx++ {
+					if idx >= len(specialsCandidates) {
+						break
+					}
+					if specialsCandidates[idx] == nil {
+						specialsCandidates = append(
+							specialsCandidates[:idx],
+							specialsCandidates[idx+1:]...)
+						idx--
+					}
+				}
+
+				if specialToken {
+					break
+				}
+
+				candidateNode, specialToken = specialsRuneRoot.evaluate(
+					specialsRuneRoot, r)
+				if specialToken {
+					break
+				}
+				if candidateNode != nil {
+					specialsCandidates = append(specialsCandidates,
+						candidateNode)
 				}
 			}
 
@@ -916,7 +963,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			var line string
 			if specialToken {
 				line = string(runeAccumulator[:len(runeAccumulator)-len(
-					specialsNode.runes)])
+					candidateNode.runes)])
 			} else {
 				line = string(runeAccumulator)
 			}
@@ -926,11 +973,12 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			// accumulate them.
 			wg.Add(1)
 			workQueue <- encoder.synchronousSplitterThread(line, specialToken,
-				specialsNode, &wg)
+				candidateNode, &wg)
 
 			// Reset our special tokens state.
-			specialsNode = specialsRuneRoot
+			candidateNode = specialsRuneRoot
 			specialToken = false
+			specialsCandidates = specialsCandidates[:0]
 		}
 		close(workQueue)
 		wg.Wait()

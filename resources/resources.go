@@ -28,6 +28,7 @@ import (
 //go:embed data/nerdstash-tokenizer/encoder.json
 //go:embed data/nerdstash-tokenizer/merges.json
 //go:embed data/nerdstash-tokenizer/specials.txt
+//go:embed data/nerdstash-tokenizer/special_config.json
 var f embed.FS
 
 // GetEmbeddedResource

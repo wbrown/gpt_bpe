@@ -627,6 +627,7 @@ type SpecialConfig struct {
 	LowerCase     bool               `json:"lower_case"`
 	EndOfWord     string             `json:"end_of_word"`
 	DecodeExtra   *map[string]string `json:"decode_extra"`
+	SplitRegex    *string            `json:"split_regex"`
 }
 
 // ResolveConfig
