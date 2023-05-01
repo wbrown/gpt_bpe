@@ -456,6 +456,7 @@ func (tt TextsTokenizer) handleExclusions(
 					delete(tokenizer.Specials, i)
 				}
 			}
+			tokenizer.UpdateSpecialsTree()
 		}
 	}
 	tokenizer.UpdateSpecialsTree()
