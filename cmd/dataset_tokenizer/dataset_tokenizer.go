@@ -293,15 +293,16 @@ func ReadTexts(dirPath string,
 // TextsTokenizer
 // A struct that encapsulates the configuration for a streaming tokenizer.
 type TextsTokenizer struct {
-	TokenizerId     string
-	ContextSize     int
-	Boundary        string
-	BoundaryBegin   bool
-	BoundaryOverlap int
-	PadToken        string
-	EndOfText       string
-	Unitrim         bool
-	ExcludeTokens   []string
+	TokenizerId      string
+	ContextSize      int
+	Boundary         string
+	BoundaryBegin    bool
+	BoundaryOverlap  int
+	PadToken         string
+	EndOfText        string
+	Unitrim          bool
+	ExcludeTokens    []string
+	SanitizeEncoding bool
 }
 
 // NewTextsTokenizer
@@ -317,6 +318,7 @@ func NewTextsTokenizer() TextsTokenizer {
 		"<|padding|>",
 		true,
 		[]string{},
+		false,
 	}
 }
 
@@ -458,6 +460,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 				}
 			}
 		}
+	}
+	if tt.SanitizeEncoding {
+
 	}
 
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 32)
