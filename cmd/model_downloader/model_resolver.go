@@ -15,6 +15,8 @@ func main() {
 		"where to download the model to")
 	modelType := flag.String("type", "transformers",
 		"model type (transformers or diffusers)")
+	tokenizerOnly := flag.Bool("tokenizer-only", false,
+		"only download the tokenizer")
 	flag.Parse()
 	if *modelId == "" {
 		flag.Usage()
@@ -32,13 +34,20 @@ func main() {
 		flag.Usage()
 		log.Fatalf("Invalid model type: %s", *modelType)
 	}
-	
+
+	var rsrcLvl resources.ResourceFlag
+	if *tokenizerOnly {
+		rsrcLvl = resources.RESOURCE_DERIVED
+	} else {
+		rsrcLvl = resources.RESOURCE_MODEL
+	}
+
 	// get HF_API_TOKEN from env for huggingface auth
 	hfApiToken := os.Getenv("HF_API_TOKEN")
 
 	os.MkdirAll(*destPath, 0755)
 	_, rsrcErr := resources.ResolveResources(*modelId, destPath,
-		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+		rsrcLvl, rsrcType, hfApiToken)
 	if rsrcErr != nil {
 		fmt.Sprintf("Error downloading model resources: %s", rsrcErr)
 	}
