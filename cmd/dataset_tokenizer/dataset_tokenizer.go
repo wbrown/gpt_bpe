@@ -459,10 +459,11 @@ func (tt TextsTokenizer) TokenizeTexts(
 					delete(tokenizer.Specials, i)
 				}
 			}
+			tokenizer.UpdateSpecialsTree()
 		}
 	}
 	if tt.SanitizeEncoding {
-
+		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
 	}
 
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 32)
@@ -718,12 +719,12 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 		for {
 			context := nextContext()
 			if context == nil {
-				close(tokenizedTexts)
 				break
 			} else {
 				tokenizedTexts <- *context
 			}
 		}
+		close(tokenizedTexts)
 	}()
 
 	return tokenizedTexts, nil
@@ -885,6 +886,8 @@ func main() {
 		"number of I/O reader threads to use")
 	excludeTokens := flag.String("exclude_tokens", "",
 		"comma separated list of tokens to exclude from the vocabulary")
+	sanitizeEncodingBool := flag.Bool("disable_sanitize_encoding",
+		false, "disable sanitizing of misencoding")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -933,6 +936,7 @@ func main() {
 	textsTokenizer.BoundaryOverlap = *boundaryOverlap
 	textsTokenizer.Unitrim = !*unitrimBool
 	textsTokenizer.ExcludeTokens = excludeTokensList
+	textsTokenizer.SanitizeEncoding = !*sanitizeEncodingBool
 
 	if !*forceRetokenization {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
