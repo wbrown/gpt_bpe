@@ -40,7 +40,7 @@ type GPTEncoder struct {
 	byteToRune      [256]rune
 	runeToByte      map[rune]byte
 	Specials        map[string]Tokens
-	specialsTree    *RuneNode
+	SpecialsTree    *RuneNode
 	Cache           *lru.ARCCache
 	PuncRunes       []rune
 	Normalizer      *strings.Replacer
@@ -386,7 +386,7 @@ func (encoder *GPTEncoder) UpdateSpecialsTree() {
 	for k := range encoder.Specials {
 		specialsArr = append(specialsArr, k)
 	}
-	encoder.specialsTree = CreateRuneTree(specialsArr)
+	encoder.SpecialsTree = CreateRuneTree(specialsArr)
 }
 
 // makeUnitrimArr creates a lookup table for unicode trimming
@@ -844,7 +844,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	go encoder.consumeSplitQueue(workQueue, wordCallback, &wg)
 
 	return func() {
-		specialsRuneRoot := encoder.specialsTree
+		specialsRuneRoot := encoder.SpecialsTree
 		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
 		specialToken := false
 		specialsCandidates := make(RuneNodes, 0, 16)
