@@ -3,12 +3,15 @@ package gpt_bpe
 import "strings"
 
 type RuneNode struct {
-	rune      rune               // The rune this node represents.
-	runes     []rune             // The prior runes that led to this node.
-	terminal  bool               // If this node is an absolute terminal node.
-	childs    map[rune]*RuneNode // The child nodes.
-	childsArr *[]*RuneNode       // The child nodes in an array, for precedence
+	rune        rune               // The rune this node represents.
+	runes       []rune             // The prior runes that led to this node.
+	terminal    bool               // If this node is an absolute terminal node.
+	replacement *[]rune            // The replacement runes for this node.
+	childs      map[rune]*RuneNode // The child nodes.
+	childsArr   *[]*RuneNode       // The child nodes in an array, for precedence
 }
+
+type RuneNodes []*RuneNode
 
 func runeIsIn(r rune, runes []rune) bool {
 	for _, rr := range runes {
@@ -19,7 +22,31 @@ func runeIsIn(r rune, runes []rune) bool {
 	return false
 }
 
-func (root *RuneNode) evaluate(node *RuneNode, r rune) (*RuneNode, bool) {
+func (nodes *RuneNodes) evaluate(r rune) *RuneNode {
+	var idx int
+	var candidate *RuneNode
+	for idx, candidate = range *nodes {
+		candidate = candidate.evaluate(r)
+		(*nodes)[idx] = candidate
+		if candidate != nil && (candidate.terminal || candidate.
+			replacement != nil) {
+			break
+		}
+	}
+	// Clean out any nodes that are no longer valid.
+	for idx = 0; idx < len(*nodes); idx++ {
+		if idx >= len(*nodes) {
+			break
+		}
+		if (*nodes)[idx] == nil {
+			*nodes = append((*nodes)[:idx], (*nodes)[idx+1:]...)
+			idx--
+		}
+	}
+	return candidate
+}
+
+func (node *RuneNode) evaluate(r rune) *RuneNode {
 	// If the node has an array of children, use that. The array exists if the
 	// node has less than 10 children, and is used to speed up the evaluation
 	// of the node.
@@ -27,16 +54,16 @@ func (root *RuneNode) evaluate(node *RuneNode, r rune) (*RuneNode, bool) {
 		children := *node.childsArr
 		for _, child := range children {
 			if child.rune == r {
-				return child, child.terminal
+				return child
 			}
 		}
 	} else {
 		child, ok := node.childs[r]
 		if ok {
-			return child, child.terminal
+			return child
 		}
 	}
-	return nil, false
+	return nil
 }
 
 // Represent the tree as a string by traversing the tree, and using tree
@@ -56,6 +83,9 @@ func (node *RuneNode) string(level int) string {
 		return s
 	}
 	level += 1
+	if node.replacement != nil {
+		s += " -> " + string(*node.replacement)
+	}
 	s += "\n"
 
 	for r := range node.childs {
@@ -73,50 +103,80 @@ func (node *RuneNode) string(level int) string {
 }
 
 // Wrapper
-func (node *RuneNode) String() string {
-	return node.string(0)
+func (runeTree *RuneNode) String() string {
+	return runeTree.string(0)
 }
 
-func (encoder *GPTEncoder) createRuneTree() *RuneNode {
-	runeTree := &RuneNode{
+func (runeTree *RuneNode) insertRunes(runes []rune) (node *RuneNode) {
+	node = runeTree
+	keyLen := len(runes)
+	for i := 0; i < keyLen; i++ {
+		r := runes[i]
+		childNode, ok := node.childs[r]
+		if !ok {
+			children := make([]*RuneNode, 0)
+			node.childs[r] = &RuneNode{
+				rune:      r,
+				runes:     runes[:i+1],
+				terminal:  i == keyLen-1,
+				childs:    make(map[rune]*RuneNode, 0),
+				childsArr: &children,
+			}
+		} else if i == keyLen-1 {
+			childNode.terminal = true
+		}
+		if len(node.childs) > 10 {
+			// If there are more than 10 children, we set the array pointer
+			// to nil, so that we can use the map instead.
+			node.childsArr = nil
+		} else {
+			if node.childsArr == nil {
+				children := make([]*RuneNode, 0)
+				node.childsArr = &children
+			}
+			if len(node.childs) != len(*node.childsArr) {
+				*node.childsArr = append(*node.childsArr, node.childs[r])
+			}
+		}
+		node = node.childs[r]
+	}
+	return node
+}
+
+func NewRuneTree() *RuneNode {
+	return &RuneNode{
 		runes:  []rune{},
 		childs: make(map[rune]*RuneNode, 0),
 	}
+}
 
-	for _, k := range encoder.specialsArr {
+func (runeTree *RuneNode) InsertReplacementsIntoRuneTree(
+	replacements map[string]string,
+) {
+	for k, v := range replacements {
 		keyRunes := []rune(k)
-		keyLen := len(keyRunes)
-		node := runeTree
-		for i := 0; i < keyLen; i++ {
-			r := keyRunes[i]
-			childNode, ok := node.childs[r]
-			if !ok {
-				children := make([]*RuneNode, 0)
-				node.childs[r] = &RuneNode{
-					rune:      r,
-					runes:     keyRunes[:i+1],
-					terminal:  i == keyLen-1,
-					childs:    make(map[rune]*RuneNode, 0),
-					childsArr: &children,
-				}
-			} else if i == keyLen-1 {
-				childNode.terminal = true
-			}
-			if len(node.childs) > 10 {
-				// If there are more than 10 children, we set the array pointer
-				// to nil, so that we can use the map instead.
-				node.childsArr = nil
-			} else {
-				if node.childsArr == nil {
-					children := make([]*RuneNode, 0)
-					node.childsArr = &children
-				}
-				if len(node.childs) != len(*node.childsArr) {
-					*node.childsArr = append(*node.childsArr, node.childs[r])
-				}
-			}
-			node = node.childs[r]
-		}
+		valueRunes := []rune(v)
+		keyNode := runeTree.insertRunes(keyRunes)
+		keyNode.replacement = &valueRunes
 	}
+}
+
+func CreateReplacementsRuneTree(replacements map[string]string) *RuneNode {
+	runeTree := NewRuneTree()
+	runeTree.InsertReplacementsIntoRuneTree(replacements)
+	return runeTree
+}
+
+func (runeTree *RuneNode) InsertIntoRuneTree(s []string) {
+	for _, k := range s {
+		keyRunes := []rune(k)
+		runeTree.insertRunes(keyRunes)
+	}
+}
+
+// Create a new rune tree from an array of strings to match against.
+func CreateRuneTree(s []string) *RuneNode {
+	runeTree := NewRuneTree()
+	runeTree.InsertIntoRuneTree(s)
 	return runeTree
 }

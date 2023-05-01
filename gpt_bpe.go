@@ -40,7 +40,6 @@ type GPTEncoder struct {
 	byteToRune      [256]rune
 	runeToByte      map[rune]byte
 	Specials        map[string]Tokens
-	specialsArr     []string
 	specialsTree    *RuneNode
 	Cache           *lru.ARCCache
 	PuncRunes       []rune
@@ -307,6 +306,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 			if _, seen := seenSpecials[v]; !seen {
 				seenSpecials[v] = true
 				specials[v] = Tokens{encoderTokens[v]}
+				specialsArr = append(specialsArr, v)
 				quotedToken := regexp.QuoteMeta(v)
 				specialsRegexTokens = append(specialsRegexTokens, quotedToken)
 			}
@@ -355,7 +355,6 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		bytesUnicode,
 		unicodeBytes,
 		specials,
-		specialsArr,
 		nil,
 		cache,
 		puncRunes,
@@ -377,8 +376,17 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		BPE_LRU_SZ,
 		4,
 	}
-	encoder.specialsTree = encoder.createRuneTree()
+	encoder.UpdateSpecialsTree()
 	return encoder, nil
+}
+
+func (encoder *GPTEncoder) UpdateSpecialsTree() {
+	// Turn the keys of the specials map into a slice
+	specialsArr := make([]string, 0)
+	for k := range encoder.Specials {
+		specialsArr = append(specialsArr, k)
+	}
+	encoder.specialsTree = CreateRuneTree(specialsArr)
 }
 
 // makeUnitrimArr creates a lookup table for unicode trimming
@@ -826,62 +834,6 @@ func (encoder *GPTEncoder) consumeSplitQueue(
 	}
 }
 
-func (encoder *GPTEncoder) splitWordsOntoChan(
-	nextRuneFunc NextRuneFunc,
-	wordsChan chan *string,
-) {
-	specialsRuneRoot := encoder.specialsTree
-	runeAccumulator := make([]rune, 0, encoder.runeBufSz)
-	specialToken := false
-	specialsNode := specialsRuneRoot
-	for {
-		// Let's collect runes until we reach the end of our IO stream, or
-		// hit a newline.
-		for {
-			r, size, err := nextRuneFunc()
-			if size == 0 || err != nil {
-				break
-			}
-
-			runeAccumulator = append(runeAccumulator, r)
-			specialsNode, specialToken = specialsRuneRoot.evaluate(
-				specialsNode, r)
-			if specialToken || r == '\n' {
-				break
-			}
-		}
-
-		// If we have no runes, then we've hit an error, or reached the end
-		// of our IO stream.
-		if len(runeAccumulator) == 0 {
-			close(wordsChan)
-			break
-		}
-
-		// If we've discovered a special token, then we need to split the
-		// runeAccumulator before the special token.
-		var line string
-		if specialToken {
-			line = string(runeAccumulator[:len(runeAccumulator)-len(
-				specialsNode.runes)])
-		} else {
-			line = string(runeAccumulator)
-		}
-		runeAccumulator = runeAccumulator[:0]
-
-		// We split all words before the special token in question, and
-		// accumulate them.
-		for _, word := range encoder.splitWords(line, specialToken,
-			specialsNode) {
-			wordsChan <- word
-		}
-
-		// Reset our special tokens state.
-		specialsNode = specialsRuneRoot
-		specialToken = false
-	}
-}
-
 func (encoder *GPTEncoder) makeWordSplitter(
 	nextRuneFunc NextRuneFunc,
 	wordCallback WordCallback,
@@ -895,8 +847,21 @@ func (encoder *GPTEncoder) makeWordSplitter(
 		specialsRuneRoot := encoder.specialsTree
 		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
 		specialToken := false
-		specialsCandidates := make([]*RuneNode, 0, 16)
-		candidateNode := specialsRuneRoot
+		specialsCandidates := make(RuneNodes, 0, 16)
+		var candidateNode *RuneNode
+		checkAndReplaceNode := func() {
+			// We have a replacement, so we need to replace the
+			// runes that we've matched in the accumulator with
+			// the replacement.
+			matchLen := len(candidateNode.runes)
+			accTruncIdx := len(runeAccumulator) - matchLen
+			runeAccumulator = append(runeAccumulator[:accTruncIdx],
+				*candidateNode.replacement...)
+			// Reset our states.
+			specialsCandidates = specialsCandidates[:0]
+			candidateNode = specialsRuneRoot
+			specialToken = false
+		}
 		for {
 			// Let's collect runes until we reach the end of our IO stream, or
 			// hit a newline.
@@ -912,42 +877,30 @@ func (encoder *GPTEncoder) makeWordSplitter(
 					break
 				}
 
-				// Iterate over existing candidates, and see if we can
-				// find a match.
-				for idx, candidate := range specialsCandidates {
-					candidate, specialToken = candidate.
-						evaluate(candidate, r)
-					specialsCandidates[idx] = candidate
-					if specialToken {
-						candidateNode = candidate
+				// Evaluate our specialsCandidate in place, and if we have
+				// a node returned, then we have a terminal node.
+				candidateNode = specialsCandidates.evaluate(r)
+				if candidateNode != nil {
+					if candidateNode.replacement != nil {
+						checkAndReplaceNode()
+					} else if candidateNode.terminal {
+						specialToken = true
 						break
 					}
 				}
-				// Clean out any candidates that are no longer valid.
-				for idx := 0; idx < len(specialsCandidates); idx++ {
-					if idx >= len(specialsCandidates) {
-						break
-					}
-					if specialsCandidates[idx] == nil {
-						specialsCandidates = append(
-							specialsCandidates[:idx],
-							specialsCandidates[idx+1:]...)
-						idx--
-					}
-				}
-
-				if specialToken {
-					break
-				}
-
-				candidateNode, specialToken = specialsRuneRoot.evaluate(
-					specialsRuneRoot, r)
-				if specialToken {
-					break
-				}
+				// Otherwise, we evaluate this rune against our root node, to
+				// see if we have another candidate to start and add to our
+				// list.
+				candidateNode = specialsRuneRoot.evaluate(r)
 				if candidateNode != nil {
 					specialsCandidates = append(specialsCandidates,
 						candidateNode)
+					if candidateNode.replacement != nil {
+						checkAndReplaceNode()
+					} else if candidateNode.terminal {
+						specialToken = true
+						break
+					}
 				}
 			}
 
