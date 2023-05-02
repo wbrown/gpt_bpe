@@ -35,6 +35,16 @@ type PathInfo struct {
 // Given a directory path, recursively finds all `.txt` and `.jsonl` files,
 // returning a slice of PathInfo.
 func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
+	// If the path is a file, return it.
+	if stat, statErr := os.Stat(dirPath); statErr == nil {
+		return []PathInfo{{
+			Path:    dirPath,
+			Size:    stat.Size(),
+			ModTime: stat.ModTime(),
+			Dir:     stat.IsDir(),
+		}}, nil
+	}
+
 	textPaths, err := filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
@@ -411,6 +421,47 @@ func (tt *TextsTokenizer) PartitionBoundary(
 	return idx
 }
 
+func (tt TextsTokenizer) handleExclusions(
+	tokenizer *gpt_bpe.GPTEncoder,
+) (
+	err error,
+) {
+	if len(tt.ExcludeTokens) == 0 {
+		return nil
+	}
+	// Remove excluded tokens from the tokenizer.
+	for _, excludeToken := range tt.ExcludeTokens {
+		var excludeTokenId gpt_bpe.Token
+		var excludeErr error
+		if excludeTokenId, excludeErr = getAndCheckToken(tokenizer,
+			excludeToken, "ExcludeToken"); excludeErr != nil {
+			return excludeErr
+		} else {
+			delete(tokenizer.Encoder, excludeToken)
+			// Remove from merges.
+			for i, merge := range tokenizer.TokenMerges {
+				// Check if the token is in the merge, if it is, remove it
+				if merge == excludeTokenId {
+					mergePair := gpt_bpe.GPTPair{
+						string(tokenizer.Decoder[i.Left]),
+						string(tokenizer.Decoder[i.Right]),
+					}
+					delete(tokenizer.TokenMerges, i)
+					delete(tokenizer.BpeRanks, mergePair)
+				}
+			}
+			// Remove from specials
+			for i, special := range tokenizer.Specials {
+				if special[0] == excludeTokenId {
+					delete(tokenizer.Specials, i)
+				}
+			}
+		}
+	}
+	tokenizer.UpdateSpecialsTree()
+	return nil
+}
+
 func (tt TextsTokenizer) TokenizeTexts(
 	texts chan namedRuneReader,
 	indexPath string,
@@ -432,36 +483,10 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 
-	// Remove excluded tokens from the tokenizer.
-	for _, excludeToken := range tt.ExcludeTokens {
-		var excludeTokenId gpt_bpe.Token
-		var excludeErr error
-		if excludeTokenId, excludeErr = getAndCheckToken(&tokenizer,
-			excludeToken, "ExcludeToken"); excludeErr != nil {
-			return nil, excludeErr
-		} else {
-			delete(tokenizer.Encoder, excludeToken)
-			// Remove from merges.
-			for i, merge := range tokenizer.TokenMerges {
-				// Check if the token is in the merge, if it is, remove it
-				if merge == excludeTokenId {
-					mergePair := gpt_bpe.GPTPair{
-						string(tokenizer.Decoder[i.Left]),
-						string(tokenizer.Decoder[i.Right]),
-					}
-					delete(tokenizer.TokenMerges, i)
-					delete(tokenizer.BpeRanks, mergePair)
-				}
-			}
-			// Remove from specials
-			for i, special := range tokenizer.Specials {
-				if special[0] == excludeTokenId {
-					delete(tokenizer.Specials, i)
-				}
-			}
-			tokenizer.UpdateSpecialsTree()
-		}
+	if exclErr := tt.handleExclusions(&tokenizer); exclErr != nil {
+		return nil, exclErr
 	}
+
 	if tt.SanitizeEncoding {
 		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
 	}
@@ -570,6 +595,14 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	}
 	contextSize := tt.ContextSize
 	doUnitrim := tt.Unitrim
+
+	if exclErr := tt.handleExclusions(&tokenizer); exclErr != nil {
+		return nil, exclErr
+	}
+
+	if tt.SanitizeEncoding {
+		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
+	}
 
 	var tokens gpt_bpe.Tokens
 	var done bool
