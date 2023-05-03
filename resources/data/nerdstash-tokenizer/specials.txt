@@ -1,58 +1,58 @@
-3
-4
-9
-0
-1
-2
-5
-6
-7
-8
+'t
+'m
+'d
+'n
+'s
  "
   
- 
- 
+'ve
 ─
-***
+'ll
+'re
+ 
+ 
 ⁂
-----
-    
+***
 Type
+    
+----
  Tags
+'t've
  Title
  Style
  Genre
- Rating
- Author
+'clock
 <|pad|>
-        
+ Author
+ Rating
 <|fill|>
- Summary
 <|mask|>
+        
 Glossary
+ Summary
 <|mtend|>
-Characters
  Knowledge
-<|fillend|>
+Characters
 <|maskend|>
+<|fillend|>
 <|rubyend|>
 <|mtvocab|>
 <|masklong|>
             
 <|spmspace|>
-<|reserved6|>
+<|reserved7|>
 <|reserved3|>
 <|reserved2|>
 <|rubystart|>
 <|reserved0|>
-<|reserved7|>
+<|reserved9|>
 <|reserved4|>
 <|rubycover|>
 <|endoftext|>
 <|reserved5|>
 <|reserved8|>
 <|maskshort|>
-<|reserved9|>
+<|reserved6|>
 <|reserved1|>
 <|mtsenglish|>
 <|reserved10|>
