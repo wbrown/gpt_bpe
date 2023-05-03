@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -158,41 +159,34 @@ func GenerateMergeTable(
 
 	// Loop over the model and print out the pieces
 	currPair := gpt_bpe.GPTPair{"", ""}
-	vocabSize := len(vocab.TokenToPiece)
-	for leftTokenId := 0; leftTokenId < vocabSize; leftTokenId++ {
-		leftToken := vocab.TokenToPiece[gpt_bpe.Token(leftTokenId)]
-		if leftToken.Token == nil {
+	for _, token := range vocab.TokenToPiece {
+		if token.Token == nil || *token.Token == "" || len(*token.Token) < 2 {
 			continue
 		}
-		if *leftToken.Token == "" {
-			continue
-		} else {
-			currPair.Left = *leftToken.Token
-		}
-		//print(fmt.Sprintf("Working on %v %v\n", leftToken, leftTokenId))
-		for rightTokenId := 0; rightTokenId < vocabSize; rightTokenId++ {
-			rightToken := vocab.TokenToPiece[gpt_bpe.Token(rightTokenId)]
-			if rightToken.Token == nil {
+		for splitIdx := 1; splitIdx < len(*token.Token); splitIdx++ {
+			currPair.Left = (*token.Token)[:splitIdx]
+			currPair.Right = (*token.Token)[splitIdx:]
+			// Check if both pieces exist in the vocab
+			leftTokenEntry, leftOk := vocab.PieceToToken[currPair.Left]
+			rightTokenEntry, rightOk := vocab.PieceToToken[currPair.Right]
+			if !leftOk || !rightOk {
 				continue
 			}
-			if *rightToken.Token == "" {
-				continue
-			} else {
-				currPair.Right = *rightToken.Token
-			}
-			if _, ok := mergeTable[currPair]; ok {
-				continue
-			}
-			mergedToken := fmt.Sprintf("%v%v",
-				currPair.Left,
-				currPair.Right)
-			if tokenEntry, ok := vocab.PieceToToken[mergedToken]; ok {
-				tokenId := *tokenEntry.TokenId
-				print(fmt.Sprintf("%v (%v) %v (%v) -> %v (%v)\n",
-					currPair.Left, leftTokenId,
-					currPair.Right, rightTokenId,
-					mergedToken, tokenId))
-				mergeTable[currPair] = tokenId
+			if _, ok := mergeTable[currPair]; !ok {
+				mergedToken := fmt.Sprintf("%v%v",
+					currPair.Left,
+					currPair.Right)
+
+				if tokenEntry, ok := vocab.PieceToToken[mergedToken]; ok {
+					leftTokenId := leftTokenEntry.TokenId
+					rightTokenId := rightTokenEntry.TokenId
+					tokenId := *tokenEntry.TokenId
+					print(fmt.Sprintf("%v (%v) %v (%v) -> %v (%v)\n",
+						currPair.Left, leftTokenId,
+						currPair.Right, rightTokenId,
+						mergedToken, tokenId))
+					mergeTable[currPair] = tokenId
+				}
 			}
 		}
 	}
@@ -385,6 +379,9 @@ func ConvertSentencepieceFiles(modelPath string) {
 	}
 	var model sentencepiece.ModelProto
 	err = proto.Unmarshal(bytes, &model)
+	if err != nil {
+		print(fmt.Errorf("Unable to unmarshal proto err %v", err))
+	}
 
 	vocab, duplicates, specials := GenerateVocab(&model)
 	WriteVocabFile("vocab", vocab, false)
@@ -396,6 +393,9 @@ func ConvertSentencepieceFiles(modelPath string) {
 }
 
 func main() {
+	start := time.Now()
 	ConvertSentencepieceFiles("../../" +
-		"resources/data/nerdstash-tokenizer/nerdstash.model")
+		"resources/data/nerdstash-tokenizer/nerdstash_v2.model")
+	elapsed := time.Since(start)
+	fmt.Printf("Conversion took %s\n", elapsed)
 }
