@@ -4,7 +4,7 @@ go 1.18
 
 replace github.com/wbrown/gpt_bpe => ../../
 
-require github.com/wbrown/gpt_bpe v0.0.0-00010101000000-000000000000
+require github.com/wbrown/gpt_bpe v0.0.0-20230503154557-854424f32a83
 
 require (
 	github.com/deckarep/golang-set v1.8.0 // indirect
