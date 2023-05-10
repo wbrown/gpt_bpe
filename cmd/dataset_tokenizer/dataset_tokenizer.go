@@ -167,7 +167,7 @@ func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
 		return nil, err
 	}
 
-	if sortSpec != "" && sortSpec != "shuffle" {
+	if sortSpec != "" && sortSpec != "none" && sortSpec != "shuffle" {
 		if sortSpec == "size_ascending" {
 			SortPathInfoBySize(matches, true)
 		} else if sortSpec == "size_descending" {
