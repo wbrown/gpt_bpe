@@ -538,11 +538,25 @@ func ResolveResources(
 					io.TeeReader(rsrcReader, counter))
 				//close shard reader
 				err = rsrcReader.Close()
+
 				if err != nil {
 					return &foundResources, errors.New(
-						fmt.Sprintf("error trying to close file: %s",
+						fmt.Sprintf("error trying to close reader: %s",
 							err))
 				}
+				if ioErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error downloading '%s': %s",
+							shardPath, ioErr))
+				} else {
+					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
+						"%s completed.", uri, shardPath,
+						humanize.Bytes(uint64(bytesDownloaded))))
+				}
+
+				//close shard file
+				err = rsrcFile.Close()
+
 				if err != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error trying to close reader: %s",
@@ -765,7 +779,7 @@ func ExtractModelFromTokenizer(dir *string) (map[string]interface{}, error) {
 	}
 }
 
-func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string) error {
+func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string, resources *Resources) error {
 	vocab, ok := model["vocab"].(map[string]interface{})
 	if !ok {
 		log.Println("Error: Could not convert vocab in model to map")
@@ -798,10 +812,14 @@ func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string) error 
 
 	log.Println("Vocab written to vocab.json from tokenizer.json")
 
+	if mmapErr := resources.AddEntry("vocab.json", vocabFile); mmapErr != nil {
+		return errors.New(fmt.Sprintf("error trying to mmap file: %s", mmapErr))
+	}
+
 	return nil
 }
 
-func ExtractMergesFromTokenizer(model map[string]interface{}, dir *string) error {
+func ExtractMergesFromTokenizer(model map[string]interface{}, dir *string, resources *Resources) error {
 	merges, ok := model["merges"].([]interface{})
 	if !ok {
 		log.Println("Error: Could not convert merges in model to map")
@@ -834,6 +852,10 @@ func ExtractMergesFromTokenizer(model map[string]interface{}, dir *string) error
 	}
 
 	log.Println("Merges written to merges.txt from tokenizer.json")
+
+	if mmapErr := resources.AddEntry("merges.txt", mergesFile); mmapErr != nil {
+		return errors.New(fmt.Sprintf("error trying to mmap file: %s", mmapErr))
+	}
 
 	return nil
 }
