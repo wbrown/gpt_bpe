@@ -95,7 +95,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
 			"tokenizer_config.json":        RESOURCE_OPTIONAL,
 			"pytorch_model.bin.index.json": RESOURCE_OPTIONAL,
-			"tokenizer.json":               RESOURCE_REQUIRED,
+			"tokenizer.json":               RESOURCE_OPTIONAL,
 			"pytorch_model.bin":            RESOURCE_MODEL,
 		}
 	case RESOURCETYPE_DIFFUSERS:
