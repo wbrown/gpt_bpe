@@ -160,6 +160,7 @@ func TestFairSeqTokenizer(t *testing.T) {
 	enc, err := NewEncoder("KoboldAI/fairseq-dense-2.7B")
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	sent := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	tokens := Tokens{464, 21831, 11687, 625, 262, 387, 260, 25970, 82, 29,
