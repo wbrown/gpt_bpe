@@ -9,7 +9,7 @@ require (
 )
 
 require (
-	github.com/dustin/go-humanize v1.0.0
+	github.com/dustin/go-humanize v1.0.1
 	github.com/gopherjs/gopherjs v1.17.2
 	github.com/jdkato/prose/v2 v2.0.0
 )
