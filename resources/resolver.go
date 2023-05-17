@@ -420,7 +420,7 @@ func ResolveResources(
 						err))
 			}
 
-			err = ExtractVocabFromTokenizer(model, dir)
+			err = ExtractVocabFromTokenizer(model, dir, &foundResources)
 			if err != nil {
 				return &foundResources, errors.New(
 					fmt.Sprintf("Could not extract vocab from tokenizer %s",
@@ -437,7 +437,7 @@ func ResolveResources(
 						err))
 			}
 
-			err = ExtractMergesFromTokenizer(model, dir)
+			err = ExtractMergesFromTokenizer(model, dir, &foundResources)
 			if err != nil {
 				return &foundResources, errors.New(
 					fmt.Sprintf("Could not extract merges from tokenizer %s",
