@@ -82,7 +82,9 @@ func (bs BGERanks) Less(i, j int) bool {
 	return bs[i].rank < bs[j].rank
 }
 
-const SPLIT_REGEX = "<\\|startoftext\\|>|<\\|endoftext\\|>|'s|'t|'re|'ve|'m|'ll|'d|[\\p{L}]+|[\\p{N}]|[^\\s\\p{L}\\p{N}]+"
+const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L" +
+	"}+| ?\\p{N}+| ?[^\\s\\p{L" +
+	"}\\p{N}]+|\\s+(\\S){0}|\\s+"
 const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
@@ -735,7 +737,6 @@ func (encoder *GPTEncoder) splitOntoChan(text string, ch chan *string,
 		}
 
 		if len(word) > 0 {
-
 			ch <- &word
 		}
 	}
