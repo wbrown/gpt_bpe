@@ -285,6 +285,8 @@ github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69
 github.com/urfave/cli v1.22.4/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/vikesh-raj/go-sentencepiece-Encoder v1.1.1 h1:q5Rm4ihhwmAiDycaL8rNiE/ly4on+nHQajElYLPN7TM=
 github.com/vikesh-raj/go-sentencepiece-Encoder v1.1.1/go.mod h1:GlANpY4lgPZT+cpb0pkEJrTMbICKc74KleEZwEiGqmU=
+github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1 h1:q5Rm4ihhwmAiDycaL8rNiE/ly4on+nHQajElYLPN7TM=
+github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1/go.mod h1:GlANpY4lgPZT+cpb0pkEJrTMbICKc74KleEZwEiGqmU=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
