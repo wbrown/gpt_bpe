@@ -647,7 +647,6 @@ func TestCLIPEncoder_Decode(t *testing.T) {
 		}
 
 		if clipCorpus[idx] != decoded[idx] {
-			log.Printf("Index %v: %v != %v\n", idx, clipCorpus[idx], decoded[idx])
 			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
 				decoded[idx-20:idx+20])
 			return
