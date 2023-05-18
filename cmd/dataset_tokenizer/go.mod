@@ -6,7 +6,7 @@ replace github.com/wbrown/gpt_bpe => ../../
 
 require (
 	github.com/stretchr/testify v1.7.1
-	github.com/wbrown/gpt_bpe v0.0.0-20221219163200-f4def400a5c4
+	github.com/wbrown/gpt_bpe v0.0.0-00010101000000-000000000000
 	github.com/yargevad/filepathx v1.0.0
 )
 
