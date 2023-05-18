@@ -280,8 +280,6 @@ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
 github.com/urfave/cli v1.22.4/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1/go.mod h1:GlANpY4lgPZT+cpb0pkEJrTMbICKc74KleEZwEiGqmU=
-github.com/wbrown/gpt_bpe v0.0.0-20230503154557-854424f32a83 h1:v/wdnD9jzua6IJFVTmLZe1wb3WvayndFN61X3l/mHXw=
-github.com/wbrown/gpt_bpe v0.0.0-20230503154557-854424f32a83/go.mod h1:cHrlaxIgBr6+Jzpi1Zw0/bf6Fq7+kTQBlOAtnD/0hu8=
 github.com/yargevad/filepathx v1.0.0 h1:SYcT+N3tYGi+NvazubCNlvgIPbzAk7i7y2dwg3I5FYc=
 github.com/yargevad/filepathx v1.0.0/go.mod h1:BprfX/gpYNJHJfc35GjRRpVcwWXS89gGulUIU5tK3tA=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
