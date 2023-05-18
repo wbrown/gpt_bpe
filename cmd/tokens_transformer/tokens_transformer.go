@@ -75,7 +75,6 @@ func main() {
 	defer outputFileHandle.Close()
 	// create context buffer
 	contextBuffer := make([]byte, *contextSize*2)
-	contextBufferIndex := 0
 
 	// read input context by context
 	for {
