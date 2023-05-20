@@ -612,24 +612,45 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
+	contexts := make(chan gpt_bpe.Tokens, 16)
 	nextTokenized := func() {
+		tokenCt := 0
 		for {
+			waitBegin := time.Now()
 			runeReader, more := <-texts
+			beginTs := time.Now()
 			if more {
+				wait_duration := time.Since(waitBegin)
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
 					tokenized := encodeChunk(contextSize * 8)
 					if tokenized == nil {
+						duration := time.Since(beginTs)
+						// If we took longer than a millisecond, round to the
+						// nearest  millisecond.
+						var roundDuration time.Duration
+						if duration.Round(time.Millisecond) > 0 {
+							roundDuration = duration.Round(time.Millisecond)
+						} else {
+							roundDuration = duration
+						}
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						log.Printf("%s tokenized in %s (%d tokens/s, %s wait)",
+							runeReader.path, roundDuration,
+							int(float64(tokenCt)/duration.Seconds()),
+							wait_duration)
+						tokenCt = 0
+						beginTs = time.Now()
 						break
 					}
 					tokenizedTexts <- *tokenized
+					tokenCt += len(*tokenized)
 				}
 			} else {
-				close(tokenizedTexts)
 				break
 			}
 		}
+		close(tokenizedTexts)
 	}
 	go nextTokenized()
 
@@ -755,13 +776,13 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			if context == nil {
 				break
 			} else {
-				tokenizedTexts <- *context
+				contexts <- *context
 			}
 		}
-		close(tokenizedTexts)
+		close(contexts)
 	}()
 
-	return tokenizedTexts, nil
+	return contexts, nil
 }
 
 // WriteContexts
