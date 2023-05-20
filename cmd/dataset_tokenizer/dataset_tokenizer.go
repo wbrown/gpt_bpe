@@ -36,7 +36,7 @@ type PathInfo struct {
 // returning a slice of PathInfo.
 func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
 	// If the path is a file, return it.
-	if stat, statErr := os.Stat(dirPath); statErr == nil {
+	if stat, statErr := os.Stat(dirPath); statErr != nil && !stat.IsDir() {
 		return []PathInfo{{
 			Path:    dirPath,
 			Size:    stat.Size(),
