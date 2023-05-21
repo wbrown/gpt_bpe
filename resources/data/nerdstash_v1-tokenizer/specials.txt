@@ -1,0 +1,74 @@
+3
+4
+9
+0
+1
+2
+5
+6
+7
+8
+ "
+  
+ 
+ 
+─
+***
+⁂
+----
+    
+Type
+ Tags
+ Title
+ Style
+ Genre
+ Rating
+ Author
+<|pad|>
+        
+<|fill|>
+ Summary
+<|mask|>
+Glossary
+<|mtend|>
+Characters
+ Knowledge
+<|fillend|>
+<|maskend|>
+<|rubyend|>
+<|mtvocab|>
+<|masklong|>
+            
+<|spmspace|>
+<|reserved6|>
+<|reserved3|>
+<|reserved2|>
+<|rubystart|>
+<|reserved0|>
+<|reserved7|>
+<|reserved4|>
+<|rubycover|>
+<|endoftext|>
+<|reserved5|>
+<|reserved8|>
+<|maskshort|>
+<|reserved9|>
+<|reserved1|>
+<|mtsenglish|>
+<|reserved10|>
+<|maskmedium|>
+<|masksingle|>
+<|mtvocabend|>
+<|mtvenglish|>
+<|mtsentence|>
+<|startoftext|>
+<|mtvjapanese|>
+<|mtsjapanese|>
+                
+<|mtsentenceend|>
+<|maskparagraph|>
+<|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>

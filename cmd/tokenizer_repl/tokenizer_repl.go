@@ -13,20 +13,21 @@ import (
 // A REPL for interacting with the `gpt_bpe` tokenizer.
 
 func main() {
-	tokenizers := map[string]gpt_bpe.GPTEncoder{
-		"gpt2":      gpt_bpe.NewGPT2Encoder(),
-		"pile":      gpt_bpe.NewPileEncoder(),
-		"clip":      gpt_bpe.NewCLIPEncoder(),
-		"nerdstash": gpt_bpe.NewNerdstashEncoder(),
-	}
 	// Command line switch for selecting the tokenizer to use.
 	tokenizerOpt := flag.String("tokenizer",
-		"nerdstash",
+		"nerdstash_v1",
 		"The tokenizer to use.")
 
 	flag.Parse()
 
-	tokenizer := tokenizers[*tokenizerOpt]
+	tokenizer, tokErr := gpt_bpe.NewEncoder(*tokenizerOpt + "-tokenizer")
+	if tokErr != nil {
+		// Fall back to path-like.
+		tokenizer, tokErr = gpt_bpe.NewEncoder(*tokenizerOpt)
+		if tokErr != nil {
+			log.Fatal(tokErr)
+		}
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 	// Provide a REPL

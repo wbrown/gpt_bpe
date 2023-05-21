@@ -394,8 +394,7 @@ func ConvertSentencepieceFiles(modelPath string) {
 
 func main() {
 	start := time.Now()
-	ConvertSentencepieceFiles("../../" +
-		"resources/data/nerdstash-tokenizer/nerdstash_v2.model")
+	ConvertSentencepieceFiles("nerdstash_v1.model")
 	elapsed := time.Since(start)
 	fmt.Printf("Conversion took %s\n", elapsed)
 }
