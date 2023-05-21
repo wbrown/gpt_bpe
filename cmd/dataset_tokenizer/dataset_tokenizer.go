@@ -20,10 +20,6 @@ import (
 	"github.com/yargevad/filepathx"
 )
 
-var tokenizers map[string]func() gpt_bpe.GPTEncoder
-
-type TextsIterator func() (string, io.RuneReader)
-
 type PathInfo struct {
 	Path    string
 	Size    int64
@@ -180,6 +176,24 @@ type namedRuneReader struct {
 	reader io.RuneReader
 }
 
+func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
+	if sortSpec == "" || sortSpec == "none" || sortSpec == "shuffle" {
+		ShufflePathInfos(matches)
+	} else if sortSpec == "size_ascending" {
+		SortPathInfoBySize(matches, true)
+	} else if sortSpec == "size_descending" {
+		SortPathInfoBySize(matches, false)
+	} else if sortSpec == "path_ascending" {
+		SortPathInfoByPath(matches, true)
+	} else if sortSpec == "path_descending" {
+		SortPathInfoByPath(matches, false)
+	} else {
+		return errors.New(fmt.Sprintf(
+			"Invalid sort spec: %s", sortSpec))
+	}
+	return nil
+}
+
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
@@ -192,22 +206,8 @@ func ReadTexts(dirPath string,
 	if err != nil {
 		return nil, err
 	}
-
-	if sortSpec != "" && sortSpec != "none" && sortSpec != "shuffle" {
-		if sortSpec == "size_ascending" {
-			SortPathInfoBySize(matches, true)
-		} else if sortSpec == "size_descending" {
-			SortPathInfoBySize(matches, false)
-		} else if sortSpec == "path_ascending" {
-			SortPathInfoByPath(matches, true)
-		} else if sortSpec == "path_descending" {
-			SortPathInfoByPath(matches, false)
-		} else if sortSpec == "random" {
-			ShufflePathInfos(matches)
-		} else {
-			return nil, errors.New(fmt.Sprintf(
-				"Invalid sort spec: %s", sortSpec))
-		}
+	if sortErr := resolveSortSpec(matches, sortSpec); sortErr != nil {
+		return nil, sortErr
 	}
 
 	// We pre-emptively do the work to set up the buffers for the next files,
@@ -352,21 +352,18 @@ func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	}
 }
 
-type ContextsIterator func() *gpt_bpe.Tokens
-
 func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
-	var encoderPtr *gpt_bpe.GPTEncoder
-	tokenizerFn, ok := tokenizers[tt.TokenizerId]
-	if !ok {
-		var tokErr error
+	// Check if it's an internal reference. If not, it's a file path.
+	encoderPtr, tokErr := gpt_bpe.NewEncoder(
+		tt.TokenizerId + "-tokenizer")
+	if tokErr != nil {
+		// Fall back to path-like.
 		encoderPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
 		if tokErr != nil {
-			return nil, tokErr
+			log.Fatal(tokErr)
 		}
-	} else {
-		encoder := tokenizerFn()
-		encoderPtr = &encoder
 	}
+
 	return encoderPtr, nil
 }
 
@@ -889,16 +886,10 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	return totalTokens, nil
 }
 
-func init() {
-	tokenizers = make(map[string]func() gpt_bpe.GPTEncoder, 0)
-	tokenizers["gpt2"] = gpt_bpe.NewGPT2Encoder
-	tokenizers["pile"] = gpt_bpe.NewPileEncoder
-	tokenizers["nerdstash"] = gpt_bpe.NewNerdstashEncoder
-}
-
 func main() {
 	tokenizerId := flag.String("tokenizer", "gpt2",
-		"tokenizer to use [gpt2, pile, huggingface-id]")
+		"tokenizer to use [gpt2, pile, nerdstash_v1, "+
+			"nerdstash_v2, huggingface-id]")
 	contextSize := flag.Int("context", 2048, "context size")
 	showContexts := flag.Bool("show_contexts", false,
 		"show contexts as they are tokenized")

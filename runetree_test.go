@@ -122,13 +122,13 @@ var sanitizeTable = map[string]string{
 var encodingSanitzer = map[string]string{}
 
 func TestRuneNode_String(t *testing.T) {
-	print(nerdstashEncoder.SpecialsTree.String())
+	print(nerdstashV2Encoder.SpecialsTree.String())
 }
 
 func TestRuneMatch(t *testing.T) {
 	s := "// TypeScript Version: 2.9"
 	rr := io.RuneReader(strings.NewReader(s))
-	nextWord := nerdstashEncoder.WordSplitter(rr)
+	nextWord := nerdstashV2Encoder.WordSplitter(rr)
 	for {
 		word := nextWord()
 		if word == nil {
@@ -141,9 +141,10 @@ func TestRuneMatch(t *testing.T) {
 func TestRuneReplacement(t *testing.T) {
 	s := "Ã¹ TypeScriptÃ–"
 	rr := io.RuneReader(strings.NewReader(s))
-	nerdstashEncoder.SpecialsTree.InsertReplacementsIntoRuneTree(sanitizeTable)
-	print(nerdstashEncoder.SpecialsTree.String())
-	nextWord := nerdstashEncoder.WordSplitter(rr)
+	nerdstashV2Encoder.SpecialsTree.InsertReplacementsIntoRuneTree(
+		sanitizeTable)
+	print(nerdstashV2Encoder.SpecialsTree.String())
+	nextWord := nerdstashV2Encoder.WordSplitter(rr)
 	for {
 		word := nextWord()
 		if word == nil {

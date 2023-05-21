@@ -21,7 +21,7 @@ import (
 var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
-var nerdstashEncoder GPTEncoder
+var nerdstashV2Encoder GPTEncoder
 var corpus string
 var clipCorpus string
 
@@ -88,7 +88,7 @@ func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
 	clipEncoder = NewCLIPEncoder()
-	nerdstashEncoder = NewNerdstashEncoder()
+	nerdstashV2Encoder = NewNerdstashV2Encoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
@@ -327,7 +327,7 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
 	corpusHandle, err := os.Open(largeCorpusPath)
 	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
-	nerdstashEncoder.SplitterThreads = 1
+	nerdstashV2Encoder.SplitterThreads = 1
 	//defer corpusHandle.Close()
 	if err != nil {
 		b.Error(err)
@@ -335,7 +335,7 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	wordCount := 0
 	tokensCount := 0
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
-	wordSplitter := nerdstashEncoder.makeWordSplitter(
+	wordSplitter := nerdstashV2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
 		func(word *string) {
 			if word != nil {
@@ -517,12 +517,12 @@ func TestPileEncoder_Encode(t *testing.T) {
 
 func TestNerdstashEncoder_Encode(t *testing.T) {
 	start := time.Now()
-	tokenCt := len(*nerdstashEncoder.Encode(&corpus))
+	tokenCt := len(*nerdstashV2Encoder.Encode(&corpus))
 	duration := time.Since(start)
 	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
 		len(corpus), tokenCt, duration))
 	for testIdx := range GPTEncoderTests {
-		tokensPtr := *nerdstashEncoder.Encode(
+		tokensPtr := *nerdstashV2Encoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, GPTEncoderTests[testIdx].NerdstashExpected, tokensPtr)
 	}
@@ -565,19 +565,19 @@ func TestNerdstashEncoder_Encode2(t *testing.T) {
 			inputStr = *testLine.Text
 		}
 		// encode the string
-		encoded := nerdstashEncoder.Encode(&inputStr)
+		encoded := nerdstashV2Encoder.Encode(&inputStr)
 		// check that the encoded string is the same as the expected
 		if !assert.Equal(t, expected, *encoded) {
 			t.Log(fmt.Sprintf("failure on input: `%v`", inputStr))
 			expectedRepr := []string{}
 			for _, token := range expected {
 				expectedRepr = append(expectedRepr,
-					string(nerdstashEncoder.Decoder[token]))
+					string(nerdstashV2Encoder.Decoder[token]))
 			}
 			actualRepr := []string{}
 			for _, token := range *encoded {
 				actualRepr = append(actualRepr,
-					string(nerdstashEncoder.Decoder[token]))
+					string(nerdstashV2Encoder.Decoder[token]))
 			}
 			t.Log(fmt.Sprintf("expected: |%s", strings.Join(expectedRepr, "|")))
 			t.Log(fmt.Sprintf("actual:   |%s", strings.Join(actualRepr, "|")))
@@ -591,7 +591,7 @@ func TestNerdstashEncoder_Encode2(t *testing.T) {
 
 func TestNerdstashEncoder_Decode(t *testing.T) {
 	for testIdx := range GPTEncoderTests {
-		decodedStr := nerdstashEncoder.Decode(
+		decodedStr := nerdstashV2Encoder.Decode(
 			&(GPTEncoderTests[testIdx].NerdstashExpected))
 		assert.Equal(t, GPTEncoderTests[testIdx].Input, decodedStr)
 	}

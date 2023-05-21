@@ -112,8 +112,13 @@ func NewCLIPEncoder() GPTEncoder {
 	return *encoder
 }
 
-func NewNerdstashEncoder() GPTEncoder {
-	encoder, _ := NewEncoder("nerdstash-tokenizer")
+func NewNerdstashV1Encoder() GPTEncoder {
+	encoder, _ := NewEncoder("nerdstash_v1-tokenizer")
+	return *encoder
+}
+
+func NewNerdstashV2Encoder() GPTEncoder {
+	encoder, _ := NewEncoder("nerdstash_v2-tokenizer")
 	return *encoder
 }
 
@@ -1255,13 +1260,3 @@ func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
 		}
 	}
 }
-
-var GPT2Encoder = NewGPT2Encoder()
-var PileEncoder = NewPileEncoder()
-var CLIPEncoder = NewCLIPEncoder()
-var NerdstashEncoder = NewNerdstashEncoder()
-var blankString = ""
-var _ = GPT2Encoder.Encode(&blankString)
-var _ = PileEncoder.Encode(&blankString)
-var _ = CLIPEncoder.Encode(&blankString)
-var _ = NerdstashEncoder.Encode(&blankString)
