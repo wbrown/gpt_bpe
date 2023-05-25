@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,15 +13,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wbrown/gpt_bpe"
 	"github.com/yargevad/filepathx"
 )
-
-var tokenizers map[string]*gpt_bpe.GPTEncoder
-
-type TextsIterator func() io.RuneReader
 
 type PathInfo struct {
 	Path    string
@@ -30,21 +28,37 @@ type PathInfo struct {
 }
 
 // GlobTexts
-// Given a directory path, recursively finds all `.txt` files, returning a
-// slice of PathInfo.
+// Given a directory path, recursively finds all `.txt` and `.jsonl` files,
+// returning a slice of PathInfo.
 func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
+	// If the path is a file, return it.
+	if stat, statErr := os.Stat(dirPath); statErr != nil && !stat.IsDir() {
+		return []PathInfo{{
+			Path:    dirPath,
+			Size:    stat.Size(),
+			ModTime: stat.ModTime(),
+			Dir:     stat.IsDir(),
+		}}, nil
+	}
+
 	textPaths, err := filepathx.Glob(dirPath + "/**/*.txt")
 	if err != nil {
 		return nil, err
 	}
-	numMatches := len(textPaths)
+	jsonlPaths, err := filepathx.Glob(dirPath + "/**/*.jsonl")
+	if err != nil {
+		return nil, err
+	}
+	filePaths := append(textPaths, jsonlPaths...)
+
+	numMatches := len(filePaths)
 	if numMatches == 0 {
 		return nil, errors.New(fmt.Sprintf(
-			"%s does not contain any .txt files", dirPath))
+			"%s does not contain any .txt or .jsonl files", dirPath))
 	}
 	pathInfos = make([]PathInfo, numMatches)
-	for matchIdx := range textPaths {
-		currPath := textPaths[matchIdx]
+	for matchIdx := range filePaths {
+		currPath := filePaths[matchIdx]
 		if stat, statErr := os.Stat(currPath); statErr != nil {
 			return nil, statErr
 		} else {
@@ -157,85 +171,148 @@ func FindNewestDir(dirPath string) (path *string, newest *time.Time,
 	return FindNewestPath(directories)
 }
 
+type namedRuneReader struct {
+	path   string
+	reader io.RuneReader
+}
+
+func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
+	if sortSpec == "" || sortSpec == "none" || sortSpec == "shuffle" {
+		ShufflePathInfos(matches)
+	} else if sortSpec == "size_ascending" {
+		SortPathInfoBySize(matches, true)
+	} else if sortSpec == "size_descending" {
+		SortPathInfoBySize(matches, false)
+	} else if sortSpec == "path_ascending" {
+		SortPathInfoByPath(matches, true)
+	} else if sortSpec == "path_descending" {
+		SortPathInfoByPath(matches, false)
+	} else {
+		return errors.New(fmt.Sprintf(
+			"Invalid sort spec: %s", sortSpec))
+	}
+	return nil
+}
+
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
-func ReadTexts(dirPath string, sanitize bool, sortSpec string) (TextsIterator,
-	error) {
+func ReadTexts(dirPath string,
+	sanitize bool,
+	sortSpec string,
+	numReaderThreads int,
+) (chan namedRuneReader, error) {
 	matches, err := GlobTexts(dirPath)
 	if err != nil {
 		return nil, err
 	}
-
-	if sortSpec != "" && sortSpec != "none" && sortSpec != "shuffle" {
-		if sortSpec == "size_ascending" {
-			SortPathInfoBySize(matches, true)
-		} else if sortSpec == "size_descending" {
-			SortPathInfoBySize(matches, false)
-		} else if sortSpec == "path_ascending" {
-			SortPathInfoByPath(matches, true)
-		} else if sortSpec == "path_descending" {
-			SortPathInfoByPath(matches, false)
-		} else if sortSpec == "random" {
-			ShufflePathInfos(matches)
-		} else {
-			return nil, errors.New(fmt.Sprintf(
-				"Invalid sort spec: %s", sortSpec))
-		}
-	}
-
-	numMatches := len(matches)
-
-	type namedRuneReader struct {
-		path   string
-		reader io.RuneReader
+	if sortErr := resolveSortSpec(matches, sortSpec); sortErr != nil {
+		return nil, sortErr
 	}
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 4)
-	go func() {
-		for matchIdx := 0; matchIdx < numMatches; matchIdx++ {
-			path := matches[matchIdx]
-			if fileReader, openErr := os.Open(path.Path); openErr != nil {
-				log.Fatal(openErr)
-			} else {
-				if sanitize {
-					runeReaders <- namedRuneReader{
-						path.Path,
-						CreateTextSanitizer(fileReader)}
+	runeReaders := make(chan namedRuneReader, 64)
+	paths := make(chan PathInfo, 64)
+	wg := sync.WaitGroup{}
+	startReader := func() {
+		for {
+			if path, ok := <-paths; ok {
+				if fileReader, openErr := os.Open(path.Path); openErr != nil {
+					log.Fatal(openErr)
 				} else {
-					runeReaders <- namedRuneReader{
-						path.Path,
-						bufio.NewReaderSize(fileReader,
-							8*1024*1024)}
+					if strings.HasSuffix(path.Path, ".jsonl") {
+						// Split JSONL files into individual JSON objects.
+						jsonlReader := bufio.NewReader(fileReader)
+						idx := 0
+						for {
+							jsonObject, rErr := jsonlReader.ReadBytes('\n')
+							if rErr != nil {
+								if rErr == io.EOF {
+									break
+								} else {
+									log.Fatal(rErr)
+								}
+							}
+							// Decode the JSON object.
+							var jsonObjectMap map[string]interface{}
+							if jErr := json.Unmarshal(jsonObject,
+								&jsonObjectMap); jErr != nil {
+								log.Printf(
+									"JSONL object %d in %s is not valid JSON: %s",
+									idx, path.Path, jErr)
+								continue
+							}
+							// Extract the text field.
+							text, ok := jsonObjectMap["text"]
+							if !ok {
+								log.Fatal("JSONL object missing text field")
+							}
+							textString, ok := text.(string)
+							if !ok {
+								log.Fatal("JSONL object text field not string")
+							}
+							subPath := fmt.Sprintf("%s[%d]", path.Path, idx)
+							// Create our rune reader.
+							if sanitize {
+								runeReaders <- namedRuneReader{
+									subPath,
+									CreateTextSanitizer(
+										strings.NewReader(textString))}
+							} else {
+								runeReaders <- namedRuneReader{
+									subPath,
+									strings.NewReader(textString)}
+							}
+							idx++
+						}
+					} else {
+						if sanitize {
+							runeReaders <- namedRuneReader{
+								path.Path,
+								CreateTextSanitizer(fileReader)}
+						} else {
+							runeReaders <- namedRuneReader{
+								path.Path,
+								bufio.NewReaderSize(fileReader,
+									8*1024*1024)}
+						}
+					}
 				}
+			} else {
+				break
 			}
 		}
+		wg.Done()
+	}
+	for readerIdx := 0; readerIdx < numReaderThreads; readerIdx++ {
+		wg.Add(1)
+		go startReader()
+	}
+	go func() {
+		for matchIdx := range matches {
+			paths <- matches[matchIdx]
+		}
+		close(paths)
+		wg.Wait()
 		close(runeReaders)
 	}()
-
-	return func() io.RuneReader {
-		if reader, ok := <-runeReaders; !ok {
-			return nil
-		} else {
-			log.Print("Reading ", reader.path)
-			return reader.reader
-		}
-	}, nil
+	return runeReaders, nil
 }
 
 // TextsTokenizer
 // A struct that encapsulates the configuration for a streaming tokenizer.
 type TextsTokenizer struct {
-	TokenizerId     string
-	ContextSize     int
-	Boundary        string
-	BoundaryBegin   bool
-	BoundaryOverlap int
-	PadToken        string
-	EndOfText       string
-	Unitrim         bool
+	TokenizerId      string
+	ContextSize      int
+	Boundary         string
+	BoundaryBegin    bool
+	BoundaryOverlap  int
+	PadToken         string
+	EndOfText        string
+	Unitrim          bool
+	ExcludeTokens    []string
+	SanitizeEncoding bool
 }
 
 // NewTextsTokenizer
@@ -250,6 +327,8 @@ func NewTextsTokenizer() TextsTokenizer {
 		"<|endoftext|>",
 		"<|padding|>",
 		true,
+		[]string{},
+		false,
 	}
 }
 
@@ -273,21 +352,19 @@ func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	}
 }
 
-type ContextsIterator func() *gpt_bpe.Tokens
-
 func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
-	tokenizerPtr, ok := tokenizers[tt.TokenizerId]
-	if !ok {
-		var tokErr error
-		tokenizerPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
+	// Check if it's an internal reference. If not, it's a file path.
+	encoderPtr, tokErr := gpt_bpe.NewEncoder(
+		tt.TokenizerId + "-tokenizer")
+	if tokErr != nil {
+		// Fall back to path-like.
+		encoderPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
 		if tokErr != nil {
-			return nil, tokErr
-		} else {
-			tokenizers[tt.TokenizerId] = tokenizerPtr
-			return tokenizerPtr, nil
+			log.Fatal(tokErr)
 		}
 	}
-	return tokenizerPtr, nil
+
+	return encoderPtr, nil
 }
 
 func (tt *TextsTokenizer) PartitionBoundary(
@@ -341,12 +418,141 @@ func (tt *TextsTokenizer) PartitionBoundary(
 	return idx
 }
 
-// TokenizeTexts
+func (tt TextsTokenizer) handleExclusions(
+	tokenizer *gpt_bpe.GPTEncoder,
+) (
+	err error,
+) {
+	if len(tt.ExcludeTokens) == 0 {
+		return nil
+	}
+	// Remove excluded tokens from the tokenizer.
+	for _, excludeToken := range tt.ExcludeTokens {
+		var excludeTokenId gpt_bpe.Token
+		var excludeErr error
+		if excludeTokenId, excludeErr = getAndCheckToken(tokenizer,
+			excludeToken, "ExcludeToken"); excludeErr != nil {
+			return excludeErr
+		} else {
+			delete(tokenizer.Encoder, excludeToken)
+			// Remove from merges.
+			for i, merge := range tokenizer.TokenMerges {
+				// Check if the token is in the merge, if it is, remove it
+				if merge == excludeTokenId {
+					mergePair := gpt_bpe.GPTPair{
+						string(tokenizer.Decoder[i.Left]),
+						string(tokenizer.Decoder[i.Right]),
+					}
+					delete(tokenizer.TokenMerges, i)
+					delete(tokenizer.BpeRanks, mergePair)
+				}
+			}
+			// Remove from specials
+			for i, special := range tokenizer.Specials {
+				if special[0] == excludeTokenId {
+					delete(tokenizer.Specials, i)
+				}
+			}
+			tokenizer.UpdateSpecialsTree()
+		}
+	}
+	tokenizer.UpdateSpecialsTree()
+	return nil
+}
+
+func (tt TextsTokenizer) TokenizeTexts(
+	texts chan namedRuneReader,
+	indexPath string,
+) (chan gpt_bpe.Tokens, error) {
+	tokenizerPtr, tokErr := tt.InitTokenizer()
+
+	if tokErr != nil {
+		return nil, tokErr
+	}
+	tokenizer := *tokenizerPtr
+	var endOfText gpt_bpe.Token
+	if tt.EndOfText == "" {
+		endOfText = tokenizer.EosToken
+	} else {
+		var eotErr error
+		if endOfText, eotErr = getAndCheckToken(&tokenizer,
+			tt.EndOfText, "EndOfText"); eotErr != nil {
+			return nil, eotErr
+		}
+	}
+
+	if exclErr := tt.handleExclusions(&tokenizer); exclErr != nil {
+		return nil, exclErr
+	}
+
+	if tt.SanitizeEncoding {
+		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
+	}
+
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 32)
+
+	// Our index handle.
+	indexFile, iErr := os.Create(indexPath)
+	if iErr != nil {
+		return nil, iErr
+	}
+
+	currOffset := 0
+	nextTokenized := func() {
+		for {
+			waitBegin := time.Now()
+			runeReader, more := <-texts
+			if more {
+				waitDuration := time.Since(waitBegin)
+				beginTs := time.Now()
+				tokenCt := 0
+				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
+				for {
+					tokenized := encodeChunk(16384)
+					if tokenized == nil {
+						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						tokenCt += 1
+						break
+					} else {
+						tokenCt += len(*tokenized)
+					}
+					tokenizedTexts <- *tokenized
+				}
+				duration := time.Since(beginTs)
+				// If we took longer than a millisecond, round to the nearest
+				// millisecond.
+				var roundDuration time.Duration
+				if duration.Round(time.Millisecond) > 0 {
+					roundDuration = duration.Round(time.Millisecond)
+				} else {
+					roundDuration = duration
+				}
+				log.Printf("%s tokenized in %s (%d tokens/s, %s wait)",
+					runeReader.path, roundDuration,
+					int(float64(tokenCt)/duration.Seconds()),
+					waitDuration)
+				indexFile.WriteString(fmt.Sprintf(
+					"{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
+					runeReader.path, currOffset, tokenCt))
+				currOffset += tokenCt
+			} else {
+				close(tokenizedTexts)
+				indexFile.Close()
+				break
+			}
+		}
+	}
+	go nextTokenized()
+	return tokenizedTexts, nil
+}
+
+// TokenizeTextsToContexts
 // Consumes a TextsIterator and produces a ContextsIterator iterator function
 // that returns tokenized contexts that are fixed and padded out to
 // `contextSize`.
-func (tt TextsTokenizer) TokenizeTexts(
-	nextText TextsIterator) (ContextsIterator, error) {
+func (tt TextsTokenizer) TokenizeTextsToContexts(
+	texts chan namedRuneReader,
+) (chan gpt_bpe.Tokens, error) {
 	tokenizerPtr, tokErr := tt.InitTokenizer()
 	if tokErr != nil {
 		return nil, tokErr
@@ -388,31 +594,60 @@ func (tt TextsTokenizer) TokenizeTexts(
 	contextSize := tt.ContextSize
 	doUnitrim := tt.Unitrim
 
+	if exclErr := tt.handleExclusions(&tokenizer); exclErr != nil {
+		return nil, exclErr
+	}
+
+	if tt.SanitizeEncoding {
+		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
+	}
+
 	var tokens gpt_bpe.Tokens
 	var done bool
 	var numTokens, idx, begin int
 	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 4)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
+	contexts := make(chan gpt_bpe.Tokens, 16)
 	nextTokenized := func() {
+		tokenCt := 0
 		for {
-			runeReader := nextText()
-			if runeReader != nil {
-				encodeChunk := tokenizer.StreamingEncode(runeReader)
+			waitBegin := time.Now()
+			runeReader, more := <-texts
+			beginTs := time.Now()
+			if more {
+				wait_duration := time.Since(waitBegin)
+				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
 					tokenized := encodeChunk(contextSize * 8)
 					if tokenized == nil {
+						duration := time.Since(beginTs)
+						// If we took longer than a millisecond, round to the
+						// nearest  millisecond.
+						var roundDuration time.Duration
+						if duration.Round(time.Millisecond) > 0 {
+							roundDuration = duration.Round(time.Millisecond)
+						} else {
+							roundDuration = duration
+						}
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						log.Printf("%s tokenized in %s (%d tokens/s, %s wait)",
+							runeReader.path, roundDuration,
+							int(float64(tokenCt)/duration.Seconds()),
+							wait_duration)
+						tokenCt = 0
+						beginTs = time.Now()
 						break
 					}
 					tokenizedTexts <- *tokenized
+					tokenCt += len(*tokenized)
 				}
 			} else {
-				close(tokenizedTexts)
 				break
 			}
 		}
+		close(tokenizedTexts)
 	}
 	go nextTokenized()
 
@@ -531,13 +766,26 @@ func (tt TextsTokenizer) TokenizeTexts(
 			}
 		}
 	}
-	return nextContext, nil
+
+	go func() {
+		for {
+			context := nextContext()
+			if context == nil {
+				break
+			} else {
+				contexts <- *context
+			}
+		}
+		close(contexts)
+	}()
+
+	return contexts, nil
 }
 
 // WriteContexts
 // Consumes a ContextsIterator function and serializes the contexts to an
 // aligned binary file.
-func WriteContexts(outPath string, nextContext ContextsIterator,
+func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool) (int, error) {
 	totalTokens := 0
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE,
@@ -545,23 +793,23 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	if err != nil {
 		return 0, err
 	}
-	contexts := make(chan gpt_bpe.Tokens, 2)
+	sampledContexts := make(chan gpt_bpe.Tokens, 16)
 
 	go func() {
 		samplingIdx := 0
 		for {
-			context := nextContext()
-			if context == nil {
-				close(contexts)
+			context, ok := <-contexts
+			if !ok {
+				close(sampledContexts)
 				break
 			} else {
 				// Ignore every `sampling` percent context (rounded to int)
 				if sampling == 100 || (samplingIdx%20) < int(sampling/5) {
-					contexts <- *context
+					sampledContexts <- context
 					if encoder != nil {
-						println(len(*context))
+						println(len(context))
 						println("======================================")
-						println(encoder.Decode(context))
+						println(encoder.Decode(&context))
 					}
 				}
 				samplingIdx += 1
@@ -577,7 +825,7 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	// Sometimes it is requested that we shuffle all contexts as they are
 	// written
 	for {
-		context, more := <-contexts
+		context, more := <-sampledContexts
 		if !more {
 			break
 		}
@@ -638,15 +886,10 @@ func WriteContexts(outPath string, nextContext ContextsIterator,
 	return totalTokens, nil
 }
 
-func init() {
-	tokenizers = make(map[string]*gpt_bpe.GPTEncoder, 0)
-	tokenizers["gpt2"] = &gpt_bpe.GPT2Encoder
-	tokenizers["pile"] = &gpt_bpe.PileEncoder
-}
-
 func main() {
 	tokenizerId := flag.String("tokenizer", "gpt2",
-		"tokenizer to use [gpt2, pile, huggingface-id]")
+		"tokenizer to use [gpt2, pile, nerdstash_v1, "+
+			"nerdstash_v2, huggingface-id]")
 	contextSize := flag.Int("context", 2048, "context size")
 	showContexts := flag.Bool("show_contexts", false,
 		"show contexts as they are tokenized")
@@ -680,6 +923,17 @@ func main() {
 			"size_descending, name_ascending, name_descending, random, shuffle, none]")
 	sampling_str := flag.String("sampling", "100", "a integer value from 0-100 "+
 		"which tells the tokenizer how many chunks to discard in %, 60 keeps 60%% chunks")
+	streaming_encode := flag.Bool("streaming_encode", false,
+		"use streaming encode, which writes to disk as it encodes, "+
+			"rather than buffering into contexts")
+	numThreads := flag.Int("threads", 4,
+		"number of tokenization threads to use")
+	numReaderThreads := flag.Int("reader_threads", 2,
+		"number of I/O reader threads to use")
+	excludeTokens := flag.String("exclude_tokens", "",
+		"comma separated list of tokens to exclude from the vocabulary")
+	sanitizeEncodingBool := flag.Bool("disable_sanitize_encoding",
+		false, "disable sanitizing of misencoding")
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
@@ -713,6 +967,11 @@ func main() {
 		}
 	}
 
+	var excludeTokensList []string
+	if *excludeTokens != "" {
+		excludeTokensList = strings.Split(*excludeTokens, ",")
+	}
+
 	textsTokenizer := NewTextsTokenizer()
 	textsTokenizer.ContextSize = *contextSize
 	textsTokenizer.TokenizerId = *tokenizerId
@@ -722,6 +981,8 @@ func main() {
 	textsTokenizer.BoundaryBegin = *boundaryBegin
 	textsTokenizer.BoundaryOverlap = *boundaryOverlap
 	textsTokenizer.Unitrim = !*unitrimBool
+	textsTokenizer.ExcludeTokens = excludeTokensList
+	textsTokenizer.SanitizeEncoding = !*sanitizeEncodingBool
 
 	if !*forceRetokenization {
 		if outStat, outErr := os.Stat(*outputFile); !errors.Is(outErr,
@@ -753,28 +1014,60 @@ func main() {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(*inputDir, *sanitizeBool,
-		*reorderPaths); err != nil {
+	if textReaders, err := ReadTexts(*inputDir, *sanitizeBool,
+		*reorderPaths, *numReaderThreads); err != nil {
 		log.Fatal(err)
 	} else {
+		numTokens := 0
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
-		if tokErr != nil {
-			log.Fatal(tokErr)
-		}
-		var enc *gpt_bpe.GPTEncoder
-		// *showContexts = true
-		if *showContexts {
-			enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
-		}
-		total, writeErr := WriteContexts(*outputFile, contexts, enc, sampling,
-			*reorderPaths == "shuffle")
-		if writeErr != nil {
-			log.Fatal(writeErr)
+		if *streaming_encode {
+			wg := sync.WaitGroup{}
+			for threadIdx := 0; threadIdx < *numThreads; threadIdx++ {
+				wg.Add(1)
+				go func(threadId int) {
+					var contexts chan gpt_bpe.Tokens
+					var tokErr error
+					indexFilePath := fmt.Sprintf("%s.%d.index",
+						*outputFile, threadId)
+					outputFilePath := fmt.Sprintf("%s.%d.tokens",
+						*outputFile, threadId)
+					contexts, tokErr = textsTokenizer.TokenizeTexts(textReaders,
+						indexFilePath)
+					if tokErr != nil {
+						log.Fatal(tokErr)
+					}
+					total, writeErr := WriteContexts(outputFilePath, contexts,
+						nil, sampling, false)
+					if writeErr != nil {
+						log.Fatal(writeErr)
+					}
+					numTokens += total
+					wg.Done()
+				}(threadIdx)
+			}
+			wg.Wait()
+		} else {
+			var contexts chan gpt_bpe.Tokens
+			var tokErr error
+			contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
+				textReaders)
+			if tokErr != nil {
+				log.Fatal(tokErr)
+			}
+			var enc *gpt_bpe.GPTEncoder
+			if *showContexts {
+				enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
+			}
+			var writeErr error
+			numTokens, writeErr = WriteContexts(*outputFile, contexts, enc,
+				sampling,
+				*reorderPaths == "shuffle")
+			if writeErr != nil {
+				log.Fatal(writeErr)
+			}
 		}
 		duration := time.Now().Sub(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
-			duration, float64(total)/duration)
+		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", numTokens,
+			duration, float64(numTokens)/duration)
 	}
 }

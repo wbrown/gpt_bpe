@@ -3,6 +3,7 @@ package gpt_bpe
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
+var nerdstashV2Encoder GPTEncoder
 var corpus string
 var clipCorpus string
 
@@ -27,6 +29,7 @@ var clipCorpus string
 var gpt2Encoded *Tokens
 var pileEncoded *Tokens
 var clipEncoded *Tokens
+var nerdstashEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
 const largeCorpusPath = "resources/wiki.train.raw"
@@ -85,6 +88,7 @@ func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
 	clipEncoder = NewCLIPEncoder()
+	nerdstashV2Encoder = NewNerdstashV2Encoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
@@ -106,6 +110,7 @@ type TrimTest struct {
 const sent1 = "This is test sentence 1.  This is test sentence 2.  This is test sentence 3."
 const sent2 = "\nThis is test sentence 4.\nThis is test sentence 5.\nThis is test sentence 6.\n"
 const hindiSentence = "व्याकरण शास्त्रीय परिभाषाएँ : डॉ. पर्णदत्त सिंह द्वारा हिंदी पीडीऍफ़ पुस्तक"
+const jpSentence = "「そんな心構えで、本当に俺の『未練』を果たせるのか？　知ってのとおり、俺の『未練』は『<|rubycover|>相川渦波<|rubystart|>おまえ<|rubyend|>の成長を最後まで見届けること』だ。……言っとくが、俺は年季が入ってる上に、拗らせに拗らせた元神学者。俺の『大いなる<|rubycover|>救世主<|rubystart|>マグナ・メサイア<|rubyend|>』の『理想』は高いぞ？　少なくとも、この『血陸』を止められないようじゃ、任せ切れないな」\n<|mtsentence|><|mtsenglish|>Please check if the meat is being roasted at the right heat.<|mtsjapanese|>焼き肉の火加減を見なさい。<|mtsentenceend|>\n<|mtvocab|><|mtvjapanese|>[ぶんけんがく] 文献学<|mtvenglish|>(n) philology<|mtvocabend|>"
 
 var TrimSentencesTests = []TrimTest{
 	{sent1, TrimTop, 10,
@@ -322,18 +327,19 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
 	corpusHandle, err := os.Open(largeCorpusPath)
 	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
-	gpt2Encoder.SplitterThreads = 32
+	nerdstashV2Encoder.SplitterThreads = 1
 	//defer corpusHandle.Close()
 	if err != nil {
 		b.Error(err)
 	}
 	wordCount := 0
+	tokensCount := 0
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
-	wordSplitter := gpt2Encoder.makeWordSplitter(
+	wordSplitter := nerdstashV2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
 		func(word *string) {
 			if word != nil {
-				gpt2Encoder.toBPE(*word)
+				tokensCount += len(gpt2Encoder.ToBPE(*word))
 			}
 			wordCount++
 		},
@@ -350,7 +356,46 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.ReportMetric(float64(wordCount), "words")
 	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
 	b.ReportMetric(float64(numBytes), "bytes")
+	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
+	b.ReportMetric(float64(tokensCount), "tokens")
 }
+
+//func BenchmarkGPTEncoder_WordSplitterTokensChan(b *testing.B) {
+//	b.StopTimer()
+//	corpusHandle, err := os.Open(largeCorpusPath)
+//	//corpusText, err := ioutil.ReadFile(largeCorpusPath)
+//	nerdstashEncoder.SplitterThreads = 1
+//	//defer corpusHandle.Close()
+//	if err != nil {
+//		b.Error(err)
+//	}
+//	wordCount := 0
+//	tokensCount := 0
+//	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+//	wordsChan := make(chan *string, 1000)
+//	go nerdstashEncoder.splitWordsOntoChan(runeReader.ReadRune,
+//		wordsChan)
+//	start := time.Now()
+//	b.StartTimer()
+//	for {
+//		word := <-wordsChan
+//		if word == nil {
+//			break
+//		}
+//		tokensCount += len(gpt2Encoder.ToBPE(*word))
+//		wordCount++
+//	}
+//	b.StopTimer()
+//	elapsed := time.Since(start)
+//	//numBytes := int64(len(corpusText))
+//	numBytes, _ := corpusHandle.Seek(0, io.SeekCurrent)
+//	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
+//	b.ReportMetric(float64(wordCount), "words")
+//	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+//	b.ReportMetric(float64(numBytes), "bytes")
+//	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
+//	b.ReportMetric(float64(tokensCount), "tokens")
+//}
 
 func BenchmarkGPTEncoder_Decode(b *testing.B) {
 	if gpt2Encoded == nil {
@@ -365,29 +410,34 @@ func BenchmarkGPTEncoder_Decode(b *testing.B) {
 }
 
 type EncoderTest struct {
-	Input        string
-	GPT2Expected Tokens
-	PileExpected Tokens
-	CLIPExpected Tokens
+	Input             string
+	GPT2Expected      Tokens
+	PileExpected      Tokens
+	CLIPExpected      Tokens
+	NerdstashExpected Tokens
 }
 
 var GPTEncoderTests = []EncoderTest{
 	{"… …",
 		Tokens{1399, 3926},
 		Tokens{2866, 8139},
-		Tokens{49406, 959, 959, 49407}},
+		Tokens{49406, 959, 959, 49407},
+		Tokens{49289, 5512}},
 	{"<|endoftext|>",
 		Tokens{50256},
 		Tokens{0},
-		Tokens{49406, 49407, 49407}},
+		Tokens{49406, 49407, 49407},
+		Tokens{3}},
 	{" <|endoftext|>\n<|endoftext|>foo",
 		Tokens{220, 50256, 198, 50256, 21943},
 		Tokens{209, 0, 187, 0, 12110},
-		Tokens{49406, 49407, 49407, 23435, 49407}},
+		Tokens{49406, 49407, 49407, 23435, 49407},
+		Tokens{49209, 3, 85, 3, 49225, 3292}},
 	{" <|padding|>test",
 		Tokens{220, 50257, 9288},
 		Tokens{209, 1, 2566},
 		Tokens{49406, 27, 347, 3798, 796, 91, 285, 1628, 49407},
+		Tokens{3252, 49376, 42545, 49376, 49405, 10180},
 	},
 }
 
@@ -462,6 +512,88 @@ func TestPileEncoder_Encode(t *testing.T) {
 		tokensPtr := *pileEncoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
 		assert.Equal(t, GPTEncoderTests[testIdx].PileExpected, tokensPtr)
+	}
+}
+
+func TestNerdstashEncoder_Encode(t *testing.T) {
+	start := time.Now()
+	tokenCt := len(*nerdstashV2Encoder.Encode(&corpus))
+	duration := time.Since(start)
+	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration))
+	for testIdx := range GPTEncoderTests {
+		tokensPtr := *nerdstashV2Encoder.Encode(
+			&(GPTEncoderTests[testIdx].Input))
+		assert.Equal(t, GPTEncoderTests[testIdx].NerdstashExpected, tokensPtr)
+	}
+}
+
+func TestNerdstashEncoder_Encode2(t *testing.T) {
+	// read the jsonl test file in
+	testFile, err := os.Open("resources/subset.jsonl")
+	if err != nil {
+		t.Error(err)
+	}
+	defer testFile.Close()
+	scanner := bufio.NewScanner(testFile)
+	scanner.Split(bufio.ScanLines)
+	type testLineStruct struct {
+		Text    *string `json:"text"`
+		Hex     *string `json:"hex"`
+		Encoded Tokens  `json:"encoded"`
+	}
+
+	passCt := 0
+	failCt := 0
+
+	for scanner.Scan() {
+		jsonLine := scanner.Text()
+		testLine := testLineStruct{}
+		err := json.Unmarshal([]byte(jsonLine), &testLine)
+		if err != nil {
+			t.Error(err)
+		}
+		expected := testLine.Encoded
+		var inputStr string
+		if testLine.Hex != nil {
+			inputBytes, hexErr := hex.DecodeString(*testLine.Hex)
+			if hexErr != nil {
+				t.Error(hexErr)
+			}
+			inputStr = string(inputBytes)
+		} else {
+			inputStr = *testLine.Text
+		}
+		// encode the string
+		encoded := nerdstashV2Encoder.Encode(&inputStr)
+		// check that the encoded string is the same as the expected
+		if !assert.Equal(t, expected, *encoded) {
+			t.Log(fmt.Sprintf("failure on input: `%v`", inputStr))
+			expectedRepr := []string{}
+			for _, token := range expected {
+				expectedRepr = append(expectedRepr,
+					string(nerdstashV2Encoder.Decoder[token]))
+			}
+			actualRepr := []string{}
+			for _, token := range *encoded {
+				actualRepr = append(actualRepr,
+					string(nerdstashV2Encoder.Decoder[token]))
+			}
+			t.Log(fmt.Sprintf("expected: |%s", strings.Join(expectedRepr, "|")))
+			t.Log(fmt.Sprintf("actual:   |%s", strings.Join(actualRepr, "|")))
+			failCt += 1
+		} else {
+			passCt += 1
+		}
+	}
+	t.Log(fmt.Sprintf("pass: %v, fail: %v", passCt, failCt))
+}
+
+func TestNerdstashEncoder_Decode(t *testing.T) {
+	for testIdx := range GPTEncoderTests {
+		decodedStr := nerdstashV2Encoder.Decode(
+			&(GPTEncoderTests[testIdx].NerdstashExpected))
+		assert.Equal(t, GPTEncoderTests[testIdx].Input, decodedStr)
 	}
 }
 
@@ -596,13 +728,13 @@ func TestUnitrimFunctionality(t *testing.T) {
 		t.Errorf("Could not find file %s\n", unitrimFile)
 	}
 
-	// read in the encoder and unitrim files
+	// read in the Encoder and unitrim files
 	encoderBytes, err := os.ReadFile(encoderFile)
-	// unmarshal the encoder file
-	var encoder map[string]int
+	// unmarshal the Encoder file
+	var encoder map[string]Token
 	err = json.Unmarshal(encoderBytes, &encoder)
 	if err != nil {
-		t.Errorf("Could not unmarshal encoder file: %v\n", err)
+		t.Errorf("Could not unmarshal Encoder file: %v\n", err)
 	}
 
 	// read in the unitrim file
