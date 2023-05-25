@@ -101,7 +101,7 @@ func BenchmarkSanitizeText(b *testing.B) {
 func BenchmarkStreamingEncode(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
-	tokenizer := gpt_bpe.GPT2Encoder
+	tokenizer := gpt_bpe.NerdstashEncoder
 	for i := 0; i < 5; i++ {
 		if testFile, err := os.Open(corpusPath); err != nil {
 			b.Fail()
@@ -209,13 +209,14 @@ func TestSampling40(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(inputDir, false,
-		reorderPaths); err != nil {
+	if texts, err := ReadTexts(inputDir, false,
+		reorderPaths,
+		1); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
+			texts, "test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -251,13 +252,14 @@ func TestSampling40(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText2, err := ReadTexts(inputDir, false,
-		reorderPaths); err != nil {
+	if texts2, err := ReadTexts(inputDir, false,
+		reorderPaths,
+		1); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText2)
+			texts2, "")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -304,13 +306,13 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText, err := ReadTexts(inputDir, true,
-		reorderPaths); err != nil {
+	if texts, err := ReadTexts(inputDir, true,
+		reorderPaths, 1); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			nextText)
+			texts, "test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -345,13 +347,13 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if nextText2, err := ReadTexts(inputDir, true,
-		reorderPaths); err != nil {
+	if texts2, err := ReadTexts(inputDir, true,
+		reorderPaths, 1); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts2, tokErr := textsTokenizer.TokenizeTexts(
-			nextText2)
+			texts2, "test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}

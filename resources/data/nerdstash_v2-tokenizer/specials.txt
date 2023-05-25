@@ -1,0 +1,74 @@
+'t
+'m
+'d
+'n
+'s
+ "
+  
+'ve
+─
+'ll
+'re
+ 
+ 
+⁂
+***
+Type
+    
+----
+ Tags
+'t've
+ Title
+ Style
+ Genre
+'clock
+<|pad|>
+ Author
+ Rating
+<|fill|>
+<|mask|>
+        
+Glossary
+ Summary
+<|mtend|>
+ Knowledge
+Characters
+<|maskend|>
+<|fillend|>
+<|rubyend|>
+<|mtvocab|>
+<|masklong|>
+            
+<|spmspace|>
+<|reserved7|>
+<|reserved3|>
+<|reserved2|>
+<|rubystart|>
+<|reserved0|>
+<|reserved9|>
+<|reserved4|>
+<|rubycover|>
+<|endoftext|>
+<|reserved5|>
+<|reserved8|>
+<|maskshort|>
+<|reserved6|>
+<|reserved1|>
+<|mtsenglish|>
+<|reserved10|>
+<|maskmedium|>
+<|masksingle|>
+<|mtvocabend|>
+<|mtvenglish|>
+<|mtsentence|>
+<|startoftext|>
+<|mtvjapanese|>
+<|mtsjapanese|>
+                
+<|mtsentenceend|>
+<|maskparagraph|>
+<|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>
+<|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|><|spmspace|>
