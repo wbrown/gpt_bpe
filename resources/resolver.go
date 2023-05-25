@@ -748,8 +748,7 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 	} else {
 		config.ModelId = &resolvedVocabId
 		if _, exists := (*resources)["encoder.json"]; !exists {
-			(*resources)["encoder.json"] = *GetEmbeddedResource(
-				"gpt2-tokenizer/encoder.json")
+			(*resources)["encoder.json"] = (*resources)["vocab.json"]
 		}
 		return config, resources, nil
 	}
