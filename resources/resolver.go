@@ -631,7 +631,7 @@ type SpecialConfig struct {
 }
 
 // ResolveConfig
-// Resolves a given vocabulary id, and returns the corresonding HuggingFace
+// Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
 func ResolveConfig(vocabId string, token string) (config *HFConfig,
 	resources *Resources, err error) {
@@ -882,26 +882,26 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	}
 
 	// Access the data at the specified path
-	weight_map, ok := data["weight_map"].(map[string]interface{})
+	weightMap, ok := data["weight_map"].(map[string]interface{})
 	if !ok {
 		fmt.Println("Error: Could not convert data to weight_map")
-		return -1, errors.New(" could not convert data to weight_map")
+		return -1, errors.New("could not convert data to weight_map")
 	}
-	embed_out, ok := weight_map["embed_out.weight"]
+	embedOut, ok := weightMap["embed_out.weight"]
 	if !ok {
 		fmt.Println("Error: Could not convert weight_map to embed_out")
 
-		return -1, errors.New(" could not convert weight_map to embed_out")
+		return -1, errors.New("could not convert weight_map to embed_out")
 	}
-	r, _ := regexp.Compile(`[^\d]*[\d]+[^\d]+([\d]+)`)
+	r, _ := regexp.Compile(`\D*\d+\D+(\d+)`)
 	// convert to interface -> string -> int
-	embed_out_int, err := strconv.Atoi(
-		r.FindStringSubmatch(fmt.Sprintf("%v", embed_out))[1])
+	embedOutInt, err := strconv.Atoi(
+		r.FindStringSubmatch(fmt.Sprintf("%v", embedOut))[1])
 
 	if err != nil {
 		fmt.Println("Error: Could not convert embed_out to int")
-		return -1, errors.New(" could not convert embed_out to int")
+		return -1, errors.New("could not convert embed_out to int")
 	}
 
-	return embed_out_int, nil
+	return embedOutInt, nil
 }
