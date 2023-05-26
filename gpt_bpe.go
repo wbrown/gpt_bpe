@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math"
@@ -177,34 +176,25 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		decodeExtra = strings.NewReplacer(decode...)
 	}
 
-	// Unmarshal the Encoder mappings from json to (int: string) map.
-	encoderMappings := make(map[string]Token)
-	// check if the Encoder.json file is present
-	if _, ok := rsrcs["encoder.json"]; !ok {
-		return nil, fmt.Errorf("encoder.json not found for vocabId: %s",
-			vocabId)
-	}
-	if json.Unmarshal(*rsrcs["encoder.json"].Data, &encoderMappings) != nil {
-		log.Fatal("Error unmarshalling `Encoder.json`")
-	}
-
-	// Build the unitrim array dynamically.
-	unitrimArr := makeUnitrimArr(encoderMappings)
-
 	// Build the bytes to unicode tables.
 	bytesUnicode, unicodeBytes := makeByteTranslationTables()
 
-	// Go through the encoderMappings for possible byte runes.
-	// Read Encoder mappings and also generate reverse mappings.
-	bytesEncoder := make(map[byte]Token)
+	// Read encoder mappings.
 	encoderTokens := make(map[string]Token)
 	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
 		log.Fatal("Error unmarshalling `vocab.json`")
 	}
+
+	// Build the unitrim array dynamically.
+	unitrimArr := makeUnitrimArr(encoderTokens)
+
+	// Go through the encoder mappings for possible byte runes
+	// and also generate reverse mappings.
+	bytesEncoder := make(map[byte]Token)
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
 		if strings.HasPrefix(text, "0x") && len(text) == 4 {
-			// Convert the hexstring to a byte
+			// Convert the hex string to a byte
 			byteValue, err := strconv.ParseUint(text[2:], 16, 8)
 			if err != nil {
 				panic(err)

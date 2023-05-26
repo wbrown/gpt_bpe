@@ -623,7 +623,7 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	assert.Equal(t, corpus, decoded)
 }
 
-//BUG: CLIP TOKENIZER has a bug that causes 'the to be split into
+// BUG: CLIP TOKENIZER has a bug that causes 'the to be split into
 // "'t<w>he<w>" instead of "'<w>the<w>".  This causes the
 // clipCorpus to be different from the corpus.  This is a bug in
 // the CLIP tokenizer from huggingface that was used to generate
@@ -716,55 +716,55 @@ func TestGPTEncoder_TokensReadyContext(t *testing.T) {
 }
 
 func TestUnitrimFunctionality(t *testing.T) {
-	// get need array for gpt2 unitrim
-	encoderFile := "resources/data/clip-tokenizer/encoder.json"
-	unitrimFile := "resources/data/clip-tokenizer/unitrim.json"
+	for _, tokenizer := range []string{"clip-tokenizer", "gpt2-tokenizer", "pile-tokenizer"} {
+		encoderFile := fmt.Sprintf("resources/data/%s/encoder.json", tokenizer)
+		unitrimFile := fmt.Sprintf("resources/data/%s/unitrim.json", tokenizer)
 
-	// make sure the files exist
-	if _, err := os.Stat(encoderFile); os.IsNotExist(err) {
-		t.Errorf("Could not find file %s\n", encoderFile)
-	}
-	if _, err := os.Stat(unitrimFile); os.IsNotExist(err) {
-		t.Errorf("Could not find file %s\n", unitrimFile)
-	}
-
-	// read in the Encoder and unitrim files
-	encoderBytes, err := os.ReadFile(encoderFile)
-	// unmarshal the Encoder file
-	var encoder map[string]Token
-	err = json.Unmarshal(encoderBytes, &encoder)
-	if err != nil {
-		t.Errorf("Could not unmarshal Encoder file: %v\n", err)
-	}
-
-	// read in the unitrim file
-	unitrimBytes, err := os.ReadFile(unitrimFile)
-	// unmarshal the unitrim file
-	var unitrim []int
-	err = json.Unmarshal(unitrimBytes, &unitrim)
-	if err != nil {
-		t.Errorf("Could not unmarshal unitrim file: %v\n", err)
-	}
-
-	// get need array for gpt2 unitrim with the makeUnitrimArr function
-	needArray := makeUnitrimArr(encoder)
-
-	// check that the need array is the same as the unitrim array
-	fmt.Printf("Need array length: %d, unitrim array length: %d\n", len(needArray), len(unitrim))
-	if len(needArray) != len(unitrim) {
-		t.Errorf("Need array and unitrim array are not the same length\n")
-	}
-
-	for i := range needArray {
-		if needArray[i] != unitrim[i] {
-			fmt.Printf("Need array: %v and unitrim array: %v at index %d are not the same\n", needArray[i], unitrim[i], i)
-			fmt.Printf("mismatched unicode is: %c\n", rune(needArray[i]))
-			t.Errorf("Need array and unitrim array are not the same\n")
+		// make sure the files exist
+		if _, err := os.Stat(encoderFile); os.IsNotExist(err) {
+			t.Errorf("Could not find file %s\n", encoderFile)
 		}
+		if _, err := os.Stat(unitrimFile); os.IsNotExist(err) {
+			t.Errorf("Could not find file %s\n", unitrimFile)
+		}
+
+		// read in the Encoder and unitrim files
+		encoderBytes, err := os.ReadFile(encoderFile)
+		// unmarshal the Encoder file
+		var encoder map[string]Token
+		err = json.Unmarshal(encoderBytes, &encoder)
+		if err != nil {
+			t.Errorf("Could not unmarshal Encoder file: %v\n", err)
+		}
+
+		// read in the unitrim file
+		unitrimBytes, err := os.ReadFile(unitrimFile)
+		// unmarshal the unitrim file
+		var unitrim []int
+		err = json.Unmarshal(unitrimBytes, &unitrim)
+		if err != nil {
+			t.Errorf("Could not unmarshal unitrim file: %v\n", err)
+		}
+
+		// get generated array for unitrim with the makeUnitrimArr function
+		generatedArray := makeUnitrimArr(encoder)
+
+		// check that the generated array is the same as the unitrim array
+		fmt.Printf("Generated array length: %d, unitrim array length: %d\n", len(generatedArray), len(unitrim))
+		if len(generatedArray) != len(unitrim) {
+			t.Errorf("Generated array and unitrim array are not the same length\n")
+		}
+
+		for i := range generatedArray {
+			if generatedArray[i] != unitrim[i] {
+				fmt.Printf("Generated array: %v and unitrim array: %v at index %d are not the same\n", generatedArray[i], unitrim[i], i)
+				fmt.Printf("mismatched unicode is: %c\n", rune(generatedArray[i]))
+				t.Errorf("Generated array and unitrim array are not the same\n")
+			}
+		}
+
+		fmt.Printf("Length and contents of generated array and unitrim array are the same\n")
 	}
-
-	fmt.Printf("Length and contents of need array and unitrim array are the same\n")
-
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {
