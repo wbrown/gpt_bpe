@@ -81,7 +81,7 @@ func (rsrcs *Resources) Cleanup() {
 
 // GetResourceEntries
 // Returns a default map of resource entries that express what files are
-// required, optional, derived, and/or model resources. Requires a resourcetype.
+// required, optional, derived, and/or model resources. Requires a ResourceType.
 func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 	switch typ {
 	case RESOURCETYPE_TRANSFORMERS:
@@ -90,7 +90,6 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"vocab.json":                   RESOURCE_OPTIONAL,
 			"merges.txt":                   RESOURCE_OPTIONAL,
 			"special_tokens_map.json":      RESOURCE_OPTIONAL,
-			"encoder.json":                 RESOURCE_OPTIONAL,
 			"wordtokens.json":              RESOURCE_OPTIONAL,
 			"specials.txt":                 RESOURCE_OPTIONAL | RESOURCE_DERIVED,
 			"tokenizer_config.json":        RESOURCE_OPTIONAL,
@@ -118,6 +117,20 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 		}
 	default:
 		return ResourceEntryDefs{}
+	}
+}
+
+// getResourceEntryAliases
+// Returns a map of defined resources to known alternative filenames
+// for each resource of a given ResourceType.
+func getResourceEntryAliases(typ ResourceType) map[string][]string {
+	switch typ {
+	case RESOURCETYPE_TRANSFORMERS:
+		return map[string][]string{
+			"vocab.json": {"encoder.json"},
+		}
+	default:
+		return map[string][]string{}
 	}
 }
 
@@ -300,6 +313,7 @@ func ResolveResources(
 ) {
 	foundResources := make(Resources, 0)
 	resources := GetResourceEntries(rsrcType)
+	aliases := getResourceEntryAliases(rsrcType)
 
 	for file, flag := range resources {
 		var rsrcFile os.File
@@ -309,6 +323,21 @@ func ResolveResources(
 			log.Printf("Resolving %s/%s... ", uri, file)
 			targetPath := path.Join(*dir, file)
 			rsrcSize, rsrcSizeErr := Size(uri, file, token)
+			alias := file
+			if rsrcSizeErr != nil {
+				// If the resource isn't found under its normal filename,
+				// check under any known aliases.
+				if aliasesList, ok := aliases[file]; ok {
+					for _, alias = range aliasesList {
+						rsrcSize, rsrcSizeErr = Size(uri, alias, token)
+						if rsrcSizeErr == nil {
+							log.Printf("Resolving %s/%s as alias %s/%s...",
+								uri, file, uri, alias)
+							break
+						}
+					}
+				}
+			}
 			if rsrcSizeErr != nil {
 				// If the resource is required, we cannot continue.
 				if flag&RESOURCE_REQUIRED != 0 {
@@ -332,7 +361,7 @@ func ResolveResources(
 					os.O_RDONLY, 0755)
 				if skipFileErr != nil {
 					return &foundResources, errors.New(
-						fmt.Sprintf("error opening '%s' for write: %s",
+						fmt.Sprintf("error opening '%s' for read: %s",
 							file, skipFileErr))
 
 					// If the resource exists, but is the wrong size, we need to
@@ -340,11 +369,11 @@ func ResolveResources(
 				} else {
 					rsrcFile = *openFile
 				}
-			} else if rsrcReader, rsrcErr := Fetch(uri, file, token); rsrcErr != nil {
+			} else if rsrcReader, rsrcErr := Fetch(uri, alias, token); rsrcErr != nil {
 				return &foundResources, errors.New(
 					fmt.Sprintf(
 						"cannot retrieve `%s from %s`: %s",
-						uri, file, rsrcErr))
+						uri, alias, rsrcErr))
 			} else {
 				if dirErr := os.MkdirAll(
 					path.Dir(path.Join(*dir, file)), 0755); dirErr != nil {
@@ -372,10 +401,10 @@ func ResolveResources(
 				if ioErr != nil {
 					return &foundResources, errors.New(
 						fmt.Sprintf("error downloading '%s': %s",
-							file, ioErr))
+							alias, ioErr))
 				} else {
 					log.Println(fmt.Sprintf("Downloaded %s/%s... "+
-						"%s completed.", uri, file,
+						"%s completed.", uri, alias,
 						humanize.Bytes(uint64(bytesDownloaded))))
 				}
 			}
@@ -714,7 +743,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
 			"json"); config != nil {
 			resources["vocab.json"] = *config
-			resources["encoder.json"] = *config
 		}
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
 			resources["merges.txt"] = *vocab
@@ -747,9 +775,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		return nil, nil, err
 	} else {
 		config.ModelId = &resolvedVocabId
-		if _, exists := (*resources)["encoder.json"]; !exists {
-			(*resources)["encoder.json"] = (*resources)["vocab.json"]
-		}
 		return config, resources, nil
 	}
 }
