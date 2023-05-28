@@ -68,43 +68,45 @@ func (node *RuneNode) evaluate(r rune) *RuneNode {
 
 // Represent the tree as a string by traversing the tree, and using tree
 // characters to represent the tree structure.
-func (node *RuneNode) string(level int) string {
+func (node *RuneNode) string(level int, sb *strings.Builder) {
 	if node == nil {
-		return ""
+		return
 	}
-	s := string(node.rune)
+	sb.WriteRune(node.rune)
 	idx := 0
 	if len(node.childs) == 1 {
 		// Get the only element from the map recursively until we find a node
 		// with more than one child.
 		for r := range node.childs {
-			s += node.childs[r].string(level)
+			node.childs[r].string(level, sb)
 		}
-		return s
+		return
 	}
 	level += 1
 	if node.replacement != nil {
-		s += " -> " + string(*node.replacement)
+		sb.WriteString(" -> ")
+		sb.WriteString(string(*node.replacement))
 	}
-	s += "\n"
+	sb.WriteByte('\n')
 
 	for r := range node.childs {
-		childPrefix := strings.Repeat("| ", level-1)
+		sb.WriteString(strings.Repeat("| ", level-1))
 		// If we're the last child, then we prepend with a tree terminator.
 		if idx == len(node.childs)-1 {
-			childPrefix += "└─"
+			sb.WriteString("└─")
 		} else {
-			childPrefix += "├─"
+			sb.WriteString("├─")
 		}
-		s += childPrefix + node.childs[r].string(level)
+		node.childs[r].string(level, sb)
 		idx += 1
 	}
-	return s
 }
 
 // Wrapper
 func (runeTree *RuneNode) String() string {
-	return runeTree.string(0)
+	sb := strings.Builder{}
+	runeTree.string(0, &sb)
+	return sb.String()
 }
 
 func (runeTree *RuneNode) insertRunes(runes []rune) (node *RuneNode) {
