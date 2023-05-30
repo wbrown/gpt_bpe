@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/wbrown/gpt_bpe/resources"
 	"log"
 	"os"
@@ -10,7 +9,7 @@ import (
 
 func main() {
 	modelId := flag.String("model", "",
-		"model URL, path, or huggingface id to fetch")
+		"model URL, path, or HuggingFace id to fetch")
 	destPath := flag.String("dest", "./",
 		"where to download the model to")
 	modelType := flag.String("type", "transformers",
@@ -45,10 +44,12 @@ func main() {
 	// get HF_API_TOKEN from env for huggingface auth
 	hfApiToken := os.Getenv("HF_API_TOKEN")
 
-	os.MkdirAll(*destPath, 0755)
+	if mkdirErr := os.MkdirAll(*destPath, 0755); mkdirErr != nil {
+		log.Fatalf("Error creating output directory: %s", mkdirErr)
+	}
 	_, rsrcErr := resources.ResolveResources(*modelId, destPath,
 		rsrcLvl, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		fmt.Sprintf("Error downloading model resources: %s", rsrcErr)
+		log.Fatalf("Error downloading model resources: %s", rsrcErr)
 	}
 }

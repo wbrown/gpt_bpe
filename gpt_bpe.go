@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math"
@@ -177,57 +176,25 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		decodeExtra = strings.NewReplacer(decode...)
 	}
 
-	// Unmarshal the Encoder mappings from json to (int: string) map.
-	encoderMappings := make(map[string]Token)
-	// check if the Encoder.json file is present
-	if _, ok := rsrcs["encoder.json"]; !ok {
-		return nil, fmt.Errorf("encoder.json not found for vocabId: %s",
-			vocabId)
-	}
-	if json.Unmarshal(*rsrcs["encoder.json"].Data, &encoderMappings) != nil {
-		log.Fatal("Error unmarshalling `Encoder.json`")
-	}
-
-	// Build the unitrim array dynamically.
-	unitrimArr := makeUnitrimArr(encoderMappings)
-
 	// Build the bytes to unicode tables.
-	bytesUnicodeMap := make(map[byte]rune)
-	unicodeBytes := make(map[rune]byte)
-	for b := uint8('!'); b < uint8('~')+1; b++ {
-		bytesUnicodeMap[b] = rune(b)
-		unicodeBytes[rune(b)] = b
-	}
-	for b := uint8('¡'); b < uint8('¬')+1; b++ {
-		bytesUnicodeMap[b] = rune(b)
-		unicodeBytes[rune(b)] = b
-	}
-	for b := uint16('®'); b < uint16('ÿ')+1; b++ {
-		bytesUnicodeMap[byte(b)] = rune(b)
-		unicodeBytes[rune(b)] = byte(b)
-	}
-	uct := 0
-	var bytesUnicode [256]rune
-	for b := Token(0); b < 256; b++ {
-		if _, ok := bytesUnicodeMap[uint8(b)]; !ok {
-			bytesUnicodeMap[uint8(b)] = rune(256 + uct)
-			unicodeBytes[rune(256+uct)] = uint8(b)
-			uct += 1
-		}
-		bytesUnicode[b] = bytesUnicodeMap[uint8(b)]
-	}
+	bytesUnicode, unicodeBytes := makeByteTranslationTables()
 
-	// Go through the encoderMappings for possible byte runes.
-	// Read Encoder mappings and also generate reverse mappings.
-	bytesEncoder := make(map[byte]Token)
+	// Read encoder mappings.
 	encoderTokens := make(map[string]Token)
 	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
 		log.Fatal("Error unmarshalling `vocab.json`")
 	}
+
+	// Build the unitrim array dynamically.
+	unitrimArr := makeUnitrimArr(encoderTokens)
+
+	// Go through the encoder mappings for possible byte runes
+	// and also generate reverse mappings.
+	bytesEncoder := make(map[byte]Token)
 	tokensEncoder := make(map[Token][]byte)
 	for text, token := range encoderTokens {
 		if strings.HasPrefix(text, "0x") && len(text) == 4 {
-			// Convert the hexstring to a byte
+			// Convert the hex string to a byte
 			byteValue, err := strconv.ParseUint(text[2:], 16, 8)
 			if err != nil {
 				panic(err)
@@ -394,143 +361,136 @@ func (encoder *GPTEncoder) UpdateSpecialsTree() {
 	encoder.SpecialsTree = CreateRuneTree(specialsArr)
 }
 
-// makeUnitrimArr creates a lookup table for unicode trimming
-// it replaces the method of generating it in advanced (unitrim.json)
+// makeByteTranslationTables creates lookup tables for interconverting
+// between runes in decoded token strings and the UTF-8 byte sequences
+// that they encode.
+func makeByteTranslationTables() ([256]rune, map[rune]byte) {
+	// GPT2's BPE implementation reinterprets UTF-8-encoded bytes as
+	// Unicode codepoints, but remaps the 68 code points
+	// corresponding to control, format, and space-separator characters
+	// (i.e. Unicode character categories Cc, Cf, and Zs)
+	// in the range [0, 255] to sequential codepoints in [256, 323],
+	// which happens to contain no characters from those three categories.
+	// For example, the byte \x00 is mapped to codepoint 256, and the final
+	// affected byte \xAD is mapped to codepoint 323.
+	// The remapped bytes are sequential even though the original bytes
+	// are not. The original bytes' codepoint interpretations all fall
+	// in the following ranges:
+	// - [\x00, \x20] ('NUL' to 'SPACE'; up to right before '!'),
+	// - [\x7F, \xA0] ('DELETE' to 'NO-BREAK SPACE'; between '~' and '¡')
+	// - \xAD exactly ('SOFT HYPHEN')
+	// Refer to "src/encoder.py" in the openai/gpt-2 repository for
+	// more detail.
+
+	byteDecoderMap := make(map[rune]byte, 256)
+	var byteEncoderLUT [256]rune
+
+	for i, relocated := rune(0), rune(256); i < 256; i++ {
+		relocatedByte := i
+		if i < '!' || i > '~' && i < '¡' || i == '\xAD' {
+			relocatedByte = relocated
+			relocated++
+		}
+		byteEncoderLUT[i] = relocatedByte
+		byteDecoderMap[relocatedByte] = byte(i)
+	}
+
+	return byteEncoderLUT, byteDecoderMap
+}
+
+// makeUnitrimArr creates a lookup table for trimming token sequences
+// to valid UTF-8 boundaries. It replaces unitrim.json files generated
+// in advance.
 func makeUnitrimArr(encoderMap map[string]Token) []int {
-	// get reverse mappings
-	reverseEncoderMap := make(map[Token]string)
-	for k, v := range encoderMap {
-		reverseEncoderMap[v] = k
-	}
+	// In order to check how many UTF-8 continuation bytes are missing from
+	// each individual token, the decoded token strings need to be translated
+	// to UTF-8.
+	_, byteDecoderMap := makeByteTranslationTables()
 
-	//make the maps needed
-	preMapList := make([]int, 512)
-	for i := 0; i < 512; i++ {
-		preMapList[i] = -1
-	}
-	postMapList := make([]int, 512)
+	// This function returns the following LUT, representing either
+	// how many continuation bytes are needed following a given token,
+	// or how many continuation bytes a given token fulfills.
+	// Positive entries require that many more continuation bytes to follow;
+	// negative entries fulfill that many continuation bytes.
+	debtLUT := make([]int, len(encoderMap))
 
-	// fill the maps with the unicode values
-	postMapIdx, preMapIdx := 0, 0
-	for i := uint8('!'); i < uint8('~')+1; i++ {
-		preMapList[preMapIdx] = int(i)
-		preMapIdx += 1
-	}
-	for i := uint8('¡'); i < uint8('¬')+1; i++ {
-		preMapList[preMapIdx] = int(i)
-		preMapIdx += 1
-	}
-	for i := uint16('®'); i < uint16('ÿ')+1; i++ {
-		preMapList[preMapIdx] = int(i)
-		preMapIdx += 1
-	}
-	copy(postMapList, preMapList)
-	postMapIdx = preMapIdx
-
-	for i := 0; i < 256; i++ {
-		// if the value is not in the remapping list
-		if !intInSlice(i, preMapList) {
-			preMapList[preMapIdx] = i
-			preMapIdx += 1
+	// Continuation byte requirements are defined by the UTF-8 standard
+	// and can be determined from bit patterns of each byte. We make a
+	// LUT of bit patterns to make this calculation faster.
+	// Only the 5 most significant bits are relevant.
+	var byteDebtLUT [32]int8
+	for b := 0; b <= 0b11110; b++ {
+		// According to UTF-8 variable-length binary encoding:
+		if (b & 0b10000) == 0 {
+			// All 7-bit ASCII characters have the bit pattern 0xxxxxxx
+			// - They are self-contained, and require no continuation
+			// - They are the only characters encoded with a single byte
+			byteDebtLUT[b] = 0
+		} else if (b & 0b11100) == 0b11000 {
+			// All 2-byte characters start with a 110xxxxx byte
+			// - These add +1 continuation byte debt
+			byteDebtLUT[b] = 1
+		} else if (b & 0b11110) == 0b11100 {
+			// All 3-byte characters start with a 1110xxxx byte
+			// - These add +2 continuation byte debt
+			byteDebtLUT[b] = 2
+		} else if (b & 0b11110) == 0b11110 {
+			// All 4-byte characters start with a 11110xxx byte
+			// - These add +3 continuation byte debt
+			// - No valid Unicode starts with 11111xxx, so the last
+			//   0 should be redundant, but some tokenizers include
+			//   such bytes in their vocabularies regardless.
+			byteDebtLUT[b] = 3
+		} else if (b & 0b11000) == 0b10000 {
+			// All continuation characters start with a 10xxxxxx byte
+			//- These satisfy (-) 1 continuation byte debt
+			byteDebtLUT[b] = -1
 		}
 	}
-	preMapIdx = 0
 
-	for i := 0; postMapIdx+i < 256; i++ {
-		// continue incrementing until end of list
-		if postMapList[postMapIdx+i] == -1 {
-			postMapList[postMapIdx+i] = preMapList[postMapIdx+i]
-			preMapList[postMapIdx+i] = preMapIdx + 256
-			preMapIdx += 1
+	// Calculate the debtLUT entries for each token ID
+	for decodedToken, token := range encoderMap {
+		tokenDebt := 0
+		minTokenDebt := 0
+
+		// Decode each Unicode codepoint into a UTF-8 byte
+		codepoints := []rune(decodedToken)
+		utf8Bytes := make([]byte, len(codepoints))
+		for i, c := range codepoints {
+			utf8Bytes[i] = byteDecoderMap[c]
 		}
 
-	}
-
-	// map int to rune
-	charMap := make(map[int]rune)
-	for i := 0; i < len(postMapList); i++ {
-		charMap[postMapList[i]] = rune(postMapList[i])
-	}
-
-	// create the decode map
-	DecodeMap := make(map[rune]int)
-	for i := 0; i < 256; i++ {
-		value := postMapList[i]
-		key := rune(preMapList[i])
-		DecodeMap[key] = value
-	}
-
-	// create the ordered array of encodings
-	orderedArrayEncodings := make([]string, len(reverseEncoderMap))
-	for k, v := range reverseEncoderMap {
-		orderedArrayEncodings[k] = v
-	}
-
-	// create the need array (returned by this function)
-	needArray := make([]int, 0)
-
-	// for each encoding, get the need
-	for i := 0; i < len(orderedArrayEncodings); i++ {
-		need := 0
-		min_need := 0
-
-		// apply mapping
-		v := DecodeMapping(reverseEncoderMap, DecodeMap, i)
-		// get binary representation of each character
-		// and match it to the need
-		for _, c := range v {
-			if (c & 0b10000000) == 0 {
-				need = 0
-			} else if (c & 0b11000000) == 0b10000000 {
-				need -= 1
-			} else if (c & 0b11100000) == 0b11000000 {
-				need = 1
-			} else if (c & 0b11110000) == 0b11100000 {
-				need = 2
-			} else if (c & 0b11111000) == 0b11110000 {
-				need = 3
-			}
-			if need < 0 {
-				min_need = need
+		// Keep track of continuation byte requirements
+		// between each UTF-8 byte.
+		for _, b := range utf8Bytes {
+			b >>= 3 // trim to relevant bits
+			byteDebt := int(byteDebtLUT[b])
+			if byteDebt < 0 {
+				// Continuation bytes are tracked relative to the bytes preceding them
+				tokenDebt += byteDebt
+			} else {
+				// Starting bytes have no relation to the bytes preceding them
+				tokenDebt = byteDebt
 			}
 
-			if need == 0 {
-				need = min_need
+			if tokenDebt < 0 {
+				minTokenDebt = tokenDebt
+			} else if tokenDebt == 0 {
+				// If the beginning of the string satisfies continuation
+				// byte debt, don't forget that just to track less-important
+				// information about self-contained byte sequences that follow.
+				// Do overwrite it if it ends with fresh debt.
+				// NB: if a token both satisfies continuation byte debt
+				// and then begins new debt, only the latter can be tracked.
+				// This is a limitation of the LUT entries being single
+				// integers rather than pairs of integers.
+				tokenDebt = minTokenDebt
 			}
 		}
-		needArray = append(needArray, need)
+		debtLUT[token] = tokenDebt
 	}
 
-	return needArray
-}
-
-// helper for makeUnitrimArr
-func DecodeMapping(
-	encodings map[Token]string,
-	mappings map[rune]int,
-	input int,
-) string {
-	// get original encoding
-	encoding := encodings[Token(input)]
-
-	// decode encoding by character
-	output_str := ""
-	for _, c := range encoding {
-		// get the mapping for the character
-		mapped := mappings[c]
-		output_str += fmt.Sprintf("%c", mapped)
-	}
-	return output_str
-}
-
-// helper for makeUnitrimArr
-func intInSlice(a int, list []int) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
+	return debtLUT
 }
 
 // insertAt inserts v into s at index i and returns the new slice.
