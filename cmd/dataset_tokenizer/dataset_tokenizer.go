@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/resources"
 	"github.com/yargevad/filepathx"
 )
 
@@ -353,15 +354,18 @@ func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 }
 
 func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
-	// Check if it's an internal reference. If not, it's a file path.
-	encoderPtr, tokErr := gpt_bpe.NewEncoder(
-		tt.TokenizerId + "-tokenizer")
-	if tokErr != nil {
+	var encoderPtr *gpt_bpe.GPTEncoder
+	var tokErr error
+	embeddedDirName := tt.TokenizerId + "-tokenizer"
+	if embedded, _ := resources.EmbeddedDirExists(embeddedDirName); embedded {
+		// Check if it's an internal reference. If not, it's a file path.
+		encoderPtr, tokErr = gpt_bpe.NewEncoder(embeddedDirName)
+	} else {
 		// Fall back to path-like.
 		encoderPtr, tokErr = gpt_bpe.NewEncoder(tt.TokenizerId)
-		if tokErr != nil {
-			log.Fatal(tokErr)
-		}
+	}
+	if tokErr != nil {
+		return nil, tokErr
 	}
 
 	return encoderPtr, nil
@@ -1056,7 +1060,7 @@ func main() {
 			}
 			var enc *gpt_bpe.GPTEncoder
 			if *showContexts {
-				enc, _ = gpt_bpe.NewEncoder(*tokenizerId)
+				enc, _ = textsTokenizer.InitTokenizer()
 			}
 			var writeErr error
 			numTokens, writeErr = WriteContexts(*outputFile, contexts, enc,
