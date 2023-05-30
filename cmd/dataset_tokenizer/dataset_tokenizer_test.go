@@ -101,7 +101,10 @@ func BenchmarkSanitizeText(b *testing.B) {
 func BenchmarkStreamingEncode(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
-	tokenizer := gpt_bpe.NerdstashEncoder
+	tokenizer, err := gpt_bpe.NewEncoder("nerdstash_v1")
+	if err != nil {
+		log.Fatal(err)
+	}
 	for i := 0; i < 5; i++ {
 		if testFile, err := os.Open(corpusPath); err != nil {
 			b.Fail()
@@ -137,7 +140,10 @@ func BenchmarkStreamingEncode(b *testing.B) {
 func BenchmarkStreamingEncodeSanitize(b *testing.B) {
 	b.StopTimer()
 	b.ResetTimer()
-	tokenizer := gpt_bpe.GPT2Encoder
+	tokenizer, err := gpt_bpe.NewEncoder("gpt2")
+	if err != nil {
+		log.Fatal(err)
+	}
 	path := corpusPath
 	if testFile, err := os.Open(path); err != nil {
 		b.Fail()
