@@ -362,9 +362,11 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 func (encoder *GPTEncoder) UpdateSpecialsTree() {
 	// Turn the keys of the specials map into a slice
-	specialsArr := make([]string, 0)
+	idx := 0
+	specialsArr := make([]string, len(encoder.Specials))
 	for k := range encoder.Specials {
-		specialsArr = append(specialsArr, k)
+		specialsArr[idx] = k
+		idx++
 	}
 	encoder.SpecialsTree = CreateRuneTree(specialsArr)
 }
