@@ -59,6 +59,7 @@ type GPTEncoder struct {
 	LruEvictions    int
 	LruSize         int
 	SplitterThreads int
+	VocabId         string
 }
 
 type GPTPair struct {
@@ -96,28 +97,34 @@ const SPLIT_REGEX = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L" +
 const PUNC_REGEX = "\\p{L}[.!?;]\\p{L}"
 const REGEX_ERROR = "gpt_bpe: Fatal error compiling regular expression: %v"
 
+const VOCAB_ID_GPT2 = "gpt2-tokenizer"
+const VOCAB_ID_PILE = "pile-tokenizer"
+const VOCAB_ID_CLIP = "clip-tokenizer"
+const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
+const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
+
 func NewGPT2Encoder() GPTEncoder {
-	encoder, _ := NewEncoder("gpt2-tokenizer")
+	encoder, _ := NewEncoder(VOCAB_ID_GPT2)
 	return *encoder
 }
 
 func NewPileEncoder() GPTEncoder {
-	encoder, _ := NewEncoder("pile-tokenizer")
+	encoder, _ := NewEncoder(VOCAB_ID_PILE)
 	return *encoder
 }
 
 func NewCLIPEncoder() GPTEncoder {
-	encoder, _ := NewEncoder("clip-tokenizer")
+	encoder, _ := NewEncoder(VOCAB_ID_CLIP)
 	return *encoder
 }
 
 func NewNerdstashV1Encoder() GPTEncoder {
-	encoder, _ := NewEncoder("nerdstash_v1-tokenizer")
+	encoder, _ := NewEncoder(VOCAB_ID_NERDSTASH_V1)
 	return *encoder
 }
 
 func NewNerdstashV2Encoder() GPTEncoder {
-	encoder, _ := NewEncoder("nerdstash_v2-tokenizer")
+	encoder, _ := NewEncoder(VOCAB_ID_NERDSTASH_V2)
 	return *encoder
 }
 
@@ -347,6 +354,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		0,
 		BPE_LRU_SZ,
 		4,
+		vocabId,
 	}
 	encoder.UpdateSpecialsTree()
 	return encoder, nil
@@ -354,9 +362,11 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 func (encoder *GPTEncoder) UpdateSpecialsTree() {
 	// Turn the keys of the specials map into a slice
-	specialsArr := make([]string, 0)
+	idx := 0
+	specialsArr := make([]string, len(encoder.Specials))
 	for k := range encoder.Specials {
-		specialsArr = append(specialsArr, k)
+		specialsArr[idx] = k
+		idx++
 	}
 	encoder.SpecialsTree = CreateRuneTree(specialsArr)
 }
