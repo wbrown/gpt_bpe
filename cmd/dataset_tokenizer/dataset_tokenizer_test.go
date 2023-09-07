@@ -29,6 +29,16 @@ type SanitizerTest struct {
 	Expected string
 }
 
+// S3MockClient is a mock implementation of S3Client.
+type S3MockClient struct {
+	GetObjectOutput     *s3.GetObjectOutput
+	GetObjectError      error
+	GetObjectOutputs    map[string]*s3.GetObjectOutput // Map object keys to GetObjectOutput
+	GetObjectErrors     map[string]error
+	ListObjectsV2Output *s3.ListObjectsV2Output
+	ListObjectsV2Error  error
+}
+
 type SanitizerTests []SanitizerTest
 
 var sanitizerTests = SanitizerTests{
@@ -452,25 +462,15 @@ func TestShuffle(t *testing.T) {
 	fmt.Printf("Using Chunk by chunk hashing, shuffle found to be working as intended!! \n")
 }
 
-// MockS3Client is a mock implementation of S3Client.
-type MockS3Client struct {
-	GetObjectOutput     *s3.GetObjectOutput
-	GetObjectError      error
-	GetObjectOutputs    map[string]*s3.GetObjectOutput // Map object keys to GetObjectOutput
-	GetObjectErrors     map[string]error
-	ListObjectsV2Output *s3.ListObjectsV2Output
-	ListObjectsV2Error  error
-}
-
-func (m *MockS3Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (m *S3MockClient) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	return m.ListObjectsV2Output, m.ListObjectsV2Error
 }
 
-func (m *MockS3Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (m *S3MockClient) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	return m.GetObjectOutput, m.GetObjectError
 }
 
-func (m *MockS3Client) GetObjects(bucketName, prefix string) ([]*s3.Object, error) {
+func (m *S3MockClient) GetObjects(bucketName, prefix string) ([]*s3.Object, error) {
 	// Simulate listing objects with the specified prefix
 	var matchingObjects []*s3.Object
 
@@ -488,7 +488,7 @@ func (m *MockS3Client) GetObjects(bucketName, prefix string) ([]*s3.Object, erro
 	return matchingObjects, nil
 }
 
-func TestReadJSONLFileS3(t *testing.T) {
+func TestFetchJSONLFileS3(t *testing.T) {
 	// Define a JSONL file content for testing
 	jsonlContent := `{"text": "Hello, World!"}
 {"text": "Testing JSONL"}
@@ -496,7 +496,7 @@ func TestReadJSONLFileS3(t *testing.T) {
 `
 
 	// Create a mock S3 client
-	mockSvc := &MockS3Client{
+	mockSvc := &S3MockClient{
 		GetObjectOutput: &s3.GetObjectOutput{
 			Body:          io.NopCloser(strings.NewReader(jsonlContent)),
 			ContentLength: aws.Int64(int64(len(jsonlContent))),
@@ -505,7 +505,7 @@ func TestReadJSONLFileS3(t *testing.T) {
 	}
 
 	// Call readJSONLFileS3 with the mock S3 client
-	text, err := readJSONLFileS3(mockSvc, "test-bucket", "test-object.jsonl")
+	text, err := fetchJSONLFileS3(mockSvc, "test-bucket", "test-object.jsonl")
 
 	if err != nil {
 		t.Errorf("Expected no error, but got %v", err)
@@ -519,19 +519,19 @@ func TestReadJSONLFileS3(t *testing.T) {
 
 	// Case 2: Test case with an error returned by GetObject
 	mockSvc.GetObjectError = errors.New("Simulated error")
-	_, err = readJSONLFileS3(mockSvc, "test-bucket", "error-object.jsonl")
+	_, err = fetchJSONLFileS3(mockSvc, "test-bucket", "error-object.jsonl")
 
 	if err == nil {
 		t.Error("Expected an error, but got none")
 	}
 }
 
-func TestReadTextFileS3(t *testing.T) {
+func TestFetchTextFileS3(t *testing.T) {
 	// Define test data
 	textContent := "This is a test. This is great. Have fun in life."
 
 	// Create a mock S3 client
-	mockSvc := &MockS3Client{
+	mockSvc := &S3MockClient{
 		GetObjectOutput: &s3.GetObjectOutput{
 			Body:          io.NopCloser(strings.NewReader(textContent)),
 			ContentLength: aws.Int64(int64(len(textContent))),
@@ -540,7 +540,7 @@ func TestReadTextFileS3(t *testing.T) {
 	}
 
 	// Call readTextFileS3 with the mock S3 client
-	text, err := readTextFileS3(mockSvc, "test-bucket", "test-object.txt")
+	text, err := fetchTextFileS3(mockSvc, "test-bucket", "test-object.txt")
 
 	if err != nil {
 		t.Errorf("Expected no error, but got %v", err)
@@ -553,7 +553,7 @@ func TestReadTextFileS3(t *testing.T) {
 
 	// Cas 2: Test case with an error returned by GetObject
 	mockSvc.GetObjectError = errors.New("Simulated error")
-	_, err = readTextFileS3(mockSvc, "test-bucket", "error-object.txt")
+	_, err = fetchTextFileS3(mockSvc, "test-bucket", "error-object.txt")
 
 	if err == nil {
 		t.Error("Expected an error, but got none")
@@ -562,7 +562,7 @@ func TestReadTextFileS3(t *testing.T) {
 
 func TestListObjectsRecursively(t *testing.T) {
 	// Create a mock S3 client
-	mockSvc := &MockS3Client{
+	mockSvc := &S3MockClient{
 		// Define the expected behavior for ListObjectsV2
 		ListObjectsV2Output: &s3.ListObjectsV2Output{
 			Contents: []*s3.Object{
@@ -584,7 +584,7 @@ func TestListObjectsRecursively(t *testing.T) {
 	// Call listObjectsRecursively with the mock S3 client
 	go func() {
 		defer wg.Done()
-		listObjectsRecursively(mockSvc, "test-bucket", "prefix/", objects)
+		getObjectsS3Recursively(mockSvc, "test-bucket", "prefix/", objects)
 		close(objects) // Close the channel when finished
 	}()
 

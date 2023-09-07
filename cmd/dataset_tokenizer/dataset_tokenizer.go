@@ -204,8 +204,8 @@ func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
 	return nil
 }
 
-// listObjectsS3Recursively retrieves objects recursively from an S3 bucket and sends them to the objects channel.
-func listObjectsS3Recursively(svc S3Client, bucketName, prefix string, objects chan<- *s3.Object) {
+// getObjectsS3Recursively retrieves objects recursively from an S3 bucket and sends them to the objects channel.
+func getObjectsS3Recursively(svc S3Client, bucketName, prefix string, objects chan<- *s3.Object) {
 	var continuationToken *string
 	for {
 		params := &s3.ListObjectsV2Input{
@@ -235,8 +235,8 @@ func listObjectsS3Recursively(svc S3Client, bucketName, prefix string, objects c
 	}
 }
 
-// readJSONLFileS3 reads a JSONL file from S3, extract the "text" key, and return it as a string with spaces.
-func readJSONLFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
+// fetchJSONLFileS3 reads a JSONL file from S3, extracts the "text" key, and return it as a string with spaces.
+func fetchJSONLFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
@@ -285,8 +285,8 @@ func readJSONLFileS3(svc S3Client, bucketName, objectKey string) (string, error)
 	return text.String(), nil
 }
 
-// readTextFileS3 reads a text file from S3 and return its content as a string.
-func readTextFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
+// fetchTextFileS3 reads a text file from S3 and return its content as a string.
+func fetchTextFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
@@ -315,8 +315,8 @@ func readTextFileS3(svc S3Client, bucketName, objectKey string) (string, error) 
 	return text.String(), nil
 }
 
-// splitS3Prefix splits the input into the bucket and to ensure that s3:// is present
-func splitS3Prefix(input string) (hasS3Prefix bool, remainder string) {
+// removeS3Prefix splits the input into the bucket and to ensure that s3:// is present
+func removeS3Prefix(input string) (hasS3Prefix bool, remainder string) {
 	prefix := "s3://"
 	if strings.HasPrefix(input, prefix) {
 		return true, input[len(prefix):]
@@ -345,7 +345,7 @@ func ReadTextsFromS3(
 
 			if strings.HasSuffix(*object.Key, ".jsonl") {
 				// Handle JSONL files.
-				jsonObject, err := readJSONLFileS3(svc, bucketName, *object.Key)
+				jsonObject, err := fetchJSONLFileS3(svc, bucketName, *object.Key)
 
 				if err != nil {
 					log.Printf("Error reading JSONL file %s: %v", *object.Key, err)
@@ -366,7 +366,7 @@ func ReadTextsFromS3(
 				}
 			} else {
 				// Handle regular text files.
-				text, err := readTextFileS3(svc, bucketName, *object.Key)
+				text, err := fetchTextFileS3(svc, bucketName, *object.Key)
 				if err != nil {
 					log.Printf("Error reading text file %s: %v", *object.Key, err)
 					continue
@@ -396,7 +396,7 @@ func ReadTextsFromS3(
 	}
 
 	// List objects recursively.
-	listObjectsS3Recursively(svc, bucketName, "", objects)
+	getObjectsS3Recursively(svc, bucketName, "", objects)
 
 	// Close the objects channel when done.
 	close(objects)
@@ -1237,7 +1237,7 @@ func main() {
 		log.Fatal(tokErr)
 	}
 
-	hasS3Prefix, s3Bucket := splitS3Prefix(*inputDir)
+	hasS3Prefix, s3Bucket := removeS3Prefix(*inputDir)
 
 	if hasS3Prefix && *s3Endpoint == "" {
 		flag.Usage()
