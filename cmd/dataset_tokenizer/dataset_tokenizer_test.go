@@ -6,14 +6,21 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/wbrown/gpt_bpe"
 	"io"
 	"log"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/stretchr/testify/assert"
+	"github.com/wbrown/gpt_bpe"
 )
 
 type SanitizerTest struct {
@@ -443,4 +450,162 @@ func TestShuffle(t *testing.T) {
 	}
 
 	fmt.Printf("Using Chunk by chunk hashing, shuffle found to be working as intended!! \n")
+}
+
+// MockS3Client is a mock implementation of S3Client.
+type MockS3Client struct {
+	GetObjectOutput     *s3.GetObjectOutput
+	GetObjectError      error
+	GetObjectOutputs    map[string]*s3.GetObjectOutput // Map object keys to GetObjectOutput
+	GetObjectErrors     map[string]error
+	ListObjectsV2Output *s3.ListObjectsV2Output
+	ListObjectsV2Error  error
+}
+
+func (m *MockS3Client) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	return m.ListObjectsV2Output, m.ListObjectsV2Error
+}
+
+func (m *MockS3Client) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	return m.GetObjectOutput, m.GetObjectError
+}
+
+func (m *MockS3Client) GetObjects(bucketName, prefix string) ([]*s3.Object, error) {
+	// Simulate listing objects with the specified prefix
+	var matchingObjects []*s3.Object
+
+	for key := range m.GetObjectOutputs {
+		if strings.HasPrefix(key, prefix) {
+			matchingObjects = append(matchingObjects, &s3.Object{Key: aws.String(key)})
+		}
+	}
+
+	if len(matchingObjects) == 0 {
+		// Simulate the case where no objects match the prefix
+		return nil, awserr.New("NoSuchKey", "The specified key does not exist", nil)
+	}
+
+	return matchingObjects, nil
+}
+
+func TestReadJSONLFileS3(t *testing.T) {
+	// Define a JSONL file content for testing
+	jsonlContent := `{"text": "Hello, World!"}
+{"text": "Testing JSONL"}
+{"text": "This line should be valid"}
+`
+
+	// Create a mock S3 client
+	mockSvc := &MockS3Client{
+		GetObjectOutput: &s3.GetObjectOutput{
+			Body:          io.NopCloser(strings.NewReader(jsonlContent)),
+			ContentLength: aws.Int64(int64(len(jsonlContent))),
+		},
+		GetObjectError: nil, // No error for this test
+	}
+
+	// Call readJSONLFileS3 with the mock S3 client
+	text, err := readJSONLFileS3(mockSvc, "test-bucket", "test-object.jsonl")
+
+	if err != nil {
+		t.Errorf("Expected no error, but got %v", err)
+	}
+
+	// Case 1: Verify that the extracted text matches the expected result
+	expectedText := "Hello, World! Testing JSONL This line should be valid"
+	if text != expectedText {
+		t.Errorf("Expected text: %s but got: %s", expectedText, text)
+	}
+
+	// Case 2: Test case with an error returned by GetObject
+	mockSvc.GetObjectError = errors.New("Simulated error")
+	_, err = readJSONLFileS3(mockSvc, "test-bucket", "error-object.jsonl")
+
+	if err == nil {
+		t.Error("Expected an error, but got none")
+	}
+}
+
+func TestReadTextFileS3(t *testing.T) {
+	// Define test data
+	textContent := "This is a test. This is great. Have fun in life."
+
+	// Create a mock S3 client
+	mockSvc := &MockS3Client{
+		GetObjectOutput: &s3.GetObjectOutput{
+			Body:          io.NopCloser(strings.NewReader(textContent)),
+			ContentLength: aws.Int64(int64(len(textContent))),
+		},
+		GetObjectError: nil, // No error for this test
+	}
+
+	// Call readTextFileS3 with the mock S3 client
+	text, err := readTextFileS3(mockSvc, "test-bucket", "test-object.txt")
+
+	if err != nil {
+		t.Errorf("Expected no error, but got %v", err)
+	}
+
+	// Case 1: Verify that the extracted text matches the expected result
+	if text != textContent {
+		t.Errorf("Expected text: %s, but got: %s", textContent, text)
+	}
+
+	// Cas 2: Test case with an error returned by GetObject
+	mockSvc.GetObjectError = errors.New("Simulated error")
+	_, err = readTextFileS3(mockSvc, "test-bucket", "error-object.txt")
+
+	if err == nil {
+		t.Error("Expected an error, but got none")
+	}
+}
+
+func TestListObjectsRecursively(t *testing.T) {
+	// Create a mock S3 client
+	mockSvc := &MockS3Client{
+		// Define the expected behavior for ListObjectsV2
+		ListObjectsV2Output: &s3.ListObjectsV2Output{
+			Contents: []*s3.Object{
+				{Key: aws.String("a/b/c/d/object1.txt")},
+				{Key: aws.String("b/c/d/object2.jsonl")},
+			},
+			IsTruncated:           aws.Bool(false),
+			NextContinuationToken: nil,
+		},
+	}
+
+	// Create a channel for objects
+	objects := make(chan *s3.Object, 10)
+
+	// Create a WaitGroup
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	// Call listObjectsRecursively with the mock S3 client
+	go func() {
+		defer wg.Done()
+		listObjectsRecursively(mockSvc, "test-bucket", "prefix/", objects)
+		close(objects) // Close the channel when finished
+	}()
+
+	// Receive objects from the channel
+	var receivedObjects []*s3.Object
+	for obj := range objects {
+		receivedObjects = append(receivedObjects, obj)
+	}
+
+	// Verify the number of received objects
+	if len(receivedObjects) != 2 {
+		t.Errorf("Expected 2 objects, but got %d", len(receivedObjects))
+	}
+
+	// Verify the keys of received objects
+	expectedKeys := []string{"a/b/c/d/object1.txt", "b/c/d/object2.jsonl"}
+	for i, obj := range receivedObjects {
+		if *obj.Key != expectedKeys[i] {
+			t.Errorf("Expected key %s, but got %s", expectedKeys[i], *obj.Key)
+		}
+	}
+
+	wg.Wait() // Wait for all goroutines to finish
 }

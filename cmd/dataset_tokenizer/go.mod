@@ -5,6 +5,7 @@ go 1.18
 replace github.com/wbrown/gpt_bpe => ../../
 
 require (
+	github.com/aws/aws-sdk-go v1.45.4
 	github.com/stretchr/testify v1.7.1
 	github.com/wbrown/gpt_bpe v0.0.0-00010101000000-000000000000
 	github.com/yargevad/filepathx v1.0.0
@@ -17,6 +18,7 @@ require (
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/jdkato/prose/v2 v2.0.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
