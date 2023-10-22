@@ -416,17 +416,19 @@ func ReadTextsFromS3(
 		go startReader()
 	}
 
-	// List objects recursively.
-	getObjectsS3Recursively(svc, bucketName, "", objects)
+	go func() {
+		// List objects recursively.
+		getObjectsS3Recursively(svc, bucketName, "", objects)
 
-	// Close the objects channel when done.
-	close(objects)
+		// Close the objects channel when done.
+		close(objects)
 
-	// Wait for all reader goroutines to finish.
-	wg.Wait()
+		// Wait for all reader goroutines to finish.
+		wg.Wait()
 
-	// Close the runeReaders channel.
-	close(runeReaders)
+		// Close the runeReaders channel.
+		close(runeReaders)
+	}()
 
 	return runeReaders, nil
 }
