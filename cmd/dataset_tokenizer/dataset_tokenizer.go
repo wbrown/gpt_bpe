@@ -16,6 +16,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/wbrown/gpt_bpe"
 	"github.com/wbrown/gpt_bpe/resources"
 	"github.com/yargevad/filepathx"
@@ -26,6 +30,11 @@ type PathInfo struct {
 	Size    int64
 	ModTime time.Time
 	Dir     bool
+}
+
+type S3Client interface {
+	GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error)
+	ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 }
 
 // GlobTexts
@@ -193,6 +202,235 @@ func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
 			"Invalid sort spec: %s", sortSpec))
 	}
 	return nil
+}
+
+// getObjectsS3Recursively retrieves objects recursively from an S3 bucket and sends them to the objects channel.
+func getObjectsS3Recursively(svc S3Client, bucketName, prefix string, objects chan<- *s3.Object) {
+	var continuationToken *string
+	for {
+		params := &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucketName),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: continuationToken,
+		}
+
+		resp, err := svc.ListObjectsV2(params)
+		if err != nil {
+			log.Printf("Error listing objects: %v", err)
+			return
+		}
+
+		for _, obj := range resp.Contents {
+			key := *obj.Key
+			if strings.HasSuffix(key, ".txt") || strings.HasSuffix(key, ".jsonl") {
+				objects <- obj
+			}
+		}
+
+		if !*resp.IsTruncated {
+			break
+		}
+
+		continuationToken = resp.NextContinuationToken
+	}
+}
+
+// fetchJSONLFileS3 reads a JSONL file from S3, extracts the "text" key, and return it as a string with spaces.
+func fetchJSONLFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	}
+
+	resp, err := svc.GetObject(params)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var text strings.Builder
+	jsonlReader := bufio.NewReader(resp.Body)
+
+	firstLine := true // Flag to track the first line
+	for {
+		line, err := jsonlReader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+
+		// Parse the JSONL line into a map
+		var jsonObjectMap map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &jsonObjectMap); err != nil {
+			return "", err
+		}
+
+		// Extract the "text" field
+		textValue, ok := jsonObjectMap["text"].(string)
+		if !ok {
+			return "", fmt.Errorf("JSONL object has no 'text' field or it's not a string")
+		}
+
+		// Append the text to the result
+		if firstLine {
+			firstLine = false
+		} else {
+			text.WriteString(" ") // Append a space for all lines except the first
+		}
+		text.WriteString(textValue)
+	}
+
+	return text.String(), nil
+}
+
+// fetchTextFileS3 reads a text file from S3 and return its content as a string.
+func fetchTextFileS3(svc S3Client, bucketName, objectKey string) (string, error) {
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	}
+
+	resp, err := svc.GetObject(params)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var text strings.Builder
+	textReader := bufio.NewReaderSize(resp.Body, 8*1024*1024)
+	for {
+		buf := make([]byte, 4096)
+		n, err := textReader.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+		text.Write(buf[:n])
+	}
+
+	return text.String(), nil
+}
+
+// removeS3Prefix splits the input into the bucket and to ensure that s3:// is present
+func removeS3Prefix(input string) (hasS3Prefix bool, remainder string, s3FilePath string) {
+	prefix := "s3://"
+	if strings.HasPrefix(input, prefix) {
+		//if it is just s3:// then return empty string
+		if len(input) == len(prefix) {
+			return false, input, ""
+		}
+		//if it is s3://bucket then return bucket and empty string
+		if strings.Index(input[len(prefix):], "/") == -1 {
+			return true, input[len(prefix):], ""
+		}
+		//if it is s3://bucket/ then return bucket and empty string
+		if strings.Index(input[len(prefix):], "/") == len(input)-len(prefix)-1 {
+			return true, input[len(prefix) : len(input)-1], ""
+		}
+		//if it is s3://bucket/path then return bucket and path
+		if strings.Index(input[len(prefix):], "/") > 0 {
+			idxOfFirstSlash := strings.Index(input[len(prefix):], "/")
+			bucket := input[len(prefix) : len(prefix)+idxOfFirstSlash]
+			pathOfFile := input[len(prefix)+idxOfFirstSlash+1:]
+			return true, bucket, pathOfFile
+		}
+	}
+	return false, input, ""
+}
+
+// ReadTextsFromS3 reads text files recursively from all prefixes in an S3 bucket.
+func ReadTextsFromS3(
+	svc S3Client,
+	bucketName string,
+	s3FilePath string,
+	sanitize bool,
+	numReaderThreads int,
+) (chan namedRuneReader, error) {
+	runeReaders := make(chan namedRuneReader, 64)
+	objects := make(chan *s3.Object, 64)
+	wg := sync.WaitGroup{}
+
+	// Start reader goroutines.
+	startReader := func() {
+		for {
+			object, ok := <-objects
+			if !ok {
+				break
+			}
+			if s3FilePath == "" || strings.HasPrefix(*object.Key, s3FilePath) {
+
+			if strings.HasSuffix(*object.Key, ".jsonl") {
+				// Handle JSONL files.
+				jsonObject, err := fetchJSONLFileS3(svc, bucketName, *object.Key)
+
+				if err != nil {
+					log.Printf("Error reading JSONL file %s: %v", *object.Key, err)
+					continue
+				}
+
+				// Create our rune reader.
+				if sanitize {
+					runeReaders <- namedRuneReader{
+						*object.Key,
+						CreateTextSanitizer(strings.NewReader(jsonObject)),
+					}
+				} else {
+					runeReaders <- namedRuneReader{
+						*object.Key,
+						strings.NewReader(jsonObject),
+					}
+				}
+			} else {
+				// Handle regular text files.
+				text, err := fetchTextFileS3(svc, bucketName, *object.Key)
+				if err != nil {
+					log.Printf("Error reading text file %s: %v", *object.Key, err)
+					continue
+				}
+
+				// Create our rune reader.
+				if sanitize {
+					runeReaders <- namedRuneReader{
+						*object.Key,
+						CreateTextSanitizer(strings.NewReader(text)),
+					}
+				} else {
+					runeReaders <- namedRuneReader{
+						*object.Key,
+						strings.NewReader(text),
+					}
+				}
+			}
+				}
+		}
+		wg.Done()
+	}
+
+	// Start multiple reader goroutines.
+	for i := 0; i < numReaderThreads; i++ {
+		wg.Add(1)
+		go startReader()
+	}
+
+	go func() {
+		// List objects recursively.
+		getObjectsS3Recursively(svc, bucketName, "", objects)
+
+		// Close the objects channel when done.
+		close(objects)
+
+		// Wait for all reader goroutines to finish.
+		wg.Wait()
+
+		// Close the runeReaders channel.
+		close(runeReaders)
+	}()
+
+	return runeReaders, nil
 }
 
 // ReadTexts
@@ -792,6 +1030,10 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool) (int, error) {
 	totalTokens := 0
+	// create file AND filepath if not exists
+	if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil {
+		return 0, err
+	}
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE,
 		0755)
 	if err != nil {
@@ -938,11 +1180,15 @@ func main() {
 		"comma separated list of tokens to exclude from the vocabulary")
 	sanitizeEncodingBool := flag.Bool("disable_sanitize_encoding",
 		false, "disable sanitizing of misencoding")
+	s3Endpoint := flag.String("object_storage_endpoint", "https://object.las1.coreweave.com",
+		"CW S3 Endpoint to use for fetching data")
+
 	flag.Parse()
 	if *inputDir == "" {
 		flag.Usage()
 		log.Fatal("Must provide -input for directory source")
 	}
+
 	sampling, err := strconv.Atoi(*sampling_str)
 	if err != nil {
 		log.Fatal("Sampling parameter must be an integer")
@@ -1018,60 +1264,100 @@ func main() {
 		log.Fatal(tokErr)
 	}
 
-	if textReaders, err := ReadTexts(*inputDir, *sanitizeBool,
-		*reorderPaths, *numReaderThreads); err != nil {
-		log.Fatal(err)
-	} else {
-		numTokens := 0
-		begin := time.Now()
-		if *streaming_encode {
-			wg := sync.WaitGroup{}
-			for threadIdx := 0; threadIdx < *numThreads; threadIdx++ {
-				wg.Add(1)
-				go func(threadId int) {
-					var contexts chan gpt_bpe.Tokens
-					var tokErr error
-					indexFilePath := fmt.Sprintf("%s.%d.index",
-						*outputFile, threadId)
-					outputFilePath := fmt.Sprintf("%s.%d.tokens",
-						*outputFile, threadId)
-					contexts, tokErr = textsTokenizer.TokenizeTexts(textReaders,
-						indexFilePath)
-					if tokErr != nil {
-						log.Fatal(tokErr)
-					}
-					total, writeErr := WriteContexts(outputFilePath, contexts,
-						nil, sampling, false)
-					if writeErr != nil {
-						log.Fatal(writeErr)
-					}
-					numTokens += total
-					wg.Done()
-				}(threadIdx)
-			}
-			wg.Wait()
-		} else {
-			var contexts chan gpt_bpe.Tokens
-			var tokErr error
-			contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
-				textReaders)
-			if tokErr != nil {
-				log.Fatal(tokErr)
-			}
-			var enc *gpt_bpe.GPTEncoder
-			if *showContexts {
-				enc, _ = textsTokenizer.InitTokenizer()
-			}
-			var writeErr error
-			numTokens, writeErr = WriteContexts(*outputFile, contexts, enc,
-				sampling,
-				*reorderPaths == "shuffle")
-			if writeErr != nil {
-				log.Fatal(writeErr)
-			}
-		}
-		duration := time.Now().Sub(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", numTokens,
-			duration, float64(numTokens)/duration)
+	hasS3Prefix, s3Bucket, s3FilePath := removeS3Prefix(*inputDir)
+
+	if hasS3Prefix && *s3Endpoint == "" {
+		flag.Usage()
+		log.Fatal("Must provide S3 Endpoint if fetching data from CW object storage")
 	}
+
+	// Declare textReaders
+	var textReaders chan namedRuneReader
+
+	if hasS3Prefix && *s3Endpoint != "" {
+		defaultResolver := endpoints.DefaultResolver()
+		s3CustResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+			if service == "s3" {
+				return endpoints.ResolvedEndpoint{
+					URL: *s3Endpoint,
+				}, nil
+			}
+
+			return defaultResolver.EndpointFor(service, region, optFns...)
+		}
+
+		sess := session.Must(session.NewSessionWithOptions(session.Options{
+			Config: aws.Config{
+				EndpointResolver: endpoints.ResolverFunc(s3CustResolverFn),
+				Region:           aws.String("coreweave-object-storage"),
+			},
+		}))
+
+		svc := s3.New(sess)
+		textReaders, err = ReadTextsFromS3(svc, s3Bucket, s3FilePath, *sanitizeBool, *numReaderThreads)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		textReaders, err = ReadTexts(*inputDir, *sanitizeBool, *reorderPaths, *numReaderThreads)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	numTokens := 0
+	begin := time.Now()
+	if *streaming_encode {
+		wg := sync.WaitGroup{}
+		for threadIdx := 0; threadIdx < *numThreads; threadIdx++ {
+			wg.Add(1)
+			go func(threadId int) {
+				var contexts chan gpt_bpe.Tokens
+				var tokErr error
+				indexFilePath := fmt.Sprintf("%s.%d.index",
+					*outputFile, threadId)
+				outputFilePath := fmt.Sprintf("%s.%d.tokens",
+					*outputFile, threadId)
+				contexts, tokErr = textsTokenizer.TokenizeTexts(textReaders,
+					indexFilePath)
+				if tokErr != nil {
+					log.Fatal(tokErr)
+				}
+				total, writeErr := WriteContexts(outputFilePath, contexts,
+					nil, sampling, false)
+				if writeErr != nil {
+					log.Fatal(writeErr)
+				}
+				numTokens += total
+				wg.Done()
+			}(threadIdx)
+		}
+		wg.Wait()
+	} else {
+		var contexts chan gpt_bpe.Tokens
+		var tokErr error
+		contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
+			textReaders)
+		if tokErr != nil {
+			log.Fatal(tokErr)
+		}
+		var enc *gpt_bpe.GPTEncoder
+		if *showContexts {
+			enc, _ = textsTokenizer.InitTokenizer()
+		}
+		var writeErr error
+		numTokens, writeErr = WriteContexts(*outputFile, contexts, enc,
+			sampling,
+			*reorderPaths == "shuffle")
+		if writeErr != nil {
+			log.Fatal(writeErr)
+		}
+	}
+
+	duration := time.Now().Sub(begin).Seconds()
+
+	log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", numTokens,
+		duration, float64(numTokens)/duration)
 }
