@@ -1030,6 +1030,10 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool) (int, error) {
 	totalTokens := 0
+	// create file AND filepath if not exists
+	if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil {
+		return 0, err
+	}
 	outFile, err := os.OpenFile(outPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE,
 		0755)
 	if err != nil {
