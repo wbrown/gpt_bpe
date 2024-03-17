@@ -18,10 +18,11 @@ func init() {
 	tokenizers = make(map[string]*gpt_bpe.GPTEncoder)
 }
 
-//export initTokenizer
 // initTokenizer accepts a vocabulary id as a C string, and if it does not
 // exist in the global tokenizers map, initializes a tokenizer for that
 // vocabulary.
+//
+//export initTokenizer
 func initTokenizer(vocab_id *C.char) bool {
 	vocab_id_str := C.GoString(vocab_id)
 	if encoder, err := gpt_bpe.NewEncoder(vocab_id_str); err != nil {
@@ -60,10 +61,11 @@ func tokenizeBuffer(vocabIdStr *C.char, buf *C.char, sz C.size_t) C.Tokens {
 	return tokens
 }
 
-//export tokenize
 // tokenize accepts a vocabulary and text as a C string, and returns a C.Tokens
 // that contains a malloc'ed array of uint16_t tokens along with the number of
 // tokens.
+//
+//export tokenize
 func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 	tokenizerId := C.GoString(vocabIdStr)
 	encoder, ok := tokenizers[tokenizerId]
@@ -87,9 +89,10 @@ func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 	return tokens
 }
 
-//export decode
 // decode accepts a vocabulary id and a C.Tokens struct, and returns a malloc'ed
 // C.char* containing the decoded string.
+//
+//export decode
 func decode(vocabIdStr *C.char, tokens C.Tokens) *C.char {
 	tokenizerId := C.GoString(vocabIdStr)
 	encoder, ok := tokenizers[tokenizerId]
