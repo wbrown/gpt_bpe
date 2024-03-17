@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -786,7 +788,7 @@ func TestLlamaEncoder_Encode(t *testing.T) {
 func TestLlamaTwoEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := Llama2Encoder.Encode(&testString)
-	assert.Equal(t, llamaTokens, &Tokens{1, 1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889})
+	assert.Equal(t, llamaTokens, &Tokens{1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889})
 }
 
 func TestLlamaTwoTokenizerDecode(t *testing.T) {
@@ -798,7 +800,7 @@ func TestLlamaTwoTokenizerDecode(t *testing.T) {
 
 func TestLlamaTwoEncodeDecode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
-	outputString := "<s>The fox jumped over the hare.\nThe turtle is faster than the hare."
+	outputString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := Llama2Encoder.Encode(&testString)
 	output := Llama2Encoder.Decode(llamaTokens)
 	assert.Equal(t, outputString, output)
@@ -1069,7 +1071,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		//os.RemoveAll(destPath)
+		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -1084,26 +1086,45 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("config.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		//os.RemoveAll(destPath)
-		t.Errorf("config.json does not exist")
-
-	} else {
-		//os.RemoveAll(destPath)
-		t.Errorf("Error checking for config.json")
-	}
-
-	// Check for pytorch_model.bin
-	modelPath := destPath + "/pytorch_model-00003-of-00003.bin"
-	if _, err := os.Stat(modelPath); err == nil {
-		fmt.Println("pytorch_model.bin exists")
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		//os.RemoveAll(destPath)
-		t.Errorf("pytorch_model.bin does not exist")
+		os.RemoveAll(destPath)
+		t.Errorf("config.json does not exist %s", err)
 
 	} else {
 		os.RemoveAll(destPath)
-		t.Errorf("Error checking for pytorch_model.bin")
+		t.Errorf("Error checking for config.json %s", err)
+	}
+
+	// Check for pytorch_model.bin
+	singleModelPattern := regexp.MustCompile(`pytorch_model\.bin$`)
+	re, err := regexp.Compile(`-(\d+)-of-(\d+)\.bin$`)
+	if err != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error compiling regex: %s", err)
+	}
+
+	//check all files in the directory against the pattern
+	files, err := ioutil.ReadDir(destPath)
+	if err != nil {
+		t.Errorf("Error reading directory: %s", err)
+	}
+	found := false
+
+	for _, file := range files {
+		if singleModelPattern.MatchString(file.Name()) {
+			found = true
+			break
+		}
+
+		matches := re.FindStringSubmatch(file.Name())
+		if matches != nil && len(matches) > 2 {
+			if strings.Compare(matches[1], matches[2]) == 0 {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Errorf("pytorch_model.bin does not exist or was not found")
 	}
 
 	// Check for tokenizer.model
@@ -1112,12 +1133,12 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("tokenizer.model exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		//os.RemoveAll(destPath)
-		t.Errorf("tokenizer.model does not exist")
+		os.RemoveAll(destPath)
+		t.Errorf("tokenizer.model does not exist. %s", err)
 
 	} else {
 		os.RemoveAll(destPath)
-		t.Errorf("Error checking for tokenizer.model")
+		t.Errorf("Error checking for tokenizer.model. %s", err)
 	}
 
 	// Check for vocab.json
@@ -1126,16 +1147,16 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("vocab.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		//os.RemoveAll(destPath)
-		t.Errorf("vocab.json does not exist")
+		os.RemoveAll(destPath)
+		t.Errorf("vocab.json does not exist. %s", err)
 
 	} else {
 		os.RemoveAll(destPath)
-		t.Errorf("Error checking for vocab.json")
+		t.Errorf("Error checking for vocab.json. %s", err)
 	}
 
 	// Clean up by removing the downloaded folder
-	os.RemoveAll(destPath)
+	//os.RemoveAll(destPath)
 	fmt.Println("All Exists - Looks good.")
 }
 

@@ -104,7 +104,7 @@ const VOCAB_ID_PILE = "pile-tokenizer"
 const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
-const VOCAB_ID_LLAMA_TWO = "llama_two-tokenizer"
+const VOCAB_ID_LLAMA = "llama-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_GPT2)
@@ -132,7 +132,7 @@ func NewNerdstashV2Encoder() GPTEncoder {
 }
 
 func NewLlama2Encoder() GPTEncoder {
-	encoder, _ := NewEncoder(VOCAB_ID_LLAMA_TWO)
+	encoder, _ := NewEncoder(VOCAB_ID_LLAMA)
 	return *encoder
 }
 
@@ -170,14 +170,15 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	tokenizerSpecialConfig := resources.TokenizerSpecialsConfig{
-		Add_bos_token: false,
-		Add_eos_token: false,
-		Pad_token:     "",
+		AddBosToken: false,
+		AddEosToken: false,
+		PadToken:    "",
 	}
 	if special, ok := (rsrcs)["tokenizer_config.json"]; ok {
 		if special.Data != nil {
-			if json.Unmarshal(*special.Data, &tokenizerSpecialConfig) != nil {
-				log.Fatal("Error unmarshalling tokenizer_config.json")
+			err := json.Unmarshal(*special.Data, &tokenizerSpecialConfig)
+			if err != nil {
+				log.Fatal("Error unmarshalling tokenizer_config.json: ", err)
 			}
 		}
 	}
@@ -344,8 +345,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	if specialConfig.EncloseEosBos {
-		tokenizerSpecialConfig.Add_bos_token = true
-		tokenizerSpecialConfig.Add_eos_token = true
+		tokenizerSpecialConfig.AddBosToken = true
+		tokenizerSpecialConfig.AddEosToken = true
 	}
 	encoder := &GPTEncoder{
 		encoderTokens,
@@ -369,8 +370,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
 		specialConfig.EncloseEosBos,
-		tokenizerSpecialConfig.Add_bos_token,
-		tokenizerSpecialConfig.Add_eos_token,
+		tokenizerSpecialConfig.AddBosToken,
+		tokenizerSpecialConfig.AddEosToken,
 		specialConfig.PrefixSpace,
 		specialConfig.LowerCase,
 		specialConfig.EndOfWord,
@@ -1150,9 +1151,6 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 				if v, ok := encoder.Decoder[safeToken]; ok {
 					bs = append(bs, v...)
 				}
-			}
-			if len(bs) == 0 {
-				continue
 			}
 			// Convert our bytearray to string, interpreting as UTF-8 and then
 			// to 32-bit runes.
