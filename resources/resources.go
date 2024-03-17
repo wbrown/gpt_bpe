@@ -33,11 +33,11 @@ import (
 //go:embed data/nerdstash_v2-tokenizer/merges.json
 //go:embed data/nerdstash_v2-tokenizer/specials.txt
 //go:embed data/nerdstash_v2-tokenizer/special_config.json
-//go:embed data/llama_two-tokenizer/merges.json
-//go:embed data/llama_two-tokenizer/specials.txt
-//go:embed data/llama_two-tokenizer/tokenizer_config.json
-//go:embed data/llama_two-tokenizer/special_tokens_map.json
-//go:embed data/llama_two-tokenizer/encoder.json
+//go:embed data/llama-tokenizer/merges.json
+//go:embed data/llama-tokenizer/specials.txt
+//go:embed data/llama-tokenizer/tokenizer_config.json
+//go:embed data/llama-tokenizer/special_tokens_map.json
+//go:embed data/llama-tokenizer/encoder.json
 var f embed.FS
 
 // GetEmbeddedResource

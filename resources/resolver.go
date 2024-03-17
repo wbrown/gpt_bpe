@@ -683,11 +683,11 @@ type SpecialConfig struct {
 
 // TokenizerConfig file, new HF format
 type TokenizerSpecialsConfig struct {
-	Add_bos_token bool              `json:"add_bos_token,omitempty"`
-	Bos_token     TokenizerSpecials `json:"bos_token,omitempty"`
-	Eos_token     TokenizerSpecials `json:"eos_token,omitempty"`
-	Add_eos_token bool              `json:"add_eos_token,omitempty"`
-	Pad_token     string            `json:"pad_token,omitempty"`
+	AddBosToken bool              `json:"add_bos_token,omitempty"`
+	BosToken    TokenizerSpecials `json:"bos_token,omitempty"`
+	EosToken    TokenizerSpecials `json:"eos_token,omitempty"`
+	AddEosToken bool              `json:"add_eos_token,omitempty"`
+	PadToken    string            `json:"pad_token,omitempty"`
 }
 
 // sub type of TokenizerSpecialsConfig, for eos, bos, pad tokens
@@ -811,9 +811,9 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			if err := json.Unmarshal(*tokenizer_specials_config.Data, &tokenizerSpecialsConfig); err != nil {
 				return nil, nil, err
 			}
-			hf.BosTokenStr = &tokenizerSpecialsConfig.Bos_token.Content
-			hf.EosTokenStr = &tokenizerSpecialsConfig.Eos_token.Content
-			hf.PadTokenStr = &tokenizerSpecialsConfig.Pad_token
+			hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
+			hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
+			hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
 		}
 		return hf, &resources, nil
 	}
