@@ -1062,7 +1062,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	modelId := "georgesung/llama2_7b_chat_uncensored"
 	destPath := "./TestModelDownloadLlama"
 	destPathPTR := &destPath
-	os.RemoveAll(destPath)
+	defer os.RemoveAll(destPath)
 
 	var rsrcType resources.ResourceType
 	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
@@ -1071,7 +1071,6 @@ func TestModelDownloadLlama(t *testing.T) {
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -1086,11 +1085,9 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("config.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("config.json does not exist %s", err)
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for config.json %s", err)
 	}
 
@@ -1098,7 +1095,6 @@ func TestModelDownloadLlama(t *testing.T) {
 	singleModelPattern := regexp.MustCompile(`pytorch_model\.bin$`)
 	re, err := regexp.Compile(`-(\d+)-of-(\d+)\.bin$`)
 	if err != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error compiling regex: %s", err)
 	}
 
@@ -1133,11 +1129,9 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("tokenizer.model exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("tokenizer.model does not exist. %s", err)
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for tokenizer.model. %s", err)
 	}
 
@@ -1147,16 +1141,13 @@ func TestModelDownloadLlama(t *testing.T) {
 		fmt.Println("vocab.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("vocab.json does not exist. %s", err)
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for vocab.json. %s", err)
 	}
 
-	// Clean up by removing the downloaded folder
-	//os.RemoveAll(destPath)
+	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
 }
 
