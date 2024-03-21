@@ -48,6 +48,8 @@ type GPTEncoder struct {
 	EosToken        Token
 	PadToken        Token
 	encloseEosBos   bool
+	encloseBos      bool
+	encloseEos      bool
 	prefixSpace     bool
 	lowerCase       bool
 	endOfWord       string
@@ -102,6 +104,7 @@ const VOCAB_ID_PILE = "pile-tokenizer"
 const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
+const VOCAB_ID_LLAMA = "llama-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_GPT2)
@@ -125,6 +128,11 @@ func NewNerdstashV1Encoder() GPTEncoder {
 
 func NewNerdstashV2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_NERDSTASH_V2)
+	return *encoder
+}
+
+func NewLlama2Encoder() GPTEncoder {
+	encoder, _ := NewEncoder(VOCAB_ID_LLAMA)
 	return *encoder
 }
 
@@ -160,6 +168,21 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 			}
 		}
 	}
+
+	tokenizerSpecialConfig := resources.TokenizerSpecialsConfig{
+		AddBosToken: false,
+		AddEosToken: false,
+		PadToken:    "",
+	}
+	if special, ok := (rsrcs)["tokenizer_config.json"]; ok {
+		if special.Data != nil {
+			err := json.Unmarshal(*special.Data, &tokenizerSpecialConfig)
+			if err != nil {
+				log.Fatal("Error unmarshalling tokenizer_config.json: ", err)
+			}
+		}
+	}
+
 	puncRunes := make([]rune, 0)
 	if specialConfig.PuncRunes != nil {
 		for _, r := range specialConfig.PuncRunes {
@@ -321,6 +344,10 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		replacements["\n"] = "</s>"
 	}
 
+	if specialConfig.EncloseEosBos {
+		tokenizerSpecialConfig.AddBosToken = true
+		tokenizerSpecialConfig.AddEosToken = true
+	}
 	encoder := &GPTEncoder{
 		encoderTokens,
 		tokensEncoder,
@@ -343,6 +370,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
 		specialConfig.EncloseEosBos,
+		tokenizerSpecialConfig.AddBosToken,
+		tokenizerSpecialConfig.AddEosToken,
 		specialConfig.PrefixSpace,
 		specialConfig.LowerCase,
 		specialConfig.EndOfWord,
@@ -986,7 +1015,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 
 	accumulator := make(Tokens, 0, 16384)
 	eosReturned := false
-	if encoder.encloseEosBos {
+	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
 	}
 	return func(desiredTokens int) *Tokens {

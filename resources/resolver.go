@@ -95,6 +95,7 @@ func GetResourceEntries(typ ResourceType) ResourceEntryDefs {
 			"tokenizer_config.json":        RESOURCE_OPTIONAL,
 			"pytorch_model.bin.index.json": RESOURCE_OPTIONAL,
 			"tokenizer.json":               RESOURCE_OPTIONAL,
+			"tokenizer.model":              RESOURCE_OPTIONAL,
 			"pytorch_model.bin":            RESOURCE_MODEL,
 		}
 	case RESOURCETYPE_DIFFUSERS:
@@ -417,72 +418,93 @@ func ResolveResources(
 		}
 	}
 
-	// check if tokenizer exists by checking if tokenizer.json exists
-	// and has data in it
-	flagTokenizerExist := CheckFileExist(path.Join(*dir, "tokenizer.json"))
-	if flagTokenizerExist {
-		// check size of tokenizer.json
-		targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.json"))
+	// check if tokenizer.model exists, if so, expand to files
+	flagTokenizerModelExist := CheckFileExist(path.Join(*dir, "tokenizer.model"))
+	if flagTokenizerModelExist {
+		// check size of tokenizer.model
+		targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.model"))
 		if targetStatErr != nil {
 			return &foundResources, errors.New(
-				fmt.Sprintf("cannot stat tokenizer.json: %s",
+				fmt.Sprintf("cannot stat tokenizer.model: %s",
 					targetStatErr))
 		}
 		if targetStat.Size() == 0 {
-			flagTokenizerExist = false
+			flagTokenizerModelExist = false
 		}
 	}
 
-	// if tokenizer exists, but vocab and merges do not exist, extract them
-	// from tokenizer, else if vocab and merges exist, do nothing,
-	// if both do not exist, fail
-	flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
-	flagMergesExists := CheckFileExist(path.Join(*dir, "merges.txt"))
-
-	if flagTokenizerExist {
-		// if vocab does not exist, extract it from tokenizer
-		if !flagVocabExist {
-			model, err := ExtractModelFromTokenizer(dir)
-			if err != nil {
+	if flagTokenizerModelExist {
+		log.Printf("Directory %s contains tokenizer.model, extracting to files", path.Join(*dir, "tokenizer.model"))
+		ConvertSentencepieceFiles(path.Join(*dir, "tokenizer.model"), false)
+	} else {
+		// check if tokenizer exists by checking if tokenizer.json exists
+		// and has data in it
+		flagTokenizerExist := CheckFileExist(path.Join(*dir, "tokenizer.json"))
+		if flagTokenizerExist {
+			// check size of tokenizer.json
+			targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.json"))
+			if targetStatErr != nil {
 				return &foundResources, errors.New(
-					fmt.Sprintf("Could not extract model from tokenizer %s",
-						err))
+					fmt.Sprintf("cannot stat tokenizer.json: %s",
+						targetStatErr))
 			}
-
-			err = ExtractVocabFromTokenizer(model, dir, &foundResources)
-			if err != nil {
-				return &foundResources, errors.New(
-					fmt.Sprintf("Could not extract vocab from tokenizer %s",
-						err))
+			if targetStat.Size() == 0 {
+				flagTokenizerExist = false
 			}
 		}
 
-		// if merges does not exist, extract it from tokenizer
-		if !flagMergesExists {
-			model, err := ExtractModelFromTokenizer(dir)
-			if err != nil {
-				return &foundResources, errors.New(
-					fmt.Sprintf("Could not extract model from tokenizer %s",
-						err))
+		// if tokenizer exists, but vocab and merges do not exist, extract them
+		// from tokenizer, else if vocab and merges exist, do nothing,
+		// if both do not exist, fail
+		flagVocabExist := CheckFileExist(path.Join(*dir, "vocab.json"))
+		flagMergesExists := CheckFileExist(path.Join(*dir, "merges.txt"))
+
+		if flagTokenizerExist {
+			// if vocab does not exist, extract it from tokenizer
+			if !flagVocabExist {
+				model, err := ExtractModelFromTokenizer(dir)
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("Could not extract model from tokenizer %s",
+							err))
+				}
+
+				err = ExtractVocabFromTokenizer(model, dir, &foundResources)
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("Could not extract vocab from tokenizer %s",
+							err))
+				}
 			}
 
-			err = ExtractMergesFromTokenizer(model, dir, &foundResources)
-			if err != nil {
+			// if merges does not exist, extract it from tokenizer
+			if !flagMergesExists {
+				model, err := ExtractModelFromTokenizer(dir)
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("Could not extract model from tokenizer %s",
+							err))
+				}
+
+				err = ExtractMergesFromTokenizer(model, dir, &foundResources)
+				if err != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("Could not extract merges from tokenizer %s",
+							err))
+				}
+			}
+		} else if !flagTokenizerExist {
+			// if tokenizer does not exist, check if vocab and merges exist
+			if flagVocabExist && flagMergesExists {
+				// if both exist, do nothing
+				log.Println("Vocab and merges exist, but tokenizer does not... OK")
+			} else {
+				// if either does not exist, fail
 				return &foundResources, errors.New(
-					fmt.Sprintf("Could not extract merges from tokenizer %s",
-						err))
+					fmt.Sprintf("Tokenizer, vocab, and merges do not exist ... Fail"))
 			}
 		}
-	} else if !flagTokenizerExist {
-		// if tokenizer does not exist, check if vocab and merges exist
-		if flagVocabExist && flagMergesExists {
-			// if both exist, do nothing
-			log.Println("Vocab and merges exist, but tokenizer does not... OK")
-		} else {
-			// if either does not exist, fail
-			return &foundResources, errors.New(
-				fmt.Sprintf("Tokenizer, vocab, and merges do not exist ... Fail"))
-		}
+
 	}
 
 	// Check if we already got the pytorch model file
@@ -659,6 +681,25 @@ type SpecialConfig struct {
 	SplitRegex    *string            `json:"split_regex"`
 }
 
+// TokenizerConfig file, new HF format
+type TokenizerSpecialsConfig struct {
+	AddBosToken bool              `json:"add_bos_token,omitempty"`
+	BosToken    TokenizerSpecials `json:"bos_token,omitempty"`
+	EosToken    TokenizerSpecials `json:"eos_token,omitempty"`
+	AddEosToken bool              `json:"add_eos_token,omitempty"`
+	PadToken    string            `json:"pad_token,omitempty"`
+}
+
+// sub type of TokenizerSpecialsConfig, for eos, bos, pad tokens
+type TokenizerSpecials struct {
+	Type        string `json:"__type,omitempty"`
+	Content     string `json:"content,omitempty"`
+	Lstrip      bool   `json:"lstrip,omitempty"`
+	Normalized  bool   `json:"normalized,omitempty"`
+	Rstrip      bool   `json:"rstrip,omitempty"`
+	Single_word bool   `json:"single_word,omitempty"`
+}
+
 // ResolveConfig
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
@@ -760,6 +801,19 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		special_config := GetEmbeddedResource(vocabId + "/special_config.json")
 		if special_config != nil {
 			resources["special_config.json"] = *special_config
+		}
+		tokenizer_specials_config := GetEmbeddedResource(vocabId + "/tokenizer_config.json")
+		if tokenizer_specials_config != nil {
+			resources["tokenizer_config.json"] = *tokenizer_specials_config
+
+			// Set the start, end, pad tokens
+			var tokenizerSpecialsConfig TokenizerSpecialsConfig
+			if err := json.Unmarshal(*tokenizer_specials_config.Data, &tokenizerSpecialsConfig); err != nil {
+				return nil, nil, err
+			}
+			hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
+			hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
+			hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
 		}
 		return hf, &resources, nil
 	}
@@ -912,21 +966,25 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 		fmt.Println("Error: Could not convert data to weight_map")
 		return -1, errors.New("could not convert data to weight_map")
 	}
-	embedOut, ok := weightMap["embed_out.weight"]
+	// Try embed out, if not, try lm_head.weight
+	nameOfLast, ok := weightMap["embed_out.weight"]
 	if !ok {
-		fmt.Println("Error: Could not convert weight_map to embed_out")
-
-		return -1, errors.New("could not convert weight_map to embed_out")
+		nameOfLast, ok = weightMap["lm_head.weight"]
+		if !ok {
+			fmt.Println("Error: Could not convert weight_map to embed_out or lm_head")
+			return -1, errors.New("could not convert weight_map to embed_out or lm_head")
+		}
 	}
+
 	r, _ := regexp.Compile(`\D*\d+\D+(\d+)`)
 	// convert to interface -> string -> int
-	embedOutInt, err := strconv.Atoi(
-		r.FindStringSubmatch(fmt.Sprintf("%v", embedOut))[1])
+	nameOfLastInt, err := strconv.Atoi(
+		r.FindStringSubmatch(fmt.Sprintf("%v", nameOfLast))[1])
 
 	if err != nil {
 		fmt.Println("Error: Could not convert embed_out to int")
 		return -1, errors.New("could not convert embed_out to int")
 	}
 
-	return embedOutInt, nil
+	return nameOfLastInt, nil
 }
