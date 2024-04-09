@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -363,49 +364,49 @@ func ReadTextsFromS3(
 			}
 			if s3FilePath == "" || strings.HasPrefix(*object.Key, s3FilePath) {
 
-			if strings.HasSuffix(*object.Key, ".jsonl") {
-				// Handle JSONL files.
-				jsonObject, err := fetchJSONLFileS3(svc, bucketName, *object.Key)
+				if strings.HasSuffix(*object.Key, ".jsonl") {
+					// Handle JSONL files.
+					jsonObject, err := fetchJSONLFileS3(svc, bucketName, *object.Key)
 
-				if err != nil {
-					log.Printf("Error reading JSONL file %s: %v", *object.Key, err)
-					continue
-				}
+					if err != nil {
+						log.Printf("Error reading JSONL file %s: %v", *object.Key, err)
+						continue
+					}
 
-				// Create our rune reader.
-				if sanitize {
-					runeReaders <- namedRuneReader{
-						*object.Key,
-						CreateTextSanitizer(strings.NewReader(jsonObject)),
+					// Create our rune reader.
+					if sanitize {
+						runeReaders <- namedRuneReader{
+							*object.Key,
+							CreateTextSanitizer(strings.NewReader(jsonObject)),
+						}
+					} else {
+						runeReaders <- namedRuneReader{
+							*object.Key,
+							strings.NewReader(jsonObject),
+						}
 					}
 				} else {
-					runeReaders <- namedRuneReader{
-						*object.Key,
-						strings.NewReader(jsonObject),
+					// Handle regular text files.
+					text, err := fetchTextFileS3(svc, bucketName, *object.Key)
+					if err != nil {
+						log.Printf("Error reading text file %s: %v", *object.Key, err)
+						continue
 					}
-				}
-			} else {
-				// Handle regular text files.
-				text, err := fetchTextFileS3(svc, bucketName, *object.Key)
-				if err != nil {
-					log.Printf("Error reading text file %s: %v", *object.Key, err)
-					continue
-				}
 
-				// Create our rune reader.
-				if sanitize {
-					runeReaders <- namedRuneReader{
-						*object.Key,
-						CreateTextSanitizer(strings.NewReader(text)),
-					}
-				} else {
-					runeReaders <- namedRuneReader{
-						*object.Key,
-						strings.NewReader(text),
+					// Create our rune reader.
+					if sanitize {
+						runeReaders <- namedRuneReader{
+							*object.Key,
+							CreateTextSanitizer(strings.NewReader(text)),
+						}
+					} else {
+						runeReaders <- namedRuneReader{
+							*object.Key,
+							strings.NewReader(text),
+						}
 					}
 				}
 			}
-				}
 		}
 		wg.Done()
 	}
