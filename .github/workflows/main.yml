@@ -2,7 +2,7 @@ name: Publish
 
 on:
   push:
-    branches: ['main']
+    branches: ["main"]
 
 jobs:
   publish:
@@ -16,5 +16,7 @@ jobs:
 
       - uses: imjasonh/setup-ko@v0.6
       - run: ko publish --base-import-paths ./cmd/model_downloader -t ${GITHUB_SHA::7}
+      - working-directory: ./cmd/dataset_tokenizer
+        run: go get github.com/wbrown/gpt_bpe/resources
       - working-directory: ./cmd/dataset_tokenizer
         run: ko publish --base-import-paths . -t ${GITHUB_SHA::7}
