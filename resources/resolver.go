@@ -700,6 +700,16 @@ type TokenizerSpecials struct {
 	Single_word bool   `json:"single_word,omitempty"`
 }
 
+// MistralConfig contains an additional level, we use a seperate struct to
+// unmarshal the config file.
+type MistralSpecialsConfig struct {
+	AddBosToken bool   `json:"add_bos_token,omitempty"`
+	AddEosToken bool   `json:"add_eos_token,omitempty"`
+	BosToken    string `json:"bos_token,omitempty"`
+	EosToken    string `json:"eos_token,omitempty"`
+	PadToken    string `json:"pad_token,omitempty"`
+}
+
 // ResolveConfig
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
@@ -809,11 +819,20 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			// Set the start, end, pad tokens
 			var tokenizerSpecialsConfig TokenizerSpecialsConfig
 			if err := json.Unmarshal(*tokenizer_specials_config.Data, &tokenizerSpecialsConfig); err != nil {
-				return nil, nil, err
+				// If we can't unmarshal, we try with the Mistral format
+				var mistralSpecialsConfig MistralSpecialsConfig
+				if err := json.Unmarshal(*tokenizer_specials_config.Data, &mistralSpecialsConfig); err != nil {
+					return nil, nil, err
+				}
+				hf.BosTokenStr = &mistralSpecialsConfig.BosToken
+				hf.EosTokenStr = &mistralSpecialsConfig.EosToken
+				hf.PadTokenStr = &mistralSpecialsConfig.PadToken
+			} else {
+				// If we can unmarshal, we use the new format
+				hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
+				hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
+				hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
 			}
-			hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
-			hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
-			hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
 		}
 		return hf, &resources, nil
 	}

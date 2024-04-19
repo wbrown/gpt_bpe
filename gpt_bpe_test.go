@@ -24,7 +24,8 @@ var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
 var nerdstashV2Encoder GPTEncoder
-var Llama2Encoder GPTEncoder
+var llama2Encoder GPTEncoder
+var mistralEncoder GPTEncoder
 var corpus string
 var clipCorpus string
 
@@ -33,7 +34,8 @@ var gpt2Encoded *Tokens
 var pileEncoded *Tokens
 var clipEncoded *Tokens
 var nerdstashEncoded *Tokens
-var Llama2Encoded *Tokens
+var llama2Encoded *Tokens
+var mistralEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
 const largeCorpusPath = "resources/wiki.train.raw"
@@ -93,7 +95,8 @@ func init() {
 	pileEncoder = NewPileEncoder()
 	clipEncoder = NewCLIPEncoder()
 	nerdstashV2Encoder = NewNerdstashV2Encoder()
-	Llama2Encoder = NewLlama2Encoder()
+	llama2Encoder = NewLlama2Encoder()
+	mistralEncoder = NewMistralEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
@@ -787,23 +790,56 @@ func TestLlamaEncoder_Encode(t *testing.T) {
 
 func TestLlamaTwoEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
-	llamaTokens := Llama2Encoder.Encode(&testString)
+	llamaTokens := llama2Encoder.Encode(&testString)
 	assert.Equal(t, llamaTokens, &Tokens{1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889})
 }
 
 func TestLlamaTwoTokenizerDecode(t *testing.T) {
 	outputString := "<s>The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := Tokens{1, 1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889}
-	output := Llama2Encoder.Decode(&llamaTokens)
+	output := llama2Encoder.Decode(&llamaTokens)
 	assert.Equal(t, outputString, output)
 }
 
 func TestLlamaTwoEncodeDecode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	outputString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
-	llamaTokens := Llama2Encoder.Encode(&testString)
-	output := Llama2Encoder.Decode(llamaTokens)
+	llamaTokens := llama2Encoder.Encode(&testString)
+	output := llama2Encoder.Decode(llamaTokens)
 	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncoder_Encode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := mistralEncoder.Encode(&testString)
+	assert.Equal(t, mistralTokens, &Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723})
+}
+
+func TestMistralTokenizerDecode(t *testing.T) {
+	outputString := "<s> The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723}
+	output := mistralEncoder.Decode(&mistralTokens)
+	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncodeDecode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	outputString := "<s> The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := mistralEncoder.Encode(&testString)
+	output := mistralEncoder.Decode(mistralTokens)
+	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
+	frankensteinCorpus := "resources/frankenstein.txt"
+	frankensteinText, err := os.ReadFile(frankensteinCorpus)
+	if err != nil {
+		t.Errorf("Error reading Frankenstein corpus: %v", err)
+	}
+	frankensteinString := string(frankensteinText)
+	mistralTokens := mistralEncoder.Encode(&frankensteinString)
+	output := mistralEncoder.Decode(mistralTokens)
+	assert.Equal(t, "<s> "+frankensteinString, output)
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {

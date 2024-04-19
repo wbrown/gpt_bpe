@@ -105,6 +105,7 @@ const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
 const VOCAB_ID_LLAMA = "llama-tokenizer"
+const VOCAB_ID_MISTRAL = "mistral-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_GPT2)
@@ -133,6 +134,11 @@ func NewNerdstashV2Encoder() GPTEncoder {
 
 func NewLlama2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_LLAMA)
+	return *encoder
+}
+
+func NewMistralEncoder() GPTEncoder {
+	encoder, _ := NewEncoder(VOCAB_ID_MISTRAL)
 	return *encoder
 }
 
@@ -174,11 +180,23 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		AddEosToken: false,
 		PadToken:    "",
 	}
+	altMistralSpecialsConfig := resources.MistralSpecialsConfig{
+		AddBosToken: false,
+		AddEosToken: false,
+		PadToken:    "",
+	}
 	if special, ok := (rsrcs)["tokenizer_config.json"]; ok {
 		if special.Data != nil {
 			err := json.Unmarshal(*special.Data, &tokenizerSpecialConfig)
 			if err != nil {
-				log.Fatal("Error unmarshalling tokenizer_config.json: ", err)
+				err = json.Unmarshal(*special.Data, &altMistralSpecialsConfig)
+				if err != nil {
+					log.Fatal("Error unmarshalling tokenizer_config.json")
+				}
+				//populate the tokenizerSpecialConfig from the altMistralSpecialsConfig
+				tokenizerSpecialConfig.AddBosToken = altMistralSpecialsConfig.AddBosToken
+				tokenizerSpecialConfig.AddEosToken = altMistralSpecialsConfig.AddEosToken
+				tokenizerSpecialConfig.PadToken = altMistralSpecialsConfig.PadToken
 			}
 		}
 	}
@@ -1018,6 +1036,11 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
 	}
+	// Temporary hack - inject a space token at the end of the accumulator for mistral-tokenizer
+	if encoder.VocabId == "mistral-tokenizer" {
+		accumulator = append(accumulator, encoder.Encoder[" "])
+	}
+
 	return func(desiredTokens int) *Tokens {
 		for {
 			// If we have enough tokens, then we return them, and reset the
