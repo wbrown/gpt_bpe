@@ -812,6 +812,7 @@ func TestLlamaTwoEncodeDecode(t *testing.T) {
 func TestMistralEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	mistralTokens := mistralEncoder.Encode(&testString)
+	fmt.Printf("mistralTokens: %v\n", mistralTokens)
 	assert.Equal(t, mistralTokens, &Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723})
 }
 
@@ -840,6 +841,49 @@ func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
 	mistralTokens := mistralEncoder.Encode(&frankensteinString)
 	output := mistralEncoder.Decode(mistralTokens)
 	assert.Equal(t, "<s> "+frankensteinString, output)
+}
+
+func TestReadTokenizerConfig(t *testing.T) {
+	fmt.Println("Testing ReadTokenizerConfig")
+	// json with eos, bos, pad as strings
+	jsonStr := `{"eos_token": "TC", "bos_token": "TD", "pad_token": "TE"}` //cooresponds to 6669, 10989, 5428 in pythia vocab
+
+	//download filler model
+	modelId := "EleutherAI/pythia-70m"
+	destPath := "./TestReadTokenizerConfig"
+	destPathPTR := &destPath
+	defer os.RemoveAll(destPath)
+	var rsrcType resources.ResourceType
+	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
+	hfApiToken := os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// replace tokenizer_config.json with jsonStr
+	tokenizerConfigPath := destPath + "/tokenizer_config.json"
+	err := os.WriteFile(tokenizerConfigPath, []byte(jsonStr), 0644)
+	if err != nil {
+		t.Errorf("Error writing to tokenizer_config.json: %v", err)
+	}
+
+	// read tokenizer config by encoding a string
+	encoder, err := NewEncoder(destPath)
+	if err != nil {
+		t.Errorf("Error creating encoder: %v", err)
+	}
+
+	// check that the tokens are correct
+	assert.Equal(t, encoder.EosToken, Token(6669))
+	assert.Equal(t, encoder.BosToken, Token(10989))
+	assert.Equal(t, encoder.PadToken, Token(5428))
+
+	// Clean up by removing the downloaded folder
+	fmt.Println("All Exists - Looks good.")
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {

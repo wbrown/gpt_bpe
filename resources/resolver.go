@@ -79,6 +79,15 @@ func (rsrcs *Resources) Cleanup() {
 	}
 }
 
+// return file
+func (rsrc *Resources) GetFile(name string) (interface{}, error) {
+	if rsrcEntry, ok := (*rsrc)[name]; ok {
+		return rsrcEntry.file, nil
+	} else {
+		return nil, errors.New(fmt.Sprintf("resource %s not found", name))
+	}
+}
+
 // GetResourceEntries
 // Returns a default map of resource entries that express what files are
 // required, optional, derived, and/or model resources. Requires a ResourceType.
@@ -710,6 +719,22 @@ type MistralSpecialsConfig struct {
 	PadToken    string `json:"pad_token,omitempty"`
 }
 
+// Processor stores config to process one step of the pipeline
+type Processor struct {
+	ProcessorType string
+	ProcessorArgs map[string]interface{}
+}
+
+// Process the input with the processor
+func (p *Processor) Process(input interface{}) (interface{}, error) {
+	switch p.ProcessorType {
+	case "prepend":
+		return nil, errors.New("prepend not implemented")
+	default:
+		return nil, errors.New("unknown processor type")
+	}
+}
+
 // ResolveConfig
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
@@ -762,17 +787,111 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 	}
 	hfConfig.BosTokenStr = &bosToken
 
-	if hfConfig.EosTokenStr == nil {
-		hfConfig.EosTokenStr = &defaultTkn
+	hfConfigPtr, err := ResolveHFFromResources(resources, hfConfig)
+	if err != nil {
+		return nil, nil, err
 	}
-	if hfConfig.PadTokenStr == nil {
-		hfConfig.PadTokenStr = &defaultTkn
-	}
-	if hfConfig.BosTokenStr == nil {
-		hfConfig.BosTokenStr = &defaultTkn
-	}
+	hfConfig = *hfConfigPtr
 
 	return &hfConfig, resources, nil
+}
+
+// ResolveHFFromResources
+// Given a set of resources, resolve the HuggingFace configuration.
+// Used to be able to resolve both embedded and local resources.
+func ResolveHFFromResources(resources *Resources, hfConfig HFConfig) (*HFConfig, error) {
+	//use interfaces to unmarsal the config file and tokenizer config file
+	var config interface{}
+	var tokenizerConfig interface{}
+	//if exists, unmarshal config.json and tokenizer_config.json
+	//use getfile to get the file, then unmarshal it
+	if _, err := resources.GetFile("config.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["config.json"]).Data, &config); err != nil {
+			fmt.Errorf("Error unmarshalling config.json: %s", err)
+			return nil, err
+		}
+	} else {
+		fmt.Printf("config.json not found in resources\n error: %s", err)
+	}
+
+	if _, err := resources.GetFile("tokenizer_config.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["tokenizer_config.json"]).Data, &tokenizerConfig); err != nil {
+			fmt.Errorf("Error unmarshalling tokenizer_config.json: %s", err)
+			return nil, err
+		}
+	} else {
+		fmt.Printf("tokenizer_config.json not found in resources\n error: %s", err)
+
+	}
+
+	//check if bos_token is in string, this is the old format pythia has. If not, try to unmarshal to the tokenizerSpecials
+	// that llama 2 has, else try mistral format
+	if config != nil || tokenizerConfig != nil {
+		hasReadConfig := false
+		if config != nil {
+			fmt.Printf("Config resolution: %v\n", config)
+			//using interfaces, first check if bos_token is in string format
+			if bosToken, ok := config.(map[string]interface{})["bos_token"].(string); ok {
+				hfConfig.BosTokenStr = &bosToken
+				if eosToken, ok := config.(map[string]interface{})["eos_token"].(string); ok {
+					hfConfig.EosTokenStr = &eosToken
+				}
+				if padToken, ok := config.(map[string]interface{})["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+				hasReadConfig = true
+			}
+		}
+		if tokenizerConfig != nil && !hasReadConfig {
+			//using interfaces, first check if bos_token is in string format
+			if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
+				fmt.Printf("string tokenizer resolution\n %v\n", tokenizerConfig)
+				hfConfig.BosTokenStr = &bosToken
+				if eosToken, ok := tokenizerConfig.(map[string]interface{})["eos_token"].(string); ok {
+					hfConfig.EosTokenStr = &eosToken
+				}
+				if padToken, ok := tokenizerConfig.(map[string]interface{})["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+				hasReadConfig = true
+
+			}
+			//if not, assume llama2 format and try to unmarshal
+			if !hasReadConfig {
+				fmt.Printf("tokenizer llama2 resolution\n %v\n", tokenizerConfig)
+				cfg := tokenizerConfig.(map[string]interface{})
+				if bosToken, ok := cfg["bos_token"].(map[string]interface{}); ok {
+					if content, ok := bosToken["content"].(string); ok {
+						hfConfig.BosTokenStr = &content
+					}
+				}
+				if eosToken, ok := cfg["eos_token"].(map[string]interface{}); ok {
+					if content, ok := eosToken["content"].(string); ok {
+						hfConfig.EosTokenStr = &content
+					}
+				}
+				if padToken, ok := cfg["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+			}
+			//if that doesn't work, assume mistral format
+			if !hasReadConfig {
+				fmt.Printf("tokenizer mistral resolution\n %v\n", tokenizerConfig)
+				if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
+					hfConfig.BosTokenStr = &bosToken
+				}
+				if eosToken, ok := tokenizerConfig.(map[string]interface{})["eos_token"].(string); ok {
+					hfConfig.EosTokenStr = &eosToken
+				}
+				if padToken, ok := tokenizerConfig.(map[string]interface{})["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+			}
+		}
+
+	}
+	fmt.Printf("Resolved config: %v\n", &hfConfig)
+	return &hfConfig, nil
 }
 
 // ResolveVocabId
@@ -812,28 +931,21 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		if special_config != nil {
 			resources["special_config.json"] = *special_config
 		}
+		tokenizerJson := GetEmbeddedResource(vocabId + "/tokenizer.json")
+		if tokenizerJson != nil {
+			resources["tokenizer.json"] = *tokenizerJson
+		}
+
 		tokenizer_specials_config := GetEmbeddedResource(vocabId + "/tokenizer_config.json")
 		if tokenizer_specials_config != nil {
 			resources["tokenizer_config.json"] = *tokenizer_specials_config
-
-			// Set the start, end, pad tokens
-			var tokenizerSpecialsConfig TokenizerSpecialsConfig
-			if err := json.Unmarshal(*tokenizer_specials_config.Data, &tokenizerSpecialsConfig); err != nil {
-				// If we can't unmarshal, we try with the Mistral format
-				var mistralSpecialsConfig MistralSpecialsConfig
-				if err := json.Unmarshal(*tokenizer_specials_config.Data, &mistralSpecialsConfig); err != nil {
-					return nil, nil, err
-				}
-				hf.BosTokenStr = &mistralSpecialsConfig.BosToken
-				hf.EosTokenStr = &mistralSpecialsConfig.EosToken
-				hf.PadTokenStr = &mistralSpecialsConfig.PadToken
-			} else {
-				// If we can unmarshal, we use the new format
-				hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
-				hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
-				hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
-			}
 		}
+
+		hf, err := ResolveHFFromResources(&resources, *hf)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		return hf, &resources, nil
 	}
 	if isValidUrl(vocabId) {
@@ -1006,4 +1118,58 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	}
 
 	return nameOfLastInt, nil
+}
+
+func FindProcessingStepsFromTokenizer(model ResourceEntry) ([]Processor, error) {
+	// convert the data to a map
+	var data map[string]interface{}
+	err := json.Unmarshal(*model.Data, &data)
+	if err != nil {
+		return nil, err
+	}
+
+	// create array of processors
+	var processors []Processor
+	// check if normalizer is present
+	normalizer, ok := data["normalizer"].(map[string]interface{})
+	if normalizer != nil && ok {
+		// add normalizer to processors
+		processor := Processor{
+			ProcessorType: "normalizer",
+			ProcessorArgs: normalizer,
+		}
+		processors = append(processors, processor)
+	}
+	// check if pre_tokenizer is present
+	pre_tokenizer, ok := data["pre_tokenizer"].(map[string]interface{})
+	if pre_tokenizer != nil && ok {
+		// add pre_tokenizer to processors
+		processor := Processor{
+			ProcessorType: "pre_tokenizer",
+			ProcessorArgs: pre_tokenizer,
+		}
+		processors = append(processors, processor)
+	}
+	// check if post_processor is present
+	post_processor, ok := data["post_processor"].(map[string]interface{})
+	if post_processor != nil && ok {
+		// add post_processor to processors
+		processor := Processor{
+			ProcessorType: "post_processor",
+			ProcessorArgs: post_processor,
+		}
+		processors = append(processors, processor)
+	}
+	// check if decoder is present
+	decoder, ok := data["decoder"].(map[string]interface{})
+	if decoder != nil && ok {
+		// add decoder to processors
+		processor := Processor{
+			ProcessorType: "decoder",
+			ProcessorArgs: decoder,
+		}
+		processors = append(processors, processor)
+	}
+
+	return processors, nil
 }
