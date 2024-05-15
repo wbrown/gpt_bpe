@@ -2,7 +2,7 @@ name: Publish
 
 on:
   push:
-    branches: ["main"]
+    branches: ["rahul/update_tokenizer"]
 
 jobs:
   publish:
