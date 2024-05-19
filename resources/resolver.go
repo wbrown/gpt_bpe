@@ -84,7 +84,7 @@ func (rsrc *Resources) GetFile(name string) (interface{}, error) {
 	if rsrcEntry, ok := (*rsrc)[name]; ok {
 		return rsrcEntry.file, nil
 	} else {
-		return nil, errors.New(fmt.Sprintf("resource %s not found", name))
+		return nil, fmt.Errorf("file %s not found", name)
 	}
 }
 
@@ -811,7 +811,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 			return nil, err
 		}
 	} else {
-		fmt.Printf("config.json not found in resources\n error: %s", err)
+		log.Printf("Model file %s, will attempt to skip\n", err)
 	}
 
 	if _, err := resources.GetFile("tokenizer_config.json"); err == nil {
@@ -820,7 +820,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 			return nil, err
 		}
 	} else {
-		fmt.Printf("tokenizer_config.json not found in resources\n error: %s", err)
+		log.Printf("Model file: %s, will attempt to skip\n", err)
 
 	}
 
@@ -886,7 +886,6 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 		}
 
 	}
-	fmt.Printf("Resolved config: %v\n", &hfConfig)
 	return hfConfig, nil
 }
 
@@ -895,7 +894,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 // local filesystem, or remote.
 func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error) {
 	var resolvedVocabId string
-	fmt.Printf("Resolving vocab id: %s\n", vocabId)
+	log.Printf("Resolving vocab id: %s\n", vocabId)
 	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		endOfText := "<|endoftext|>"
 		bosText := "<|startoftext|>"
