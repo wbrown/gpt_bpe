@@ -812,7 +812,6 @@ func TestLlamaTwoEncodeDecode(t *testing.T) {
 func TestMistralEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	mistralTokens := mistralEncoder.Encode(&testString)
-	fmt.Printf("mistralTokens: %v\n", mistralTokens)
 	assert.Equal(t, mistralTokens, &Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723})
 }
 
