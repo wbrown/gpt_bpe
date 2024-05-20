@@ -1,0 +1,64 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, coverage reports, and build directories
+*.test
+*.out
+*.coverprofile
+*.cover
+*.cov
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE and Editor specific files
+.vscode/
+.idea/
+*.swp
+*~
+*.swo
+
+# Dependency directories and files
+vendor/
+Gopkg.lock
+Gopkg.toml
+go.sum
+
+# Build directories
+bin/
+obj/
+pkg/
+
+# Test directories
+Test*/
+
+# IDE specific project files and directories
+*.iml
+*.ipr
+*.iws
+
+# Code coverage tool output
+*.prof
+coverage.txt
+
+# Go workspace and tools
+go.work
+go.work.sum
+
+# Exclude Go module download cache
+/.go/
+
+# Exclude VS Code Go extension settings
+.vscode/go.*.json

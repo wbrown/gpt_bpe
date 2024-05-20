@@ -8,7 +8,7 @@ require github.com/wbrown/gpt_bpe v0.0.0-20230503154557-854424f32a83
 
 require (
 	github.com/deckarep/golang-set v1.8.0 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
