@@ -24,7 +24,8 @@ var clipEncoder GPTEncoder
 var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
 var nerdstashV2Encoder GPTEncoder
-var Llama2Encoder GPTEncoder
+var llama2Encoder GPTEncoder
+var mistralEncoder GPTEncoder
 var corpus string
 var clipCorpus string
 
@@ -33,7 +34,8 @@ var gpt2Encoded *Tokens
 var pileEncoded *Tokens
 var clipEncoded *Tokens
 var nerdstashEncoded *Tokens
-var Llama2Encoded *Tokens
+var llama2Encoded *Tokens
+var mistralEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
 const largeCorpusPath = "resources/wiki.train.raw"
@@ -93,7 +95,8 @@ func init() {
 	pileEncoder = NewPileEncoder()
 	clipEncoder = NewCLIPEncoder()
 	nerdstashV2Encoder = NewNerdstashV2Encoder()
-	Llama2Encoder = NewLlama2Encoder()
+	llama2Encoder = NewLlama2Encoder()
+	mistralEncoder = NewMistralEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
 	corpus = string(textBytes)
@@ -270,10 +273,10 @@ func TestGPTEncoder_Split(t *testing.T) {
 func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
 	b.StopTimer()
 	corpusHandle, err := os.Open(largeCorpusPath)
-	defer corpusHandle.Close()
 	if err != nil {
 		b.Error(err)
 	}
+	defer corpusHandle.Close()
 	gpt2Encoder.SplitterThreads = 8
 	nextWord := gpt2Encoder.WordSplitter(bufio.NewReaderSize(corpusHandle,
 		8*1024*1024))
@@ -410,8 +413,8 @@ func BenchmarkGPTEncoder_Decode(b *testing.B) {
 	start := time.Now()
 	tokenNumBytes := len(gpt2Encoder.Decode(gpt2Encoded))
 	duration := time.Since(start)
-	b.Log(fmt.Sprintf("%v tokens into %v bytes over %v",
-		len(*gpt2Encoded), tokenNumBytes, duration))
+	b.Logf("%v tokens into %v bytes over %v",
+		len(*gpt2Encoded), tokenNumBytes, duration)
 }
 
 type EncoderTest struct {
@@ -450,8 +453,8 @@ func BenchmarkGPTEncoder_Encode(b *testing.B) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	b.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 }
 
 func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
@@ -459,16 +462,16 @@ func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.EncodeBuffer(&corpusBytes)) / 2
 	duration := time.Since(start)
-	b.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	b.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 }
 
 func TestGPTEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *gpt2Encoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
@@ -489,19 +492,18 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 		tokenCt += len(*tokens)
 	}
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 }
 
 func TestCLIPEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*clipEncoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 	for testIdx := range GPTEncoderTests {
-		testStr := fmt.Sprintf("%s",
-			GPTEncoderTests[testIdx].Input)
+		testStr := GPTEncoderTests[testIdx].Input
 		tokensPtr := *clipEncoder.Encode(&testStr)
 		assert.Equal(t, GPTEncoderTests[testIdx].CLIPExpected, tokensPtr)
 	}
@@ -511,8 +513,8 @@ func TestPileEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*pileEncoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *pileEncoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
@@ -524,8 +526,8 @@ func TestNerdstashEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*nerdstashV2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *nerdstashV2Encoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
@@ -573,7 +575,7 @@ func TestNerdstashEncoder_Encode2(t *testing.T) {
 		encoded := nerdstashV2Encoder.Encode(&inputStr)
 		// check that the encoded string is the same as the expected
 		if !assert.Equal(t, expected, *encoded) {
-			t.Log(fmt.Sprintf("failure on input: `%v`", inputStr))
+			t.Logf("failure on input: `%v`", inputStr)
 			expectedRepr := []string{}
 			for _, token := range expected {
 				expectedRepr = append(expectedRepr,
@@ -584,14 +586,14 @@ func TestNerdstashEncoder_Encode2(t *testing.T) {
 				actualRepr = append(actualRepr,
 					string(nerdstashV2Encoder.Decoder[token]))
 			}
-			t.Log(fmt.Sprintf("expected: |%s", strings.Join(expectedRepr, "|")))
-			t.Log(fmt.Sprintf("actual:   |%s", strings.Join(actualRepr, "|")))
+			t.Logf("expected: |%s", strings.Join(expectedRepr, "|"))
+			t.Logf("actual:   |%s", strings.Join(actualRepr, "|"))
 			failCt += 1
 		} else {
 			passCt += 1
 		}
 	}
-	t.Log(fmt.Sprintf("pass: %v, fail: %v", passCt, failCt))
+	t.Logf("pass: %v, fail: %v", passCt, failCt)
 }
 
 func TestNerdstashEncoder_Decode(t *testing.T) {
@@ -610,6 +612,9 @@ func TestGPTEncoder_Decode2(t *testing.T) {
 	} else {
 		tokens := TokensFromBin(&binTokens)
 		tokens, err = gpt2Encoder.TrimIncompleteSentence(tokens)
+		if err != nil {
+			t.Error(err)
+		}
 		assert.Equal(t, gpt2Encoder.Decode(tokens), decodedCorpus)
 	}
 }
@@ -623,8 +628,8 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	decoded := gpt2Encoder.Decode(gpt2Encoded)
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
-	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
-		len(*gpt2Encoded), tokenNumBytes, duration))
+	t.Logf("%v tokens into %v bytes over %v\n",
+		len(*gpt2Encoded), tokenNumBytes, duration)
 	assert.Equal(t, corpus, decoded)
 }
 
@@ -644,8 +649,7 @@ func TestCLIPEncoder_Decode(t *testing.T) {
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
 	idxToStop := 229550
-	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
-		len(*clipEncoded), tokenNumBytes, duration))
+	t.Logf("%v tokens into %v bytes over %v\n", len(*clipEncoded), tokenNumBytes, duration)
 	for idx := range clipCorpus {
 		if idx > idxToStop {
 			break
@@ -669,8 +673,8 @@ func TestPileEncoder_Decode(t *testing.T) {
 	decoded := pileEncoder.Decode(pileEncoded)
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
-	t.Log(fmt.Sprintf("%v tokens into %v bytes over %v\n",
-		len(*pileEncoded), tokenNumBytes, duration))
+	t.Logf("%v tokens into %v bytes over %v\n",
+		len(*pileEncoded), tokenNumBytes, duration)
 	range_data := corpus
 	if len(corpus) > len(decoded) {
 		range_data = decoded
@@ -776,8 +780,8 @@ func TestLlamaEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Log(fmt.Sprintf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration))
+	t.Logf("%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *gpt2Encoder.Encode(
 			&(GPTEncoderTests[testIdx].Input))
@@ -787,23 +791,97 @@ func TestLlamaEncoder_Encode(t *testing.T) {
 
 func TestLlamaTwoEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
-	llamaTokens := Llama2Encoder.Encode(&testString)
+	llamaTokens := llama2Encoder.Encode(&testString)
 	assert.Equal(t, llamaTokens, &Tokens{1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889})
 }
 
 func TestLlamaTwoTokenizerDecode(t *testing.T) {
 	outputString := "<s>The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := Tokens{1, 1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889}
-	output := Llama2Encoder.Decode(&llamaTokens)
+	output := llama2Encoder.Decode(&llamaTokens)
 	assert.Equal(t, outputString, output)
 }
 
 func TestLlamaTwoEncodeDecode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	outputString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
-	llamaTokens := Llama2Encoder.Encode(&testString)
-	output := Llama2Encoder.Decode(llamaTokens)
+	llamaTokens := llama2Encoder.Encode(&testString)
+	output := llama2Encoder.Decode(llamaTokens)
 	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncoder_Encode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := mistralEncoder.Encode(&testString)
+	assert.Equal(t, mistralTokens, &Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723})
+}
+
+func TestMistralTokenizerDecode(t *testing.T) {
+	outputString := "<s> The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723}
+	output := mistralEncoder.Decode(&mistralTokens)
+	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncodeDecode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	outputString := "<s> The fox jumped over the hare.\nThe turtle is faster than the hare."
+	mistralTokens := mistralEncoder.Encode(&testString)
+	output := mistralEncoder.Decode(mistralTokens)
+	assert.Equal(t, outputString, output)
+}
+
+func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
+	frankensteinCorpus := "resources/frankenstein.txt"
+	frankensteinText, err := os.ReadFile(frankensteinCorpus)
+	if err != nil {
+		t.Errorf("Error reading Frankenstein corpus: %v", err)
+	}
+	frankensteinString := string(frankensteinText)
+	mistralTokens := mistralEncoder.Encode(&frankensteinString)
+	output := mistralEncoder.Decode(mistralTokens)
+	assert.Equal(t, "<s> "+frankensteinString, output)
+}
+
+func TestReadTokenizerConfig(t *testing.T) {
+	fmt.Println("Testing ReadTokenizerConfig")
+	// json with eos, bos, pad as strings
+	jsonStr := `{"eos_token": "TC", "bos_token": "TD", "pad_token": "TE"}` //cooresponds to 6669, 10989, 5428 in pythia vocab
+
+	//download filler model
+	modelId := "EleutherAI/pythia-70m"
+	destPath := "./TestReadTokenizerConfig"
+	destPathPTR := &destPath
+	defer os.RemoveAll(destPath)
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	}
+
+	// replace tokenizer_config.json with jsonStr
+	tokenizerConfigPath := destPath + "/tokenizer_config.json"
+	err := os.WriteFile(tokenizerConfigPath, []byte(jsonStr), 0644)
+	if err != nil {
+		t.Errorf("Error writing to tokenizer_config.json: %v", err)
+	}
+
+	// read tokenizer config by encoding a string
+	encoder, err := NewEncoder(destPath)
+	if err != nil {
+		t.Errorf("Error creating encoder: %v", err)
+	}
+
+	// check that the tokens are correct
+	assert.Equal(t, encoder.EosToken, Token(6669))
+	assert.Equal(t, encoder.BosToken, Token(10989))
+	assert.Equal(t, encoder.PadToken, Token(5428))
+
+	// Finish the test, allow defered cleanup
+	fmt.Println("All Exists - Looks good.")
 }
 
 func TestGPTDecoder_Decode(t *testing.T) {
@@ -819,14 +897,12 @@ func TestModelDownload(t *testing.T) {
 	destPath := "./TestModelDownload"
 	destPathPTR := &destPath
 
-	var rsrcType resources.ResourceType
-	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
-	hfApiToken := os.Getenv("HF_API_TOKEN")
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
+	defer os.RemoveAll(destPath)
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -841,11 +917,9 @@ func TestModelDownload(t *testing.T) {
 		fmt.Println("config.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("config.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for config.json")
 	}
 
@@ -855,11 +929,9 @@ func TestModelDownload(t *testing.T) {
 		fmt.Println("pytorch_model.bin exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model.bin does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model.bin")
 	}
 
@@ -869,11 +941,9 @@ func TestModelDownload(t *testing.T) {
 		fmt.Println("tokenizer.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("tokenizer.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for tokenizer.json")
 	}
 
@@ -883,16 +953,13 @@ func TestModelDownload(t *testing.T) {
 		fmt.Println("vocab.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("vocab.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for vocab.json")
 	}
 
-	// Clean up by removing the downloaded folder
-	os.RemoveAll(destPath)
+	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
 }
 
@@ -905,14 +972,12 @@ func TestModelDownloadPythia(t *testing.T) {
 	destPath := "./TestModelDownloadPythia"
 	destPathPTR := &destPath
 
-	var rsrcType resources.ResourceType
-	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
-	hfApiToken := os.Getenv("HF_API_TOKEN")
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
+	defer os.RemoveAll(destPath)
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -927,11 +992,9 @@ func TestModelDownloadPythia(t *testing.T) {
 		fmt.Println("config.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("config.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for config.json")
 	}
 
@@ -941,11 +1004,9 @@ func TestModelDownloadPythia(t *testing.T) {
 		fmt.Println("pytorch_model.bin exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model.bin does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model.bin")
 	}
 
@@ -955,11 +1016,9 @@ func TestModelDownloadPythia(t *testing.T) {
 		fmt.Println("tokenizer.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("tokenizer.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for tokenizer.json")
 	}
 
@@ -969,16 +1028,13 @@ func TestModelDownloadPythia(t *testing.T) {
 		fmt.Println("vocab.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("vocab.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for vocab.json")
 	}
 
-	// Clean up by removing the downloaded folder
-	os.RemoveAll(destPath)
+	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
 }
 
@@ -990,14 +1046,12 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 	destPath := "./TestModelDownloadPythiaSharded"
 	destPathPTR := &destPath
 
-	var rsrcType resources.ResourceType
-	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
-	hfApiToken := os.Getenv("HF_API_TOKEN")
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
+	defer os.RemoveAll(destPath)
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -1012,11 +1066,9 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 		fmt.Println("pytorch_model-00001-of-00002.bin exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model-00001-of-00002.bin does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model-00001-of-00002.bin")
 	}
 
@@ -1026,11 +1078,9 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 		fmt.Println("pytorch_model-00002-of-00002.bin exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model-00002-of-00002.bin does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model-00002-of-00002.bin")
 	}
 
@@ -1040,16 +1090,13 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 		fmt.Println("pytorch_model.bin.index.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model.bin.index.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model.bin.index.json")
 	}
 
-	// Clean up by removing the downloaded folder
-	os.RemoveAll(destPath)
+	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
 
 }
@@ -1064,9 +1111,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	destPathPTR := &destPath
 	defer os.RemoveAll(destPath)
 
-	var rsrcType resources.ResourceType
-	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
-	hfApiToken := os.Getenv("HF_API_TOKEN")
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
@@ -1112,7 +1157,7 @@ func TestModelDownloadLlama(t *testing.T) {
 		}
 
 		matches := re.FindStringSubmatch(file.Name())
-		if matches != nil && len(matches) > 2 {
+		if len(matches) > 2 {
 			if strings.Compare(matches[1], matches[2]) == 0 {
 				found = true
 				break
@@ -1158,14 +1203,12 @@ func TestModelDownloadFairseq(t *testing.T) {
 	destPath := "./TestModelDownloadFairseq"
 	destPathPTR := &destPath
 
-	var rsrcType resources.ResourceType
-	rsrcType = resources.RESOURCETYPE_TRANSFORMERS
-	hfApiToken := os.Getenv("HF_API_TOKEN")
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
+	defer os.RemoveAll(destPath)
 	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
@@ -1179,11 +1222,9 @@ func TestModelDownloadFairseq(t *testing.T) {
 		fmt.Println("config.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("config.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for config.json")
 	}
 
@@ -1193,11 +1234,9 @@ func TestModelDownloadFairseq(t *testing.T) {
 		fmt.Println("pytorch_model.bin exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("pytorch_model.bin does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for pytorch_model.bin")
 	}
 
@@ -1207,11 +1246,9 @@ func TestModelDownloadFairseq(t *testing.T) {
 		fmt.Println("vocab.json exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("vocab.json does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for vocab.json")
 	}
 
@@ -1221,15 +1258,12 @@ func TestModelDownloadFairseq(t *testing.T) {
 		fmt.Println("merges.txt exists")
 
 	} else if errors.Is(err, os.ErrNotExist) {
-		os.RemoveAll(destPath)
 		t.Errorf("merges.txt does not exist")
 
 	} else {
-		os.RemoveAll(destPath)
 		t.Errorf("Error checking for merges.txt")
 	}
 
-	// Clean up by removing the downloaded folder
-	os.RemoveAll(destPath)
+	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good (Fairseq Download).")
 }
