@@ -913,7 +913,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 		specials := strings.Split(string(*specialsTxt.Data), "\n")
 		if hfConfig.PadTokenStr == nil {
 			for _, special := range specials {
-				if strings.Contains(special, "pad") {
+				if strings.Contains(strings.ToLower(special), "pad") {
 					hfConfig.PadTokenStr = &special
 					break
 				}
