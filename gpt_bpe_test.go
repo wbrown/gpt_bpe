@@ -1198,28 +1198,28 @@ func TestModelDownloadLlama(t *testing.T) {
 
 func TestGPT2DefaultPadding(t *testing.T) {
 	// GPT2 defines a padding token, we test if it properly gets this token
-	//corresponds to <|padding|> in the vocab
+	// corresponds to <|padding|> in the vocab
 	assert.Equal(t, gpt2Encoder.PadToken, Token(50257))
 	assert.Equal(t, gpt2Encoder.Encoder["<|padding|>"], Token(50257))
 }
 
 func TestPilePadding(t *testing.T) {
 	// Pile defines a padding token, we test if it properly gets this token
-	//corresponds to <|padding|> in the vocab
+	// corresponds to <|padding|> in the vocab
 	assert.Equal(t, pileEncoder.PadToken, Token(1))
 	assert.Equal(t, pileEncoder.Encoder["<|padding|>"], Token(1))
 }
 
 func TestClipPadding(t *testing.T) {
 	// CLIP defines a padding token, we test if it properly gets this token
-	//corresponds to <|endoftext|> in the vocab
+	// corresponds to <|endoftext|> in the vocab
 	assert.Equal(t, clipEncoder.PadToken, Token(49407))
 	assert.Equal(t, clipEncoder.Encoder["<|endoftext|>"], Token(49407))
 }
 
 func TestNerdstashPadding(t *testing.T) {
 	// Nerdstash defines a padding token, we test if it properly gets this token
-	//corresponds to <|pad|> in the vocab
+	// corresponds to <|pad|> in the vocab
 	assert.Equal(t, nerdstashV2Encoder.PadToken, Token(0))
 	assert.Equal(t, nerdstashV2Encoder.Encoder["<|pad|>"], Token(0))
 }
