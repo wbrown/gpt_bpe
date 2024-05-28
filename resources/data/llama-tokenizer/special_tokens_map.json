@@ -13,7 +13,6 @@
     "rstrip": false,
     "single_word": false
   },
-  "pad_token": "[PAD]",
   "unk_token": {
     "content": "<unk>",
     "lstrip": false,

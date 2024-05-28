@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -886,6 +887,38 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 		}
 
 	}
+	//get specials config from resources
+	// We can only generate specials.json if we have special_tokens_map
+	specialsJson, ok := (*resources)["special_tokens_map.json"]
+	if ok {
+		specialTokens := make(map[string]interface{}, 0)
+		if specialErr := json.Unmarshal(*specialsJson.Data,
+			&specialTokens); specialErr != nil {
+			return nil, specialErr
+		}
+
+		//try to get pad token from specials if not already set
+		if hfConfig.PadTokenStr == nil {
+			if padToken, ok := specialTokens["pad_token"].(string); ok {
+				hfConfig.PadTokenStr = &padToken
+			}
+		}
+	}
+
+	//get from specials.json
+	specialsTxt, ok := (*resources)["specials.txt"]
+	if ok {
+		//treat specials.txt as an array of strings and try to match
+		specials := strings.Split(string(*specialsTxt.Data), "\n")
+		if hfConfig.PadTokenStr == nil {
+			for _, special := range specials {
+				if strings.Contains(special, "pad") {
+					hfConfig.PadTokenStr = &special
+					break
+				}
+			}
+		}
+	}
 	return hfConfig, nil
 }
 
@@ -902,7 +935,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			ModelId:     &vocabId,
 			BosTokenStr: &bosText,
 			EosTokenStr: &endOfText,
-			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
 
