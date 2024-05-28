@@ -898,7 +898,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 			return nil, specialErr
 		}
 
-		//try to get pad token from specials if not already set
+		// Try to get pad token from specials if not already set
 		if hfConfig.PadTokenStr == nil {
 			if padToken, ok := specialTokens["pad_token"].(string); ok {
 				hfConfig.PadTokenStr = &padToken

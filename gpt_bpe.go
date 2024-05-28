@@ -369,8 +369,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Add in default pad token if not already set
 	if tokenizerSpecialConfig.PadToken == "" && hfConfig.PadTokenStr == nil {
-		//inject the pad token into the encoder to uintmax16
-		//throw an error if vocab is larger than uintmax16
+		// Inject the pad token into the encoder to uintmax16,
+		// throw an error if vocab is larger than uintmax16
 		if len(encoderTokens) >= math.MaxInt16 {
 			log.Fatalf("Vocab size is larger than uint16 max, default pad token cannot be added." +
 				"Please specify a pad token in the vocab file.")
