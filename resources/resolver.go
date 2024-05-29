@@ -803,25 +803,25 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
 	// Resolve config and tokenizer config from resources
 	// config.json and tokenizer_config.json
-	hfConfig, err := ResolveConfigAndTokenizerConfig(resources, hfConfig)
+	hfConfig, err := resolveConfigAndTokenizerConfig(resources, hfConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	// Resolve special tokens and special tokens config from resources
 	// special_tokens_map.json and specials.txt
-	hfConfig, err = ResolveSpecialsAndSpecialTokens(resources, hfConfig)
+	hfConfig, err = resolveSpecialsAndSpecialTokens(resources, hfConfig)
 	if err != nil {
 		return nil, err
 	}
 	return hfConfig, nil
 }
 
-// ResolveConfigAndTokenizerConfig
+// resolveConfigAndTokenizerConfig
 // Resolve config and tokenizer config from resources.
 // Used to be able to resolve both embedded and local resources.
 // Continuation of ResolveHFFromResources.
-func ResolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
 	// Use interfaces to unmarshal the config file and tokenizer config file
 	var config interface{}
 	var tokenizerConfig interface{}
@@ -912,11 +912,11 @@ func ResolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (
 	return hfConfig, nil
 }
 
-// ResolveSpecialsAndSpecialTokens
+// resolveSpecialsAndSpecialTokens
 // Resolve special tokens and special tokens config from resources.
 // Used to be able to resolve both embedded and local resources.
 // Continuation of ResolveHFFromResources.
-func ResolveSpecialsAndSpecialTokens(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+func resolveSpecialsAndSpecialTokens(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
 	// Get specials config from resources
 	// We can only generate specials.json if we have special_tokens_map
 	specialsJson, ok := (*resources)["special_tokens_map.json"]
