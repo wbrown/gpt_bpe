@@ -22,6 +22,7 @@ import (
 const BPE_LRU_SZ = 65536
 const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
+const defaultPadTokenString = "[PAD]"
 
 type Token uint16
 type Tokens []Token
@@ -368,15 +369,16 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	// Add in default pad token if not already set
-	if tokenizerSpecialConfig.PadToken == "" && hfConfig.PadTokenStr == nil {
+	padTokenNotFound := (tokenizerSpecialConfig.PadToken == "" && hfConfig.PadTokenStr == nil)
+	if padTokenNotFound {
 		// Inject the pad token into the encoder to uintmax16,
 		// throw an error if vocab is larger than uintmax16
 		if len(encoderTokens) >= math.MaxInt16 {
 			log.Fatalf("Vocab size is larger than uint16 max, default pad token cannot be added." +
 				"Please specify a pad token in the vocab file.")
 		}
-		encoderTokens["[PAD]"] = math.MaxUint16
-		tokenizerSpecialConfig.PadToken = "[PAD]"
+		encoderTokens[defaultPadTokenString] = math.MaxUint16
+		tokenizerSpecialConfig.PadToken = defaultPadTokenString
 		hfConfig.PadTokenStr = &tokenizerSpecialConfig.PadToken
 	}
 	encoder := &GPTEncoder{
