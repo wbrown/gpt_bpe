@@ -1196,6 +1196,48 @@ func TestModelDownloadLlama(t *testing.T) {
 	fmt.Println("All Exists - Looks good.")
 }
 
+func TestGPT2DefaultPadding(t *testing.T) {
+	// GPT2 defines a padding token, we test if it properly gets this token
+	// corresponds to <|padding|> in the vocab
+	assert.Equal(t, gpt2Encoder.PadToken, Token(50257))
+	assert.Equal(t, gpt2Encoder.Encoder["<|padding|>"], Token(50257))
+}
+
+func TestPilePadding(t *testing.T) {
+	// Pile defines a padding token, we test if it properly gets this token
+	// corresponds to <|padding|> in the vocab
+	assert.Equal(t, pileEncoder.PadToken, Token(1))
+	assert.Equal(t, pileEncoder.Encoder["<|padding|>"], Token(1))
+}
+
+func TestClipPadding(t *testing.T) {
+	// CLIP defines a padding token, we test if it properly gets this token
+	// corresponds to <|endoftext|> in the vocab
+	assert.Equal(t, clipEncoder.PadToken, Token(49407))
+	assert.Equal(t, clipEncoder.Encoder["<|endoftext|>"], Token(49407))
+}
+
+func TestNerdstashPadding(t *testing.T) {
+	// Nerdstash defines a padding token, we test if it properly gets this token
+	// corresponds to <|pad|> in the vocab
+	assert.Equal(t, nerdstashV2Encoder.PadToken, Token(0))
+	assert.Equal(t, nerdstashV2Encoder.Encoder["<|pad|>"], Token(0))
+}
+
+func TestLlamaPadding(t *testing.T) {
+	// Llama doesn't define a padding token, we test if it properly defaults to
+	// [PAD] as 65535
+	assert.Equal(t, llama2Encoder.PadToken, Token(65535))
+	assert.Equal(t, llama2Encoder.Encoder["[PAD]"], Token(65535))
+}
+
+func TestMistralPadding(t *testing.T) {
+	// Mistral doesn't define a padding token, we test if it properly defaults to
+	// [PAD] as 65535
+	assert.Equal(t, mistralEncoder.PadToken, Token(65535))
+	assert.Equal(t, mistralEncoder.Encoder["[PAD]"], Token(65535))
+}
+
 func TestModelDownloadFairseq(t *testing.T) {
 	// Koboldai's fairseq models are stored in a different format
 	// it has merges and vocab but no tokenizer.json

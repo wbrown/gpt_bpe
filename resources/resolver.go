@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -800,11 +801,32 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 // Given a set of resources, resolve the HuggingFace configuration.
 // Used to be able to resolve both embedded and local resources.
 func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
-	//use interfaces to unmarsal the config file and tokenizer config file
+	// Resolve config and tokenizer config from resources
+	// config.json and tokenizer_config.json
+	hfConfig, err := resolveConfigAndTokenizerConfig(resources, hfConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve special tokens and special tokens config from resources
+	// special_tokens_map.json and specials.txt
+	hfConfig, err = resolveSpecialsAndSpecialTokens(resources, hfConfig)
+	if err != nil {
+		return nil, err
+	}
+	return hfConfig, nil
+}
+
+// resolveConfigAndTokenizerConfig
+// Resolve config and tokenizer config from resources.
+// Used to be able to resolve both embedded and local resources.
+// Continuation of ResolveHFFromResources.
+func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Use interfaces to unmarshal the config file and tokenizer config file
 	var config interface{}
 	var tokenizerConfig interface{}
-	//if exists, unmarshal config.json and tokenizer_config.json
-	//use getfile to get the file, then unmarshal it
+	// If exists, unmarshal config.json and tokenizer_config.json, else
+	// use GetFile to get the file, then unmarshal it
 	if _, err := resources.GetFile("config.json"); err == nil {
 		if err := json.Unmarshal(*((*resources)["config.json"]).Data, &config); err != nil {
 			fmt.Errorf("Error unmarshalling config.json: %s", err)
@@ -824,12 +846,13 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 
 	}
 
-	//check if bos_token is in string, this is the old format pythia has. If not, try to unmarshal to the tokenizerSpecials
+	// Check if bos_token is in string, this is the old format pythia has.
+	// If not, try to unmarshal to the tokenizerSpecials
 	// that llama 2 has, else try mistral format
 	if config != nil || tokenizerConfig != nil {
 		hasReadConfig := false
 		if config != nil {
-			//using interfaces, first check if bos_token is in string format
+			// Using interfaces, first check if bos_token is in string format
 			if bosToken, ok := config.(map[string]interface{})["bos_token"].(string); ok {
 				hfConfig.BosTokenStr = &bosToken
 				if eosToken, ok := config.(map[string]interface{})["eos_token"].(string); ok {
@@ -842,7 +865,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 			}
 		}
 		if tokenizerConfig != nil && !hasReadConfig {
-			//using interfaces, first check if bos_token is in string format
+			// Using interfaces, first check if bos_token is in string format
 			if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
 				hfConfig.BosTokenStr = &bosToken
 				if eosToken, ok := tokenizerConfig.(map[string]interface{})["eos_token"].(string); ok {
@@ -854,7 +877,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 				hasReadConfig = true
 
 			}
-			//if not, assume llama2 format and try to unmarshal
+			// If not, assume llama2 format and try to unmarshal
 			if !hasReadConfig {
 				cfg := tokenizerConfig.(map[string]interface{})
 				if bosToken, ok := cfg["bos_token"].(map[string]interface{}); ok {
@@ -871,7 +894,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 					hfConfig.PadTokenStr = &padToken
 				}
 			}
-			//if that doesn't work, assume mistral format
+			// If that doesn't work, assume mistral format
 			if !hasReadConfig {
 				if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
 					hfConfig.BosTokenStr = &bosToken
@@ -889,6 +912,46 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 	return hfConfig, nil
 }
 
+// resolveSpecialsAndSpecialTokens
+// Resolve special tokens and special tokens config from resources.
+// Used to be able to resolve both embedded and local resources.
+// Continuation of ResolveHFFromResources.
+func resolveSpecialsAndSpecialTokens(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Get specials config from resources
+	// We can only generate specials.json if we have special_tokens_map
+	specialsJson, ok := (*resources)["special_tokens_map.json"]
+	if ok {
+		specialTokens := make(map[string]interface{}, 0)
+		if specialErr := json.Unmarshal(*specialsJson.Data,
+			&specialTokens); specialErr != nil {
+			return nil, specialErr
+		}
+
+		// Try to get pad token from specials if not already set
+		if hfConfig.PadTokenStr == nil {
+			if padToken, ok := specialTokens["pad_token"].(string); ok {
+				hfConfig.PadTokenStr = &padToken
+			}
+		}
+	}
+
+	// Get from specials.json
+	specialsTxt, ok := (*resources)["specials.txt"]
+	if ok {
+		// Treat specials.txt as an array of strings and try to match
+		specials := strings.Split(string(*specialsTxt.Data), "\n")
+		if hfConfig.PadTokenStr == nil {
+			for _, special := range specials {
+				if strings.Contains(strings.ToLower(special), "pad") {
+					hfConfig.PadTokenStr = &special
+					break
+				}
+			}
+		}
+	}
+	return hfConfig, nil
+}
+
 // ResolveVocabId
 // Resolves a vocabulary id to a set of resources, from embedded,
 // local filesystem, or remote.
@@ -902,7 +965,6 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 			ModelId:     &vocabId,
 			BosTokenStr: &bosText,
 			EosTokenStr: &endOfText,
-			PadTokenStr: &endOfText,
 		}
 		resources := make(Resources, 0)
 
