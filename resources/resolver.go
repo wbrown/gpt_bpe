@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wbrown/gpt_bpe"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -308,6 +309,7 @@ func ResolveResources(
 	rsrcLvl ResourceFlag,
 	rsrcType ResourceType,
 	token string,
+	makeUnitrim bool,
 ) (
 	*Resources,
 	error,
@@ -641,6 +643,9 @@ func ResolveResources(
 		}
 
 	}
+	if makeUnitrim {
+		gpt_bpe.AppendUnitrimJSON(*dir)
+	}
 	return &foundResources, nil
 }
 
@@ -715,7 +720,8 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 		&dir,
 		RESOURCE_DERIVED,
 		RESOURCETYPE_TRANSFORMERS,
-		token)
+		token,
+		false)
 	if rsrcErr != nil {
 		return nil, nil, rsrcErr
 	} else {

@@ -16,6 +16,8 @@ func main() {
 		"model type (transformers or diffusers)")
 	tokenizerOnly := flag.Bool("tokenizer-only", false,
 		"only download the tokenizer")
+	makeUnitrim := flag.Bool("--make-unitrim", false,
+		"explicitly create unitrim.json")
 	flag.Parse()
 	if *modelId == "" {
 		flag.Usage()
@@ -48,7 +50,7 @@ func main() {
 		log.Fatalf("Error creating output directory: %s", mkdirErr)
 	}
 	_, rsrcErr := resources.ResolveResources(*modelId, destPath,
-		rsrcLvl, rsrcType, hfApiToken)
+		rsrcLvl, rsrcType, hfApiToken, *makeUnitrim)
 	if rsrcErr != nil {
 		log.Fatalf("Error downloading model resources: %s", rsrcErr)
 	}
