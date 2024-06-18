@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/wbrown/gpt_bpe/pkg/unitrim"
 	"github.com/wbrown/gpt_bpe/resources"
 	"log"
 	"os"
@@ -16,7 +17,7 @@ func main() {
 		"model type (transformers or diffusers)")
 	tokenizerOnly := flag.Bool("tokenizer-only", false,
 		"only download the tokenizer")
-	makeUnitrim := flag.Bool("--make-unitrim", false,
+	makeUnitrim := flag.Bool("make-unitrim", false,
 		"explicitly create unitrim.json")
 	flag.Parse()
 	if *modelId == "" {
@@ -43,6 +44,11 @@ func main() {
 		rsrcLvl = resources.RESOURCE_MODEL
 	}
 
+	var trimmerFunc func(string) = nil
+	if *makeUnitrim {
+		trimmerFunc = unitrim.AppendUnitrimJSON
+	}
+
 	// get HF_API_TOKEN from env for huggingface auth
 	hfApiToken := os.Getenv("HF_API_TOKEN")
 
@@ -50,7 +56,7 @@ func main() {
 		log.Fatalf("Error creating output directory: %s", mkdirErr)
 	}
 	_, rsrcErr := resources.ResolveResources(*modelId, destPath,
-		rsrcLvl, rsrcType, hfApiToken, *makeUnitrim)
+		rsrcLvl, rsrcType, hfApiToken, trimmerFunc)
 	if rsrcErr != nil {
 		log.Fatalf("Error downloading model resources: %s", rsrcErr)
 	}
