@@ -693,6 +693,39 @@ type SpecialConfig struct {
 	SplitRegex    *string            `json:"split_regex"`
 }
 
+// NewHFConfig creates a new HFConfig object with default values.
+func NewHFConfig() *HFConfig {
+	defaultModelId := ""
+	defaultModelType := "gpt2"
+	defaultEosTokenId := uint16(0)
+	defaultBosTokenId := uint16(0)
+	defaultPadTokenId := uint16(0)
+	defaultBosTokenStr := "<|startoftext|>"
+	defaultEosTokenStr := "<|endoftext|>"
+	defaultPadTokenStr := ""
+	defaultVocabSize := uint16(50257)
+	defaultNewlinemode := "prefix"
+	defaultTokenizerClass := "GPT2BPETokenizer"
+	defaultAddBosToken := false
+	defaultAddEosToken := false
+	HFConfig := &HFConfig{
+		ModelId:        &defaultModelId,
+		ModelType:      &defaultModelType,
+		EosTokenId:     &defaultEosTokenId,
+		BosTokenId:     &defaultBosTokenId,
+		PadTokenId:     &defaultPadTokenId,
+		BosTokenStr:    &defaultBosTokenStr,
+		EosTokenStr:    &defaultEosTokenStr,
+		PadTokenStr:    &defaultPadTokenStr,
+		VocabSize:      &defaultVocabSize,
+		Newlinemode:    &defaultNewlinemode,
+		TokenizerClass: &defaultTokenizerClass,
+		AddBosToken:    &defaultAddBosToken,
+		AddEosToken:    &defaultAddEosToken,
+	}
+	return HFConfig
+}
+
 // Processor stores config to process one step of the pipeline
 type Processor struct {
 	ProcessorType string
@@ -709,10 +742,10 @@ func (p *Processor) Process(input interface{}) (interface{}, error) {
 	}
 }
 
-// ResolveResourcesFromRemoteOrLocal
+// LoadExternalResources
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
-func ResolveResourcesFromRemoteOrLocal(vocabId string, token string) (resources *Resources, err error) {
+func LoadExternalResources(vocabId string, token string) (resources *Resources, err error) {
 	dir, dirErr := ioutil.TempDir("", "resources")
 	if dirErr != nil {
 		return nil, dirErr
@@ -759,7 +792,7 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 
 	// Sometimes TokenIDs are not properly resolved, so we need to check
 	if hfConfig != nil {
-		if hfConfig.EosTokenId == nil || hfConfig.BosTokenId == nil || hfConfig.PadTokenId == nil {
+		if *hfConfig.EosTokenId == 0 || *hfConfig.BosTokenId == 0 || *hfConfig.PadTokenId == 0 {
 			hfConfig, err = resolveTokenIds(resources, hfConfig)
 			if err != nil {
 				return nil, err
@@ -894,36 +927,37 @@ func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (
 	// If not, try to unmarshal to the tokenizerSpecials
 	// that llama 2 has, else try mistral format
 	if config != nil || tokenizerConfig != nil {
-		hasReadForEOSBOS := false
+		hasReadForEosBos := false
 		hasReadForVocabSize := false
 
 		// Read config.json
 		if config != nil {
+			configMap := config.(map[string]interface{})
 			// Using interfaces, first check if bos_token is in string format
-			if bosToken, ok := config.(map[string]interface{})["bos_token"].(string); ok {
+			if bosToken, ok := configMap["bos_token"].(string); ok {
 				hfConfig.BosTokenStr = &bosToken
-				if eosToken, ok := config.(map[string]interface{})["eos_token"].(string); ok {
+				if eosToken, ok := configMap["eos_token"].(string); ok {
 					hfConfig.EosTokenStr = &eosToken
 				}
-				if padToken, ok := config.(map[string]interface{})["pad_token"].(string); ok {
+				if padToken, ok := configMap["pad_token"].(string); ok {
 					hfConfig.PadTokenStr = &padToken
 				}
-				hasReadForEOSBOS = true
+				hasReadForEosBos = true
 			}
 
 			// Read for EOS BOS token ID
-			if eosTokenId, ok := config.(map[string]interface{})["eos_token_id"].(float64); ok {
+			if eosTokenId, ok := configMap["eos_token_id"].(float64); ok {
 				eosTokenIdInt := uint16(eosTokenId)
 				hfConfig.EosTokenId = &eosTokenIdInt
 			}
-			if bosTokenId, ok := config.(map[string]interface{})["bos_token_id"].(float64); ok {
+			if bosTokenId, ok := configMap["bos_token_id"].(float64); ok {
 				bosTokenIdInt := uint16(bosTokenId)
 				hfConfig.BosTokenId = &bosTokenIdInt
 			}
 
 			// Read for vocab size
 			if !hasReadForVocabSize {
-				if vocabSize, ok := config.(map[string]interface{})["vocab_size"].(float64); ok {
+				if vocabSize, ok := configMap["vocab_size"].(float64); ok {
 					vocabSizeInt := uint16(vocabSize)
 					hfConfig.VocabSize = &vocabSizeInt
 					hasReadForVocabSize = true
@@ -933,56 +967,56 @@ func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (
 
 		// Read tokenizer_config.json
 		if tokenizerConfig != nil {
-			if !hasReadForEOSBOS {
+			tokenizerConfigMap := tokenizerConfig.(map[string]interface{})
+			if !hasReadForEosBos {
 				// Using interfaces, first check if bos_token is in string format
-				if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(string); ok {
 					hfConfig.BosTokenStr = &bosToken
-					if eosToken, ok := tokenizerConfig.(map[string]interface{})["eos_token"].(string); ok {
+					if eosToken, ok := tokenizerConfigMap["eos_token"].(string); ok {
 						hfConfig.EosTokenStr = &eosToken
 					}
-					if padToken, ok := tokenizerConfig.(map[string]interface{})["pad_token"].(string); ok {
+					if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
 						hfConfig.PadTokenStr = &padToken
 					}
-					hasReadForEOSBOS = true
+					hasReadForEosBos = true
 
 				}
 			}
 			// If not, assume llama2 format and try to unmarshal
-			if !hasReadForEOSBOS {
-				cfg := tokenizerConfig.(map[string]interface{})
-				if bosToken, ok := cfg["bos_token"].(map[string]interface{}); ok {
+			if !hasReadForEosBos {
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(map[string]interface{}); ok {
 					if content, ok := bosToken["content"].(string); ok {
 						hfConfig.BosTokenStr = &content
 					}
 				}
-				if eosToken, ok := cfg["eos_token"].(map[string]interface{}); ok {
+				if eosToken, ok := tokenizerConfigMap["eos_token"].(map[string]interface{}); ok {
 					if content, ok := eosToken["content"].(string); ok {
 						hfConfig.EosTokenStr = &content
 					}
 				}
-				if padToken, ok := cfg["pad_token"].(string); ok {
+				if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
 					hfConfig.PadTokenStr = &padToken
 				}
 			}
 			// If that doesn't work, assume mistral format
-			if !hasReadForEOSBOS {
-				if bosToken, ok := tokenizerConfig.(map[string]interface{})["bos_token"].(string); ok {
+			if !hasReadForEosBos {
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(string); ok {
 					hfConfig.BosTokenStr = &bosToken
 				}
-				if eosToken, ok := tokenizerConfig.(map[string]interface{})["eos_token"].(string); ok {
+				if eosToken, ok := tokenizerConfigMap["eos_token"].(string); ok {
 					hfConfig.EosTokenStr = &eosToken
 				}
-				if padToken, ok := tokenizerConfig.(map[string]interface{})["pad_token"].(string); ok {
+				if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
 					hfConfig.PadTokenStr = &padToken
 				}
 			}
 
 			// Read for enclose eos bos
-			if encloseEos, ok := tokenizerConfig.(map[string]interface{})["add_bos_token"].(bool); ok {
+			if encloseEos, ok := tokenizerConfigMap["add_bos_token"].(bool); ok {
 				hfConfig.AddBosToken = &encloseEos
 			}
 
-			if encloseBos, ok := tokenizerConfig.(map[string]interface{})["add_eos_token"].(bool); ok {
+			if encloseBos, ok := tokenizerConfigMap["add_eos_token"].(bool); ok {
 				hfConfig.AddEosToken = &encloseBos
 			}
 		}
@@ -1072,7 +1106,7 @@ func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
 
 	}
 	// Local resources
-	resources, err := ResolveResourcesFromRemoteOrLocal(vocabId, token)
+	resources, err := LoadExternalResources(vocabId, token)
 	if err != nil {
 		return nil, err
 	}
@@ -1089,16 +1123,8 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		return nil, nil, err
 	}
 
-	endOfText := "<|endoftext|>"
-	bosText := "<|startoftext|>"
-	eosbosDefault := false
-	hf := &HFConfig{
-		ModelId:     &vocabId,
-		BosTokenStr: &bosText,
-		EosTokenStr: &endOfText,
-		AddBosToken: &eosbosDefault,
-		AddEosToken: &eosbosDefault,
-	}
+	hf := NewHFConfig()
+	hf.ModelId = &vocabId
 	hf, err = ResolveHFFromResources(rsc, hf)
 	if err != nil {
 		return nil, nil, err
