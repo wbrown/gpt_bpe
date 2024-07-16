@@ -338,9 +338,10 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	if specialConfig.EncloseEosBos {
-		eosBosBool := true
-		hfConfig.AddBosToken = &eosBosBool
-		hfConfig.AddEosToken = &eosBosBool
+		bosBool := true
+		eosBool := true
+		hfConfig.AddBosToken = &bosBool
+		hfConfig.AddEosToken = &eosBool
 	}
 
 	// Add in default pad token if not already set
