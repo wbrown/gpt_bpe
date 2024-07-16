@@ -92,6 +92,8 @@ func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
 			resp.StatusCode))
 	}
 	return resp.Body, nil
+
+	// testing copilot:
 }
 
 // SizeHTTP

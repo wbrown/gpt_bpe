@@ -884,6 +884,29 @@ func TestReadTokenizerConfig(t *testing.T) {
 	fmt.Println("All Exists - Looks good.")
 }
 
+func TestPythiaRemoteDownloadTokenizer(t *testing.T) {
+	// Tests the ability to download a tokenizer from a remote model
+	// and use it to encode and decode strings
+	modelId := "EleutherAI/pythia-70m"
+	destPath := "./TestPythiaRemoteDownloadTokenizer"
+	defer os.RemoveAll(destPath)
+	encoderPythia, err := NewEncoder(modelId)
+	if err != nil {
+		t.Errorf("Error creating encoder: %v", err)
+	}
+
+	// Attempt to tokenize
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+
+	// Encode the string
+	encoded := encoderPythia.Encode(&testString)
+	// Check that the encoded string is the same as the expected - Reference from python's transformers lib
+	expected := Tokens{510, 30013, 16780, 689, 253, 419, 250, 15, 187, 510, 45993, 310, 7938, 685, 253, 419, 250, 15}
+	if !assert.Equal(t, expected, *encoded) {
+		t.Errorf("Expected: %v\nActual: %v", expected, *encoded)
+	}
+}
+
 func TestGPTDecoder_Decode(t *testing.T) {
 	// TBD
 }
