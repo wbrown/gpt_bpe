@@ -881,12 +881,14 @@ func resolveVocabSize(resources *Resources, hfConfig *HFConfig) (*HFConfig, erro
 
 	// Get length of vocab
 	var vocabLen *uint16
-	if vocab != nil {
-		if vocabMap, ok := vocab.(map[string]interface{}); ok {
-			vocabLen = new(uint16)
-			*vocabLen = uint16(len(vocabMap))
-		}
+	if vocab == nil {
+		return nil, errors.New("vocab file not found")
 	}
+	if vocabMap, ok := vocab.(map[string]interface{}); ok {
+		vocabLen = new(uint16)
+		*vocabLen = uint16(len(vocabMap))
+	}
+
 	hfConfig.VocabSize = vocabLen
 	return hfConfig, nil
 }
