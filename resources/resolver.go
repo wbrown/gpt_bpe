@@ -805,7 +805,9 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 // resolveTokenIds
 // Resolve token ids for eos, bos, and pad tokens from resources.
 func resolveTokenIds(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
-	// Use interfaces to unmarshal the vocab file from resources
+	// Vocab is stored in either the vocab.json or encoder.json file
+	// We want to unmarshal the vocab file into an interface to work with
+	// We attempt to unmarshal under the vocab.json key first, then encoder.json if it fails
 	var vocab interface{}
 	if _, err := resources.GetFile("vocab.json"); err == nil {
 		if err := json.Unmarshal(*((*resources)["vocab.json"]).Data, &vocab); err != nil {
@@ -859,10 +861,10 @@ func resolveTokenIds(resources *Resources, hfConfig *HFConfig) (*HFConfig, error
 // Used to be able to resolve both embedded and local resources.
 // Continuation of ResolveHFFromResources.
 func resolveVocabSize(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
-	// Use interfaces to unmarshal the vocab file
 	var vocab interface{}
-	// If exists, unmarshal vocab.json, else
-	// use GetFile to get the file, then unmarshal it
+	// Vocab is stored in either the vocab.json or encoder.json file
+	// We want to unmarshal the vocab file into an interface to work with
+	// We attempt to unmarshal under the vocab.json key first, then encoder.json if it fails
 	if _, err := resources.GetFile("vocab.json"); err == nil {
 		if err := json.Unmarshal(*((*resources)["vocab.json"]).Data, &vocab); err != nil {
 			fmt.Errorf("Error unmarshalling vocab.json: %s", err)
