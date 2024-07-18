@@ -823,33 +823,30 @@ func resolveTokenIds(resources *Resources, hfConfig *HFConfig) (*HFConfig, error
 		}
 	}
 
-	// Get the token ids for eos, bos, and pad tokens
-	if vocab != nil {
-		if vocabMap, ok := vocab.(map[string]interface{}); ok {
-			if hfConfig.EosTokenStr != nil {
-				if eosToken, ok := vocabMap[*(hfConfig.EosTokenStr)]; ok {
-					if eosTokenInt, ok := eosToken.(float64); ok {
-						hfConfig.EosTokenId = new(uint16)
-						*hfConfig.EosTokenId = uint16(eosTokenInt)
-					}
-				}
-			}
-			if hfConfig.BosTokenStr != nil {
-				if bosToken, ok := vocabMap[*(hfConfig.BosTokenStr)]; ok {
-					if bosTokenInt, ok := bosToken.(float64); ok {
-						hfConfig.BosTokenId = new(uint16)
-						*hfConfig.BosTokenId = uint16(bosTokenInt)
-					}
-				}
-			}
+	// If vocab is nil, return an error
+	if vocab == nil {
+		return nil, errors.New("vocab file not found")
+	}
 
-			if hfConfig.PadTokenStr != nil {
-				if padToken, ok := vocabMap[*(hfConfig.PadTokenStr)]; ok {
-					if padTokenInt, ok := padToken.(float64); ok {
-						hfConfig.PadTokenId = new(uint16)
-						*hfConfig.PadTokenId = uint16(padTokenInt)
-					}
-				}
+	// Get the token ids for eos, bos, and pad tokens
+	if vocabMap, ok := vocab.(map[string]interface{}); ok {
+		if hfConfig.EosTokenStr != nil {
+			if eosTokenInt, ok := vocabMap[*(hfConfig.EosTokenStr)].(float64); ok {
+				hfConfig.EosTokenId = new(uint16)
+				*hfConfig.EosTokenId = uint16(eosTokenInt)
+			}
+		}
+		if hfConfig.BosTokenStr != nil {
+			if bosTokenInt, ok := vocabMap[*(hfConfig.BosTokenStr)].(float64); ok {
+				hfConfig.BosTokenId = new(uint16)
+				*hfConfig.BosTokenId = uint16(bosTokenInt)
+			}
+		}
+
+		if hfConfig.PadTokenStr != nil {
+			if padTokenInt, ok := vocabMap[*(hfConfig.PadTokenStr)].(float64); ok {
+				hfConfig.PadTokenId = new(uint16)
+				*hfConfig.PadTokenId = uint16(padTokenInt)
 			}
 		}
 	}
