@@ -25,6 +25,7 @@ import (
 //go:embed data/clip-tokenizer/unitrim.json
 //go:embed data/clip-tokenizer/specials.txt
 //go:embed data/clip-tokenizer/special_config.json
+//go:embed data/clip-tokenizer/special_tokens_map.json
 //go:embed data/nerdstash_v1-tokenizer/encoder.json
 //go:embed data/nerdstash_v1-tokenizer/merges.json
 //go:embed data/nerdstash_v1-tokenizer/specials.txt
@@ -38,6 +39,12 @@ import (
 //go:embed data/llama-tokenizer/tokenizer_config.json
 //go:embed data/llama-tokenizer/special_tokens_map.json
 //go:embed data/llama-tokenizer/encoder.json
+//go:embed data/mistral-tokenizer/merges.json
+//go:embed data/mistral-tokenizer/specials.txt
+//go:embed data/mistral-tokenizer/tokenizer_config.json
+//go:embed data/mistral-tokenizer/tokenizer.json
+//go:embed data/mistral-tokenizer/special_tokens_map.json
+//go:embed data/mistral-tokenizer/encoder.json
 var f embed.FS
 
 // GetEmbeddedResource
