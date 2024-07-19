@@ -22,6 +22,7 @@ import (
 const BPE_LRU_SZ = 65536
 const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
+const defaultPadTokenString = "[PAD]"
 
 type Token uint16
 type Tokens []Token
@@ -105,6 +106,7 @@ const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
 const VOCAB_ID_LLAMA = "llama-tokenizer"
+const VOCAB_ID_MISTRAL = "mistral-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_GPT2)
@@ -136,12 +138,17 @@ func NewLlama2Encoder() GPTEncoder {
 	return *encoder
 }
 
+func NewMistralEncoder() GPTEncoder {
+	encoder, _ := NewEncoder(VOCAB_ID_MISTRAL)
+	return *encoder
+}
+
 // NewEncoder
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
-	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId,
-		"")
+	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId, "")
+
 	if vocabErr != nil {
 		return nil, vocabErr
 	}
@@ -165,20 +172,6 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		if special.Data != nil {
 			if json.Unmarshal(*special.Data, &specialConfig) != nil {
 				log.Fatal("Error unmarshalling special_config.json")
-			}
-		}
-	}
-
-	tokenizerSpecialConfig := resources.TokenizerSpecialsConfig{
-		AddBosToken: false,
-		AddEosToken: false,
-		PadToken:    "",
-	}
-	if special, ok := (rsrcs)["tokenizer_config.json"]; ok {
-		if special.Data != nil {
-			err := json.Unmarshal(*special.Data, &tokenizerSpecialConfig)
-			if err != nil {
-				log.Fatal("Error unmarshalling tokenizer_config.json: ", err)
 			}
 		}
 	}
@@ -345,9 +338,28 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	if specialConfig.EncloseEosBos {
-		tokenizerSpecialConfig.AddBosToken = true
-		tokenizerSpecialConfig.AddEosToken = true
+		bosBool := true
+		eosBool := true
+		hfConfig.AddBosToken = &bosBool
+		hfConfig.AddEosToken = &eosBool
 	}
+
+	// Add in default pad token if not already set
+	padTokenNotFound := (hfConfig.PadTokenStr == nil)
+	if padTokenNotFound {
+		// Inject the pad token into the encoder to uintmax16,
+		// throw an error if vocab is larger than uintmax16
+		if len(encoderTokens) >= math.MaxUint16 {
+			log.Fatalf("Vocab size of %d is larger than uint16 max of %d. "+
+				"Please specify a pad token in the vocab file.",
+				len(encoderTokens), math.MaxUint16)
+		}
+		padToken := defaultPadTokenString
+		encoderTokens[padToken] = math.MaxUint16
+		hfConfig.PadTokenStr = &padToken
+	}
+
+	// Create the encoder
 	encoder := &GPTEncoder{
 		encoderTokens,
 		tokensEncoder,
@@ -370,8 +382,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
 		specialConfig.EncloseEosBos,
-		tokenizerSpecialConfig.AddBosToken,
-		tokenizerSpecialConfig.AddEosToken,
+		*hfConfig.AddBosToken,
+		*hfConfig.AddEosToken,
 		specialConfig.PrefixSpace,
 		specialConfig.LowerCase,
 		specialConfig.EndOfWord,
@@ -1018,6 +1030,11 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
 	}
+	// Temporary hack - inject a space token at the end of the accumulator for mistral-tokenizer
+	if encoder.VocabId == "mistral-tokenizer" {
+		accumulator = append(accumulator, encoder.Encoder[" "])
+	}
+
 	return func(desiredTokens int) *Tokens {
 		for {
 			// If we have enough tokens, then we return them, and reset the

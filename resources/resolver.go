@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -76,6 +77,15 @@ func (rsrcs *Resources) Cleanup() {
 		case fs.File:
 			t.Close()
 		}
+	}
+}
+
+// return file
+func (rsrc *Resources) GetFile(name string) (interface{}, error) {
+	if rsrcEntry, ok := (*rsrc)[name]; ok {
+		return rsrcEntry.file, nil
+	} else {
+		return nil, fmt.Errorf("file %s not found", name)
 	}
 }
 
@@ -667,6 +677,8 @@ type HFConfig struct {
 	VocabSize      *uint16 `json:"vocab_size,omitempty"`
 	Newlinemode    *string `json:"newlinemode,omitempty"`
 	TokenizerClass *string `json:"tokenizer_class"`
+	AddBosToken    *bool   `json:"add_bos_token,omitempty"`
+	AddEosToken    *bool   `json:"add_eos_token,omitempty"`
 }
 
 // Additional special tokenizer configuration.
@@ -681,33 +693,62 @@ type SpecialConfig struct {
 	SplitRegex    *string            `json:"split_regex"`
 }
 
-// TokenizerConfig file, new HF format
-type TokenizerSpecialsConfig struct {
-	AddBosToken bool              `json:"add_bos_token,omitempty"`
-	BosToken    TokenizerSpecials `json:"bos_token,omitempty"`
-	EosToken    TokenizerSpecials `json:"eos_token,omitempty"`
-	AddEosToken bool              `json:"add_eos_token,omitempty"`
-	PadToken    string            `json:"pad_token,omitempty"`
+// NewHFConfig creates a new HFConfig object with default values.
+func NewHFConfig() *HFConfig {
+	defaultModelId := ""
+	defaultModelType := "gpt2"
+	defaultEosTokenId := uint16(0)
+	defaultBosTokenId := uint16(0)
+	defaultPadTokenId := uint16(0)
+	defaultBosTokenStr := "<|startoftext|>"
+	defaultEosTokenStr := "<|endoftext|>"
+	defaultPadTokenStr := ""
+	defaultVocabSize := uint16(50257)
+	defaultNewlinemode := "prefix"
+	defaultTokenizerClass := "GPT2BPETokenizer"
+	defaultAddBosToken := false
+	defaultAddEosToken := false
+	HFConfig := &HFConfig{
+		ModelId:        &defaultModelId,
+		ModelType:      &defaultModelType,
+		EosTokenId:     &defaultEosTokenId,
+		BosTokenId:     &defaultBosTokenId,
+		PadTokenId:     &defaultPadTokenId,
+		BosTokenStr:    &defaultBosTokenStr,
+		EosTokenStr:    &defaultEosTokenStr,
+		PadTokenStr:    &defaultPadTokenStr,
+		VocabSize:      &defaultVocabSize,
+		Newlinemode:    &defaultNewlinemode,
+		TokenizerClass: &defaultTokenizerClass,
+		AddBosToken:    &defaultAddBosToken,
+		AddEosToken:    &defaultAddEosToken,
+	}
+	return HFConfig
 }
 
-// sub type of TokenizerSpecialsConfig, for eos, bos, pad tokens
-type TokenizerSpecials struct {
-	Type        string `json:"__type,omitempty"`
-	Content     string `json:"content,omitempty"`
-	Lstrip      bool   `json:"lstrip,omitempty"`
-	Normalized  bool   `json:"normalized,omitempty"`
-	Rstrip      bool   `json:"rstrip,omitempty"`
-	Single_word bool   `json:"single_word,omitempty"`
+// Processor stores config to process one step of the pipeline
+type Processor struct {
+	ProcessorType string
+	ProcessorArgs map[string]interface{}
 }
 
-// ResolveConfig
+// Process the input with the processor
+func (p *Processor) Process(input interface{}) (interface{}, error) {
+	switch p.ProcessorType {
+	case "prepend":
+		return nil, errors.New("prepend not implemented")
+	default:
+		return nil, errors.New("unknown processor type")
+	}
+}
+
+// LoadExternalResources
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
-func ResolveConfig(vocabId string, token string) (config *HFConfig,
-	resources *Resources, err error) {
+func LoadExternalResources(vocabId string, token string) (resources *Resources, err error) {
 	dir, dirErr := ioutil.TempDir("", "resources")
 	if dirErr != nil {
-		return nil, nil, dirErr
+		return nil, dirErr
 	}
 	defer os.RemoveAll(dir)
 	rslvdResources, rsrcErr := ResolveResources(
@@ -717,68 +758,320 @@ func ResolveConfig(vocabId string, token string) (config *HFConfig,
 		RESOURCETYPE_TRANSFORMERS,
 		token)
 	if rsrcErr != nil {
-		return nil, nil, rsrcErr
+		return nil, rsrcErr
 	} else {
 		resources = rslvdResources
 	}
+	return resources, nil
 
-	var hfConfig HFConfig
-	if configErr := json.Unmarshal(*((*resources)["config.json"]).Data,
-		&hfConfig); configErr != nil {
-		resources.Cleanup()
-		return nil, nil, errors.New(fmt.Sprintf(
-			"error unmarshalling config.json: %s", configErr))
-	}
-
-	specialTokens, specialsErr := resources.ResolveSpecialTokens(dir)
-	if specialsErr != nil {
-		resources.Cleanup()
-		return nil, nil, specialsErr
-	}
-	defaultTkn := "<|endoftext|>"
-	eosToken, ok := specialTokens["eos_token"]
-	if !ok {
-		eosToken = defaultTkn
-	}
-	hfConfig.EosTokenStr = &eosToken
-	padToken, ok := specialTokens["pad_token"]
-	if !ok {
-		padToken = defaultTkn
-	}
-	hfConfig.PadTokenStr = &padToken
-	bosToken, ok := specialTokens["bos_token"]
-	if !ok {
-		bosToken = defaultTkn
-	}
-	hfConfig.BosTokenStr = &bosToken
-
-	if hfConfig.EosTokenStr == nil {
-		hfConfig.EosTokenStr = &defaultTkn
-	}
-	if hfConfig.PadTokenStr == nil {
-		hfConfig.PadTokenStr = &defaultTkn
-	}
-	if hfConfig.BosTokenStr == nil {
-		hfConfig.BosTokenStr = &defaultTkn
-	}
-
-	return &hfConfig, resources, nil
 }
 
-// ResolveVocabId
-// Resolves a vocabulary id to a set of resources, from embedded,
-// local filesystem, or remote.
-func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error) {
-	var resolvedVocabId string
-	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
-		endOfText := "<|endoftext|>"
-		bosText := "<|startoftext|>"
-		hf := &HFConfig{
-			ModelId:     &vocabId,
-			BosTokenStr: &bosText,
-			EosTokenStr: &endOfText,
-			PadTokenStr: &endOfText,
+// ResolveHFFromResources
+// Given a set of resources, resolve the HuggingFace configuration.
+// Used to be able to resolve both embedded and local resources.
+func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Resolve config and tokenizer config from resources
+	// config.json and tokenizer_config.json
+	hfConfig, err := resolveConfigAndTokenizerConfig(resources, hfConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve special tokens and special tokens config from resources
+	// special_tokens_map.json and specials.txt
+	hfConfig, err = resolveSpecialsAndSpecialTokens(resources, hfConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve Vocab size from vocab.json or encoder.json
+	hfConfig, err = resolveVocabSize(resources, hfConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sometimes TokenIDs are not properly resolved, so we need to check
+	if hfConfig != nil {
+		if *hfConfig.EosTokenId == 0 || *hfConfig.BosTokenId == 0 || *hfConfig.PadTokenId == 0 {
+			hfConfig, err = resolveTokenIds(resources, hfConfig)
+			if err != nil {
+				return nil, err
+			}
 		}
+	}
+	return hfConfig, nil
+}
+
+// resolveTokenIds
+// Resolve token ids for eos, bos, and pad tokens from resources.
+func resolveTokenIds(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Vocab is stored in either the vocab.json or encoder.json file
+	// We want to unmarshal the vocab file into an interface to work with
+	// We attempt to unmarshal under the vocab.json key first, then encoder.json if it fails
+	var vocab interface{}
+	if _, err := resources.GetFile("vocab.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["vocab.json"]).Data, &vocab); err != nil {
+			fmt.Errorf("Error unmarshalling vocab.json: %s", err)
+			return nil, err
+		}
+	} else {
+		if _, err := resources.GetFile("encoder.json"); err == nil {
+			if err := json.Unmarshal(*((*resources)["encoder.json"]).Data, &vocab); err != nil {
+				fmt.Errorf("Error unmarshalling encoder.json: %s", err)
+				return nil, err
+			}
+		} else {
+			log.Printf("Vocab file not found, will attempt to skip\n")
+		}
+	}
+
+	// If vocab is nil, return an error
+	if vocab == nil {
+		return nil, errors.New("vocab file not found")
+	}
+
+	// Get the token ids for eos, bos, and pad tokens
+	if vocabMap, ok := vocab.(map[string]interface{}); ok {
+		if hfConfig.EosTokenStr != nil {
+			if eosTokenInt, ok := vocabMap[*(hfConfig.EosTokenStr)].(float64); ok {
+				hfConfig.EosTokenId = new(uint16)
+				*hfConfig.EosTokenId = uint16(eosTokenInt)
+			}
+		}
+		if hfConfig.BosTokenStr != nil {
+			if bosTokenInt, ok := vocabMap[*(hfConfig.BosTokenStr)].(float64); ok {
+				hfConfig.BosTokenId = new(uint16)
+				*hfConfig.BosTokenId = uint16(bosTokenInt)
+			}
+		}
+
+		if hfConfig.PadTokenStr != nil {
+			if padTokenInt, ok := vocabMap[*(hfConfig.PadTokenStr)].(float64); ok {
+				hfConfig.PadTokenId = new(uint16)
+				*hfConfig.PadTokenId = uint16(padTokenInt)
+			}
+		}
+	}
+
+	return hfConfig, nil
+}
+
+// resolveVocabSize
+// Resolve vocab size from resources.
+// Used to be able to resolve both embedded and local resources.
+// Continuation of ResolveHFFromResources.
+func resolveVocabSize(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	var vocab interface{}
+	// Vocab is stored in either the vocab.json or encoder.json file
+	// We want to unmarshal the vocab file into an interface to work with
+	// We attempt to unmarshal under the vocab.json key first, then encoder.json if it fails
+	if _, err := resources.GetFile("vocab.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["vocab.json"]).Data, &vocab); err != nil {
+			fmt.Errorf("Error unmarshalling vocab.json: %s", err)
+			return nil, err
+		}
+	} else {
+		if _, err := resources.GetFile("encoder.json"); err == nil {
+			if err := json.Unmarshal(*((*resources)["encoder.json"]).Data, &vocab); err != nil {
+				fmt.Errorf("Error unmarshalling encoder.json: %s", err)
+				return nil, err
+			}
+		} else {
+			log.Printf("Vocab file not found, will attempt to skip\n")
+		}
+	}
+
+	// Get length of vocab
+	var vocabLen *uint16
+	if vocab == nil {
+		return nil, errors.New("vocab file not found")
+	}
+	if vocabMap, ok := vocab.(map[string]interface{}); ok {
+		vocabLen = new(uint16)
+		*vocabLen = uint16(len(vocabMap))
+	}
+
+	hfConfig.VocabSize = vocabLen
+	return hfConfig, nil
+}
+
+// resolveConfigAndTokenizerConfig
+// Resolve config and tokenizer config from resources.
+// Used to be able to resolve both embedded and local resources.
+// Continuation of ResolveHFFromResources.
+func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Use interfaces to unmarshal the config file and tokenizer config file
+	var config interface{}
+	var tokenizerConfig interface{}
+	// If exists, unmarshal config.json and tokenizer_config.json, else
+	// use GetFile to get the file, then unmarshal it
+	if _, err := resources.GetFile("config.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["config.json"]).Data, &config); err != nil {
+			fmt.Errorf("Error unmarshalling config.json: %s", err)
+			return nil, err
+		}
+	} else {
+		log.Printf("Model file %s, will attempt to skip\n", err)
+	}
+
+	if _, err := resources.GetFile("tokenizer_config.json"); err == nil {
+		if err := json.Unmarshal(*((*resources)["tokenizer_config.json"]).Data, &tokenizerConfig); err != nil {
+			fmt.Errorf("Error unmarshalling tokenizer_config.json: %s", err)
+			return nil, err
+		}
+	} else {
+		log.Printf("Model file: %s, will attempt to skip\n", err)
+
+	}
+
+	// Check if bos_token is in string, this is the old format pythia has.
+	// If not, try to unmarshal to the tokenizerSpecials
+	// that llama 2 has, else try mistral format
+	if config != nil || tokenizerConfig != nil {
+		hasReadForEosBos := false
+		hasReadForVocabSize := false
+
+		// Read config.json
+		if config != nil {
+			configMap := config.(map[string]interface{})
+			// Using interfaces, first check if bos_token is in string format
+			if bosToken, ok := configMap["bos_token"].(string); ok {
+				hfConfig.BosTokenStr = &bosToken
+				if eosToken, ok := configMap["eos_token"].(string); ok {
+					hfConfig.EosTokenStr = &eosToken
+				}
+				if padToken, ok := configMap["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+				hasReadForEosBos = true
+			}
+
+			// Read for EOS BOS token ID
+			if eosTokenId, ok := configMap["eos_token_id"].(float64); ok {
+				eosTokenIdInt := uint16(eosTokenId)
+				hfConfig.EosTokenId = &eosTokenIdInt
+			}
+			if bosTokenId, ok := configMap["bos_token_id"].(float64); ok {
+				bosTokenIdInt := uint16(bosTokenId)
+				hfConfig.BosTokenId = &bosTokenIdInt
+			}
+
+			// Read for vocab size
+			if !hasReadForVocabSize {
+				if vocabSize, ok := configMap["vocab_size"].(float64); ok {
+					vocabSizeInt := uint16(vocabSize)
+					hfConfig.VocabSize = &vocabSizeInt
+					hasReadForVocabSize = true
+				}
+			}
+		}
+
+		// Read tokenizer_config.json
+		if tokenizerConfig != nil {
+			tokenizerConfigMap := tokenizerConfig.(map[string]interface{})
+			if !hasReadForEosBos {
+				// Using interfaces, first check if bos_token is in string format
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(string); ok {
+					hfConfig.BosTokenStr = &bosToken
+					if eosToken, ok := tokenizerConfigMap["eos_token"].(string); ok {
+						hfConfig.EosTokenStr = &eosToken
+					}
+					if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
+						hfConfig.PadTokenStr = &padToken
+					}
+					hasReadForEosBos = true
+
+				}
+			}
+			// If not, assume llama2 format and try to unmarshal
+			if !hasReadForEosBos {
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(map[string]interface{}); ok {
+					if content, ok := bosToken["content"].(string); ok {
+						hfConfig.BosTokenStr = &content
+					}
+				}
+				if eosToken, ok := tokenizerConfigMap["eos_token"].(map[string]interface{}); ok {
+					if content, ok := eosToken["content"].(string); ok {
+						hfConfig.EosTokenStr = &content
+					}
+				}
+				if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+			}
+			// If that doesn't work, assume mistral format
+			if !hasReadForEosBos {
+				if bosToken, ok := tokenizerConfigMap["bos_token"].(string); ok {
+					hfConfig.BosTokenStr = &bosToken
+				}
+				if eosToken, ok := tokenizerConfigMap["eos_token"].(string); ok {
+					hfConfig.EosTokenStr = &eosToken
+				}
+				if padToken, ok := tokenizerConfigMap["pad_token"].(string); ok {
+					hfConfig.PadTokenStr = &padToken
+				}
+			}
+
+			// Read for enclose eos bos
+			if encloseEos, ok := tokenizerConfigMap["add_bos_token"].(bool); ok {
+				hfConfig.AddBosToken = &encloseEos
+			}
+
+			if encloseBos, ok := tokenizerConfigMap["add_eos_token"].(bool); ok {
+				hfConfig.AddEosToken = &encloseBos
+			}
+		}
+
+	}
+	return hfConfig, nil
+}
+
+// resolveSpecialsAndSpecialTokens
+// Resolve special tokens and special tokens config from resources.
+// Used to be able to resolve both embedded and local resources.
+// Continuation of ResolveHFFromResources.
+func resolveSpecialsAndSpecialTokens(resources *Resources, hfConfig *HFConfig) (*HFConfig, error) {
+	// Get specials config from resources
+	// We can only generate specials.json if we have special_tokens_map
+	specialsJson, ok := (*resources)["special_tokens_map.json"]
+	if ok {
+		specialTokens := make(map[string]interface{}, 0)
+		if specialErr := json.Unmarshal(*specialsJson.Data,
+			&specialTokens); specialErr != nil {
+			return nil, specialErr
+		}
+
+		// Try to get pad token from specials if not already set
+		if hfConfig.PadTokenStr == nil {
+			if padToken, ok := specialTokens["pad_token"].(string); ok {
+				hfConfig.PadTokenStr = &padToken
+			}
+		}
+	}
+
+	// Get from specials.json
+	specialsTxt, ok := (*resources)["specials.txt"]
+	if ok {
+		// Treat specials.txt as an array of strings and try to match
+		specials := strings.Split(string(*specialsTxt.Data), "\n")
+		if hfConfig.PadTokenStr == nil {
+			for _, special := range specials {
+				if strings.Contains(strings.ToLower(special), "pad") {
+					hfConfig.PadTokenStr = &special
+					break
+				}
+			}
+		}
+	}
+	return hfConfig, nil
+}
+
+// ResolveResourcesList
+// Resolves a list of resources, and checks if they exist in the given directory.
+// If they don't exist, they are downloaded.
+func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
+	// Resolve the vocab id - Embedded resources
+	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		resources := make(Resources, 0)
 
 		if config := GetEmbeddedResource(vocabId + "/encoder." +
@@ -802,35 +1095,42 @@ func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error)
 		if special_config != nil {
 			resources["special_config.json"] = *special_config
 		}
+		tokenizerJson := GetEmbeddedResource(vocabId + "/tokenizer.json")
+		if tokenizerJson != nil {
+			resources["tokenizer.json"] = *tokenizerJson
+		}
 		tokenizer_specials_config := GetEmbeddedResource(vocabId + "/tokenizer_config.json")
 		if tokenizer_specials_config != nil {
 			resources["tokenizer_config.json"] = *tokenizer_specials_config
-
-			// Set the start, end, pad tokens
-			var tokenizerSpecialsConfig TokenizerSpecialsConfig
-			if err := json.Unmarshal(*tokenizer_specials_config.Data, &tokenizerSpecialsConfig); err != nil {
-				return nil, nil, err
-			}
-			hf.BosTokenStr = &tokenizerSpecialsConfig.BosToken.Content
-			hf.EosTokenStr = &tokenizerSpecialsConfig.EosToken.Content
-			hf.PadTokenStr = &tokenizerSpecialsConfig.PadToken
 		}
-		return hf, &resources, nil
+		return &resources, nil
+
 	}
-	if isValidUrl(vocabId) {
-		u, _ := url.Parse(vocabId)
-		basePath := path.Base(u.Path)
-		resolvedVocabId = basePath
-	} else {
-		resolvedVocabId = vocabId
+	// Local resources
+	resources, err := LoadExternalResources(vocabId, token)
+	if err != nil {
+		return nil, err
 	}
-	config, resources, err := ResolveConfig(vocabId, token)
+	return resources, nil
+
+}
+
+// ResolveVocabId
+// Resolves a vocabulary id to a set of resources, from embedded,
+// local filesystem, or remote, and applies processing to the resources.
+func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error) {
+	rsc, err := ResolveResourcesList(vocabId, token)
 	if err != nil {
 		return nil, nil, err
-	} else {
-		config.ModelId = &resolvedVocabId
-		return config, resources, nil
 	}
+
+	hf := NewHFConfig()
+	hf.ModelId = &vocabId
+	hf, err = ResolveHFFromResources(rsc, hf)
+	if err != nil {
+		return nil, nil, err
+	}
+	return hf, rsc, nil
 }
 
 func ExtractModelFromTokenizer(dir *string) (map[string]interface{}, error) {
@@ -987,4 +1287,58 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	}
 
 	return nameOfLastInt, nil
+}
+
+func FindProcessingStepsFromTokenizer(model ResourceEntry) ([]Processor, error) {
+	// convert the data to a map
+	var data map[string]interface{}
+	err := json.Unmarshal(*model.Data, &data)
+	if err != nil {
+		return nil, err
+	}
+
+	// create array of processors
+	var processors []Processor
+	// check if normalizer is present
+	normalizer, ok := data["normalizer"].(map[string]interface{})
+	if normalizer != nil && ok {
+		// add normalizer to processors
+		processor := Processor{
+			ProcessorType: "normalizer",
+			ProcessorArgs: normalizer,
+		}
+		processors = append(processors, processor)
+	}
+	// check if pre_tokenizer is present
+	pre_tokenizer, ok := data["pre_tokenizer"].(map[string]interface{})
+	if pre_tokenizer != nil && ok {
+		// add pre_tokenizer to processors
+		processor := Processor{
+			ProcessorType: "pre_tokenizer",
+			ProcessorArgs: pre_tokenizer,
+		}
+		processors = append(processors, processor)
+	}
+	// check if post_processor is present
+	post_processor, ok := data["post_processor"].(map[string]interface{})
+	if post_processor != nil && ok {
+		// add post_processor to processors
+		processor := Processor{
+			ProcessorType: "post_processor",
+			ProcessorArgs: post_processor,
+		}
+		processors = append(processors, processor)
+	}
+	// check if decoder is present
+	decoder, ok := data["decoder"].(map[string]interface{})
+	if decoder != nil && ok {
+		// add decoder to processors
+		processor := Processor{
+			ProcessorType: "decoder",
+			ProcessorArgs: decoder,
+		}
+		processors = append(processors, processor)
+	}
+
+	return processors, nil
 }
