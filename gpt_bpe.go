@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -24,7 +25,7 @@ const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
 const defaultPadTokenString = "[PAD]"
 
-type Token uint16
+type Token uint32
 type Tokens []Token
 
 type GPTEncoder struct {
@@ -106,6 +107,7 @@ const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
 const VOCAB_ID_LLAMA = "llama-tokenizer"
+const VOCAB_ID_LLAMA_3 = "llama3-tokenizer"
 const VOCAB_ID_MISTRAL = "mistral-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
@@ -135,6 +137,11 @@ func NewNerdstashV2Encoder() GPTEncoder {
 
 func NewLlama2Encoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_LLAMA)
+	return *encoder
+}
+
+func NewLlama3Encoder() GPTEncoder {
+	encoder, _ := NewEncoder(VOCAB_ID_LLAMA_3)
 	return *encoder
 }
 
@@ -238,7 +245,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	bpeRanks := make(map[GPTPair]float64)
 	if mergesTxt, ok := rsrcs["merges.txt"]; ok {
 		scanner := bufio.NewScanner(bytes.NewBuffer(*mergesTxt.Data))
-		idx := uint16(0)
+		idx := uint32(0)
 		firstLine := true
 		for scanner.Scan() {
 			if firstLine == true {
@@ -345,18 +352,34 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	// Add in default pad token if not already set
-	padTokenNotFound := (hfConfig.PadTokenStr == nil)
+	fmt.Printf("Pad token: %v\n", *hfConfig.PadTokenStr)
+	padTokenNotFound := (hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == "")
 	if padTokenNotFound {
-		// Inject the pad token into the encoder to uintmax16,
-		// throw an error if vocab is larger than uintmax16
-		if len(encoderTokens) >= math.MaxUint16 {
-			log.Fatalf("Vocab size of %d is larger than uint16 max of %d. "+
-				"Please specify a pad token in the vocab file.",
-				len(encoderTokens), math.MaxUint16)
+		// Attempt to resolve from specials
+		fmt.Printf("Attempting to resolve pad token from specials %v\n", specials)
+		for k := range specials {
+			if strings.Contains(k, "pad") {
+				hfConfig.PadTokenStr = &k
+				padTokenNotFound = false
+				break
+			}
 		}
-		padToken := defaultPadTokenString
-		encoderTokens[padToken] = math.MaxUint16
-		hfConfig.PadTokenStr = &padToken
+		// Inject the pad token into the encoder to uintmax32,
+		// throw an error if vocab is larger than uintmax32
+		if len(encoderTokens) >= math.MaxUint32 {
+			log.Fatalf("Vocab size of %d is larger than uint32 max of %d. "+
+				"Please specify a pad token in the vocab file.",
+				len(encoderTokens), math.MaxUint32)
+		}
+		if padTokenNotFound {
+			padToken := defaultPadTokenString
+			if len(encoderTokens) > math.MaxUint16 {
+				encoderTokens[padToken] = math.MaxUint32
+			} else {
+				encoderTokens[padToken] = math.MaxUint16
+			}
+			hfConfig.PadTokenStr = &padToken
+		}
 	}
 
 	// Create the encoder
@@ -1220,7 +1243,7 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
 func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
-	// First convert our bytearray into a uint16 `Token` array.
+	// First convert our bytearray into a uint32 `Token` array.
 	tokens := TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)

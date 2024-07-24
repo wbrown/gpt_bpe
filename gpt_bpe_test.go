@@ -25,6 +25,7 @@ var gpt2Encoder GPTEncoder
 var pileEncoder GPTEncoder
 var nerdstashV2Encoder GPTEncoder
 var llama2Encoder GPTEncoder
+var llama3Encoder GPTEncoder
 var mistralEncoder GPTEncoder
 var corpus string
 var clipCorpus string
@@ -35,6 +36,7 @@ var pileEncoded *Tokens
 var clipEncoded *Tokens
 var nerdstashEncoded *Tokens
 var llama2Encoded *Tokens
+var llama3Encoded *Tokens
 var mistralEncoded *Tokens
 var unicodeTrimTests []*Tokens
 
@@ -96,6 +98,7 @@ func init() {
 	clipEncoder = NewCLIPEncoder()
 	nerdstashV2Encoder = NewNerdstashV2Encoder()
 	llama2Encoder = NewLlama2Encoder()
+	//llama3Encoder = NewLlama3Encoder()
 	mistralEncoder = NewMistralEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
@@ -841,6 +844,12 @@ func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
 	mistralTokens := mistralEncoder.Encode(&frankensteinString)
 	output := mistralEncoder.Decode(mistralTokens)
 	assert.Equal(t, "<s> "+frankensteinString, output)
+}
+
+func TestLlama3Encoder_Encode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	llamaTokens := llama3Encoder.Encode(&testString)
+	assert.Equal(t, llamaTokens, &Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001})
 }
 
 func TestReadTokenizerConfig(t *testing.T) {

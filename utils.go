@@ -29,14 +29,16 @@ func (tokens *Tokens) ToBin() *[]byte {
 }
 
 func TokensFromBin(bin *[]byte) *Tokens {
+	type tokenuint16 uint16
 	tokens := make(Tokens, 0)
 	buf := bytes.NewReader(*bin)
 	for {
-		var token Token
+		var token tokenuint16
 		if err := binary.Read(buf, binary.LittleEndian, &token); err != nil {
 			break
 		}
-		tokens = append(tokens, token)
+		tu32 := Token(uint16(token))
+		tokens = append(tokens, tu32)
 	}
 	return &tokens
 }

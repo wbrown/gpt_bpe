@@ -29,9 +29,9 @@ type GPTPair struct {
 }
 
 type VocabEntry struct {
-	TokenId *uint16
+	TokenId *uint32
 	Token   *string
-	ByteId  *uint16
+	ByteId  *uint32
 	Byte    *string
 }
 
@@ -114,24 +114,24 @@ func GenerateVocab(
 			}
 		}
 		if dupeEntry, ok := vocab.PieceToToken[repr]; ok {
-			var dupeIdx uint16
+			var dupeIdx uint32
 			if dupeEntry.TokenId != nil {
 				dupeIdx = *dupeEntry.TokenId
 			} else {
 				dupeIdx = *dupeEntry.ByteId
 			}
 			if pieceIsByte {
-				byteToken := uint16(pieceIdx)
+				byteToken := uint32(pieceIdx)
 				dupeEntry.Byte = &repr
 				dupeEntry.ByteId = &byteToken
 			} else {
-				tokenToken := uint16(pieceIdx)
+				tokenToken := uint32(pieceIdx)
 				dupeEntry.Token = &repr
 				dupeEntry.TokenId = &tokenToken
 			}
 			vocab.PieceToToken[repr] = dupeEntry
 			vocab.TokenToPiece[dupeIdx] = dupeEntry
-			vocab.TokenToPiece[uint16(pieceIdx)] = dupeEntry
+			vocab.TokenToPiece[uint32(pieceIdx)] = dupeEntry
 			print(fmt.Sprintf("Duplicate piece: old (%v): %v, dupe ("+
 				"%v): %v\n",
 				dupeIdx, model.GetPieces()[dupeIdx], pieceIdx, piece))
@@ -142,13 +142,13 @@ func GenerateVocab(
 			})
 		} else {
 			if pieceIsByte {
-				byteToken := uint16(pieceIdx)
+				byteToken := uint32(pieceIdx)
 				vocab.PieceToToken[repr] = VocabEntry{
 					Byte:   &repr,
 					ByteId: &byteToken,
 				}
 			} else {
-				tokenToken := uint16(pieceIdx)
+				tokenToken := uint32(pieceIdx)
 				vocab.PieceToToken[repr] = VocabEntry{
 					Token:   &repr,
 					TokenId: &tokenToken,
@@ -163,9 +163,9 @@ func GenerateVocab(
 func GenerateMergeTable(
 	vocab *SentencePieceVocab,
 	verbose bool,
-) map[GPTPair]uint16 {
+) map[GPTPair]uint32 {
 	// Build the merge table
-	mergeTable := make(map[GPTPair]uint16, 0)
+	mergeTable := make(map[GPTPair]uint32, 0)
 
 	// Loop over the model and print out the pieces
 	currPair := GPTPair{"", ""}
@@ -208,16 +208,16 @@ func GenerateMergeTable(
 // Our struct for the merge array
 type MergeEntry struct {
 	Left        string `json:"left"`
-	LeftToken   uint16 `json:"-"`
+	LeftToken   uint32 `json:"-"`
 	Right       string `json:"right"`
-	RightToken  uint16 `json:"-"`
+	RightToken  uint32 `json:"-"`
 	Merged      string `json:"-"`
-	MergedToken uint16 `json:"-"`
+	MergedToken uint32 `json:"-"`
 }
 
 func GenerateMergeEntries(
 	vocab *SentencePieceVocab,
-	mergeTable map[GPTPair]uint16,
+	mergeTable map[GPTPair]uint32,
 ) []MergeEntry {
 	// Turn the merge table into an array of entries
 	mergeEntries := make([]MergeEntry, 0)
@@ -337,7 +337,7 @@ func WriteVocabFile(
 		tokenEntry := vocab.TokenToPiece[tokenId]
 		var repr string
 		if tokenEntry.TokenId != nil &&
-			*tokenEntry.TokenId == uint16(tokenId) {
+			*tokenEntry.TokenId == uint32(tokenId) {
 			repr = EscapeString(*tokenEntry.Token)
 		} else if tokenEntry.Byte != nil {
 			// Convert our repr string to a byte
