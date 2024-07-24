@@ -83,7 +83,7 @@ func TokensFromBin(bin *[]byte) *gpt_bpe.Tokens {
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
 func DecodeBuffer(encoded *[]byte) (text string) {
-	// First convert our bytearray into a uint16 `Token` array.
+	// First convert our bytearray into a uint32 `Token` array.
 	tokens := TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	var enc *gpt_bpe.GPTEncoder

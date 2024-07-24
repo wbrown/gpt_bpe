@@ -668,13 +668,13 @@ func CheckFileExist(path string) bool {
 type HFConfig struct {
 	ModelId        *string `json:"omitempty"`
 	ModelType      *string `json:"model_type,omitempty"`
-	EosTokenId     *uint16 `json:"eos_token_id,omitempty"`
-	BosTokenId     *uint16 `json:"bos_token_id,omitempty"`
-	PadTokenId     *uint16 `json:"pad_token_id,omitempty"`
+	EosTokenId     *uint32 `json:"eos_token_id,omitempty"`
+	BosTokenId     *uint32 `json:"bos_token_id,omitempty"`
+	PadTokenId     *uint32 `json:"pad_token_id,omitempty"`
 	BosTokenStr    *string `json:"bos_token,omitempty"`
 	EosTokenStr    *string `json:"eos_token,omitempty"`
 	PadTokenStr    *string `json:"pad_token,omitempty"`
-	VocabSize      *uint16 `json:"vocab_size,omitempty"`
+	VocabSize      *uint32 `json:"vocab_size,omitempty"`
 	Newlinemode    *string `json:"newlinemode,omitempty"`
 	TokenizerClass *string `json:"tokenizer_class"`
 	AddBosToken    *bool   `json:"add_bos_token,omitempty"`
@@ -697,13 +697,13 @@ type SpecialConfig struct {
 func NewHFConfig() *HFConfig {
 	defaultModelId := ""
 	defaultModelType := "gpt2"
-	defaultEosTokenId := uint16(0)
-	defaultBosTokenId := uint16(0)
-	defaultPadTokenId := uint16(0)
+	defaultEosTokenId := uint32(0)
+	defaultBosTokenId := uint32(0)
+	defaultPadTokenId := uint32(0)
 	defaultBosTokenStr := "<|startoftext|>"
 	defaultEosTokenStr := "<|endoftext|>"
 	defaultPadTokenStr := ""
-	defaultVocabSize := uint16(50257)
+	defaultVocabSize := uint32(50257)
 	defaultNewlinemode := "prefix"
 	defaultTokenizerClass := "GPT2BPETokenizer"
 	defaultAddBosToken := false
@@ -834,21 +834,21 @@ func resolveTokenIds(resources *Resources, hfConfig *HFConfig) (*HFConfig, error
 	if vocabMap, ok := vocab.(map[string]interface{}); ok {
 		if hfConfig.EosTokenStr != nil {
 			if eosTokenInt, ok := vocabMap[*(hfConfig.EosTokenStr)].(float64); ok {
-				hfConfig.EosTokenId = new(uint16)
-				*hfConfig.EosTokenId = uint16(eosTokenInt)
+				hfConfig.EosTokenId = new(uint32)
+				*hfConfig.EosTokenId = uint32(eosTokenInt)
 			}
 		}
 		if hfConfig.BosTokenStr != nil {
 			if bosTokenInt, ok := vocabMap[*(hfConfig.BosTokenStr)].(float64); ok {
-				hfConfig.BosTokenId = new(uint16)
-				*hfConfig.BosTokenId = uint16(bosTokenInt)
+				hfConfig.BosTokenId = new(uint32)
+				*hfConfig.BosTokenId = uint32(bosTokenInt)
 			}
 		}
 
 		if hfConfig.PadTokenStr != nil {
 			if padTokenInt, ok := vocabMap[*(hfConfig.PadTokenStr)].(float64); ok {
-				hfConfig.PadTokenId = new(uint16)
-				*hfConfig.PadTokenId = uint16(padTokenInt)
+				hfConfig.PadTokenId = new(uint32)
+				*hfConfig.PadTokenId = uint32(padTokenInt)
 			}
 		}
 	}
@@ -882,13 +882,13 @@ func resolveVocabSize(resources *Resources, hfConfig *HFConfig) (*HFConfig, erro
 	}
 
 	// Get length of vocab
-	var vocabLen *uint16
+	var vocabLen *uint32
 	if vocab == nil {
 		return nil, errors.New("vocab file not found")
 	}
 	if vocabMap, ok := vocab.(map[string]interface{}); ok {
-		vocabLen = new(uint16)
-		*vocabLen = uint16(len(vocabMap))
+		vocabLen = new(uint32)
+		*vocabLen = uint32(len(vocabMap))
 	}
 
 	hfConfig.VocabSize = vocabLen
@@ -948,18 +948,18 @@ func resolveConfigAndTokenizerConfig(resources *Resources, hfConfig *HFConfig) (
 
 			// Read for EOS BOS token ID
 			if eosTokenId, ok := configMap["eos_token_id"].(float64); ok {
-				eosTokenIdInt := uint16(eosTokenId)
+				eosTokenIdInt := uint32(eosTokenId)
 				hfConfig.EosTokenId = &eosTokenIdInt
 			}
 			if bosTokenId, ok := configMap["bos_token_id"].(float64); ok {
-				bosTokenIdInt := uint16(bosTokenId)
+				bosTokenIdInt := uint32(bosTokenId)
 				hfConfig.BosTokenId = &bosTokenIdInt
 			}
 
 			// Read for vocab size
 			if !hasReadForVocabSize {
 				if vocabSize, ok := configMap["vocab_size"].(float64); ok {
-					vocabSizeInt := uint16(vocabSize)
+					vocabSizeInt := uint32(vocabSize)
 					hfConfig.VocabSize = &vocabSizeInt
 					hasReadForVocabSize = true
 				}
@@ -1042,7 +1042,7 @@ func resolveSpecialsAndSpecialTokens(resources *Resources, hfConfig *HFConfig) (
 		}
 
 		// Try to get pad token from specials if not already set
-		if hfConfig.PadTokenStr == nil {
+		if hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == "" {
 			if padToken, ok := specialTokens["pad_token"].(string); ok {
 				hfConfig.PadTokenStr = &padToken
 			}
