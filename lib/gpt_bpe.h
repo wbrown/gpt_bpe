@@ -81,7 +81,7 @@ extern GoUint8 initTokenizer(char* vocab_id);
 extern Tokens tokenizeBuffer(char* vocabIdStr, char* buf, size_t sz);
 
 // tokenize accepts a vocabulary and text as a C string, and returns a C.Tokens
-// that contains a malloc'ed array of uint16_t tokens along with the number of
+// that contains a malloc'ed array of uint32_t tokens along with the number of
 // tokens.
 extern Tokens tokenize(char* vocabIdStr, char* str);
 
