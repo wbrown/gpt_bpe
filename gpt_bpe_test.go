@@ -98,7 +98,7 @@ func init() {
 	clipEncoder = NewCLIPEncoder()
 	nerdstashV2Encoder = NewNerdstashV2Encoder()
 	llama2Encoder = NewLlama2Encoder()
-	//llama3Encoder = NewLlama3Encoder()
+	llama3Encoder = NewLlama3Encoder()
 	mistralEncoder = NewMistralEncoder()
 	textBytes := handleRead("resources/frankenstein.txt")
 	clipBytes := handleRead("resources/frankenstein_clip.txt")
@@ -849,7 +849,23 @@ func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
 func TestLlama3Encoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := llama3Encoder.Encode(&testString)
+	fmt.Printf("Llama3 tokens: %v\n", llamaTokens)
 	assert.Equal(t, llamaTokens, &Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001})
+}
+
+func TestLlama3TokenizerDecode(t *testing.T) {
+	outputString := "<|begin_of_text|>The fox jumped over the hare.\nThe turtle is faster than the hare.<|end_of_text|>"
+	llamaTokens := Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001}
+	output := llama3Encoder.Decode(&llamaTokens)
+	assert.Equal(t, outputString, output)
+}
+
+func TestLlama3EncodeDecode(t *testing.T) {
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+	outputString := "<|begin_of_text|>The fox jumped over the hare.\nThe turtle is faster than the hare.<|end_of_text|>"
+	llamaTokens := llama3Encoder.Encode(&testString)
+	output := llama3Encoder.Decode(llamaTokens)
+	assert.Equal(t, outputString, output)
 }
 
 func TestReadTokenizerConfig(t *testing.T) {

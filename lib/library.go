@@ -6,10 +6,11 @@ package main
 import "C"
 import (
 	"fmt"
-	"github.com/wbrown/gpt_bpe"
 	"reflect"
 	"time"
 	"unsafe"
+
+	"github.com/wbrown/gpt_bpe"
 )
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
@@ -55,14 +56,14 @@ func tokenizeBuffer(vocabIdStr *C.char, buf *C.char, sz C.size_t) C.Tokens {
 	encoded := *encoder.EncodeBuffer(goBuf)
 	tokensArr := C.CBytes(encoded)
 	tokens := C.Tokens{
-		tokens: (*C.uint16_t)(tokensArr),
+		tokens: (*C.uint32_t)(tokensArr),
 		len:    (C.size_t)(len(encoded) / 2),
 	}
 	return tokens
 }
 
 // tokenize accepts a vocabulary and text as a C string, and returns a C.Tokens
-// that contains a malloc'ed array of uint16_t tokens along with the number of
+// that contains a malloc'ed array of uint32_t tokens along with the number of
 // tokens.
 //
 //export tokenize
@@ -79,7 +80,7 @@ func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 	fmt.Printf("Tokens: %v\n", encoded)
 	tokensArr := C.CBytes(*encoded.ToBin())
 	tokens := C.Tokens{
-		tokens: (*C.uint16_t)(tokensArr),
+		tokens: (*C.uint32_t)(tokensArr),
 		len:    C.size_t(len(encoded)),
 	}
 	fmt.Printf("tokens: %p\n", &tokens)

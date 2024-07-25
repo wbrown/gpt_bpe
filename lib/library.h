@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 typedef struct {
-	uint16_t *tokens;
+	uint32_t *tokens;
 	size_t len;
 } Tokens;
 

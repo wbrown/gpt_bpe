@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math"
@@ -154,6 +153,7 @@ func NewMistralEncoder() GPTEncoder {
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
+	log.Printf("Loading encoder for vocab id: %s\n", vocabId)
 	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId, "")
 
 	if vocabErr != nil {
@@ -210,9 +210,13 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	bytesUnicode, unicodeBytes := makeByteTranslationTables()
 
 	// Read encoder mappings.
+	vocab, err := resources.GetVocab(&rsrcs, hfConfig)
+	if err != nil {
+		return nil, err
+	}
 	encoderTokens := make(map[string]Token)
-	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
-		log.Fatal("Error unmarshalling `vocab.json`")
+	for k, v := range vocab {
+		encoderTokens[k] = Token(v)
 	}
 
 	// Build the unitrim array dynamically.
@@ -352,11 +356,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	// Add in default pad token if not already set
-	fmt.Printf("Pad token: %v\n", *hfConfig.PadTokenStr)
 	padTokenNotFound := (hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == "")
 	if padTokenNotFound {
 		// Attempt to resolve from specials
-		fmt.Printf("Attempting to resolve pad token from specials %v\n", specials)
 		for k := range specials {
 			if strings.Contains(k, "pad") {
 				hfConfig.PadTokenStr = &k
@@ -705,16 +707,20 @@ func findAllStringsIndexes(text string, strings []string) [][]int {
 // ToBPE
 // Given pre-split text, perform bigram ranking and merges, and returns Tokens
 func (encoder *GPTEncoder) ToBPE(text string) Tokens {
+	// If the text is in the cache, return it.
 	if lookup, ok := encoder.Cache.Get(text); ok {
 		encoder.LruHits++
 		return lookup.(Tokens)
 	} else {
 		encoder.LruMisses++
 	}
+	// Split the text into words.
 	word := strings.Split(text, "")
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
+
 	if len(rankedPairs) == 0 {
+		// If the word is a single character, we can just encode it directly.
 		var tokens Tokens
 		if token, ok := encoder.Encoder[word[0]]; ok {
 			tokens = Tokens{token}
@@ -731,6 +737,8 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 		encoder.Cache.Add(text, tokens)
 		return tokens
 	}
+
+	// Iterate over the ranked pairs and merge them.
 	for {
 		bigram := rankedPairs[0].bigram
 		if _, ok := encoder.BpeRanks[bigram]; !ok {
@@ -756,17 +764,23 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 			}
 		}
 		word = newWord
+
+		// If we've reduced the word to a single token, we're done.
 		if len(word) == 1 {
 			break
 		} else {
 			rankedPairs = encoder.getRankedPairs(word)
 		}
 	}
+
+	// Encode the word into tokens.
 	if len(word) > 0 {
 		idx := len(word) - 1
 		word[idx] = word[idx]
 	}
 	tokens := make(Tokens, 0)
+
+	// If we have a special token, we cap it off.
 	for _, token := range word {
 		if lookup, ok := encoder.Encoder[token]; ok {
 			tokens = append(tokens, lookup)
@@ -781,6 +795,8 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 			}
 		}
 	}
+
+	// Cache the tokens.
 	encoder.Cache.Add(text, tokens)
 	return tokens
 }
@@ -1071,7 +1087,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			word := nextWord()
 			// If we have no word, then we're done.
 			if word == nil {
-				if encoder.encloseEosBos && !eosReturned {
+				if (encoder.encloseEosBos || encoder.encloseEos) && !eosReturned {
 					accumulator = append(accumulator, encoder.EosToken)
 					eosReturned = true
 				}
