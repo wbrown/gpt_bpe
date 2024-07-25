@@ -1117,7 +1117,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				for {
 					pair := TokenPair{accumulator[idx],
 						accumulator[idx+1]}
-					if merged, ok := encoder.TokenMerges[pair]; ok {
+					if merged, ok := encoder.TokenMerges[pair]; ok && merged != 0 {
 						before := accumulator[:idx]
 						var after Tokens
 						if idx+2 < len(accumulator) {
