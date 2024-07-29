@@ -447,6 +447,31 @@ func ResolveResources(
 	if flagTokenizerModelExist {
 		log.Printf("Directory %s contains tokenizer.model, extracting to files", path.Join(*dir, "tokenizer.model"))
 		ConvertSentencepieceFiles(path.Join(*dir, "tokenizer.model"), false)
+
+		// Add the new files to the resources
+		files, _ := os.ReadDir(*dir)
+		for _, f := range files {
+			// If not already in the resources, add it
+			if _, ok := foundResources[f.Name()]; !ok {
+				openFile, rsrcFileErr := os.OpenFile(
+					path.Join(*dir, f.Name()),
+					os.O_RDONLY, 0755)
+				rsrcFile := *openFile
+				if rsrcFileErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error opening '%s' for read: %s",
+							f.Name(), rsrcFileErr))
+				}
+				if mmapErr := foundResources.AddEntry(f.Name(),
+					&rsrcFile); mmapErr != nil {
+					return &foundResources, errors.New(
+						fmt.Sprintf("error trying to mmap file: %s",
+							mmapErr))
+				}
+				log.Printf("Added %s to resources via sentancepiece conversion\n", f.Name())
+			}
+		}
+
 	} else {
 		// check if tokenizer exists by checking if tokenizer.json exists
 		// and has data in it
