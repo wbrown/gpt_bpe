@@ -964,6 +964,29 @@ func TestPythiaRemoteDownloadTokenizer(t *testing.T) {
 	}
 }
 
+func TestMistralRemoteDownloadTokenizer(t *testing.T) {
+	// Tests the ability to download a tokenizer from a remote model
+	// and use it to encode and decode strings
+	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	//destPath := "./TestMistralRemoteDownloadTokenizer"
+	//defer os.RemoveAll(destPath)
+	encoderMistral, err := NewEncoder(modelId)
+	if err != nil {
+		t.Errorf("Error creating encoder: %v", err)
+	}
+
+	// Attempt to tokenize
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+
+	// Encode the string
+	encoded := encoderMistral.Encode(&testString)
+	// Check that the encoded string is the same as the expected - Reference from python's transformers lib
+	expected := Tokens{1, 1014, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723}
+	if !assert.Equal(t, expected, *encoded) {
+		t.Errorf("Expected: %v\nActual: %v", expected, *encoded)
+	}
+}
+
 func TestGPTDecoder_Decode(t *testing.T) {
 	// TBD
 }
@@ -1151,6 +1174,41 @@ func TestModelDownloadLlama(t *testing.T) {
 	if !found {
 		t.Errorf("pytorch_model.bin does not exist or was not found")
 	}
+
+	// Check for tokenizer.model
+	tokenizerConfigPath := destPath + "/tokenizer.model"
+	assertFileExists(t, tokenizerConfigPath)
+
+	// Check for vocab.json
+	vocabPath := destPath + "/vocab.json"
+	assertFileExists(t, vocabPath)
+
+	// Finish the test, allow defered cleanup
+	fmt.Println("All Exists - Looks good.")
+}
+
+func TestModelDownloadMistral(t *testing.T) {
+	// Download a downstream mistral model due to mistral being gated
+	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	destPath := "./TestModelDownloadMistral"
+	err := downloadModel(modelId, destPath)
+	if err != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model: %v", err)
+	}
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// config.json, pytorch_model.bin,
+	// tokenizer.json, vocab.json
+
+	// Check for config.json
+	configPath := destPath + "/config.json"
+	assertFileExists(t, configPath)
+
+	// Check for pytorch_model-00001-of-00002.bin
+	modelPath := destPath + "/pytorch_model-00001-of-00002.bin"
+	assertFileExists(t, modelPath)
 
 	// Check for tokenizer.model
 	tokenizerConfigPath := destPath + "/tokenizer.model"
