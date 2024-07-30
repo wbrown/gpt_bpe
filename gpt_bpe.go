@@ -375,7 +375,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		}
 		if padTokenNotFound {
 			padToken := defaultPadTokenString
-			if len(encoderTokens) > math.MaxUint16 {
+			if len(encoderTokens) >= math.MaxUint16 {
 				encoderTokens[padToken] = math.MaxUint32
 			} else {
 				encoderTokens[padToken] = math.MaxUint16
