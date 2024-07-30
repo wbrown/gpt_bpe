@@ -964,6 +964,29 @@ func TestPythiaRemoteDownloadTokenizer(t *testing.T) {
 	}
 }
 
+func TestLlama3RemoteDownloadTokenizer(t *testing.T) {
+	// Tests the ability to download a tokenizer from a remote model
+	// and use it to encode and decode strings
+	modelId := "Groq/Llama-3-Groq-8B-Tool-Use" // Original Llama3 model is gated
+	destPath := "./TestLlama3RemoteDownloadTokenizer"
+	defer os.RemoveAll(destPath)
+	encoderLlama3, err := NewEncoder(modelId)
+	if err != nil {
+		t.Errorf("Error creating encoder: %v", err)
+	}
+
+	// Attempt to tokenize
+	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
+
+	// Encode the string
+	encoded := encoderLlama3.Encode(&testString)
+	// Check that the encoded string is the same as the expected - Reference from python's transformers lib
+	expected := Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001}
+	if !assert.Equal(t, expected, *encoded) {
+		t.Errorf("Expected: %v\nActual: %v", expected, *encoded)
+	}
+}
+
 func TestMistralRemoteDownloadTokenizer(t *testing.T) {
 	// Tests the ability to download a tokenizer from a remote model
 	// and use it to encode and decode strings
@@ -1008,9 +1031,12 @@ func downloadModel(modelId string, destPath string) error {
 }
 
 func assertFileExists(t *testing.T, filePath string) {
-	if _, err := os.Stat(filePath); err != nil {
-		t.Errorf("Error checking for %s: %v", filePath, err)
+	if _, err := os.Stat(filePath); err != nil && os.IsNotExist(err) {
+		t.Errorf("File does not exist: %s", filePath)
+	} else if err != nil {
+		t.Errorf("Error checking file: %v", err)
 	}
+
 }
 
 func TestModelDownload(t *testing.T) {
@@ -1098,6 +1124,7 @@ func TestModelDownloadPythiaSharded(t *testing.T) {
 		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model: %v", err)
 	}
+	defer os.RemoveAll(destPath)
 
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
@@ -1133,6 +1160,7 @@ func TestModelDownloadLlama(t *testing.T) {
 		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model: %v", err)
 	}
+	defer os.RemoveAll(destPath)
 
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
@@ -1196,6 +1224,7 @@ func TestModelDownloadMistral(t *testing.T) {
 		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model: %v", err)
 	}
+	defer os.RemoveAll(destPath)
 
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
@@ -1276,16 +1305,14 @@ func TestModelDownloadFairseq(t *testing.T) {
 	// it has merges and vocab but no tokenizer.json
 	modelId := "KoboldAI/fairseq-dense-355M"
 	destPath := "./TestModelDownloadFairseq"
-	destPathPTR := &destPath
 
-	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
-	os.MkdirAll(destPath, 0755)
-	defer os.RemoveAll(destPath)
-	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
-		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
-	if rsrcErr != nil {
-		t.Errorf("Error downloading model resources: %s", rsrcErr)
+	// Download the model
+	err := downloadModel(modelId, destPath)
+	if err != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model: %v", err)
 	}
+	defer os.RemoveAll(destPath)
 
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
@@ -1293,51 +1320,19 @@ func TestModelDownloadFairseq(t *testing.T) {
 
 	// Check for config.json
 	configPath := destPath + "/config.json"
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("config.json exists")
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		t.Errorf("config.json does not exist")
-
-	} else {
-		t.Errorf("Error checking for config.json")
-	}
+	assertFileExists(t, configPath)
 
 	// Check for pytorch_model.bin
 	modelPath := destPath + "/pytorch_model.bin"
-	if _, err := os.Stat(modelPath); err == nil {
-		fmt.Println("pytorch_model.bin exists")
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		t.Errorf("pytorch_model.bin does not exist")
-
-	} else {
-		t.Errorf("Error checking for pytorch_model.bin")
-	}
+	assertFileExists(t, modelPath)
 
 	// Check for vocab.json
 	vocabPath := destPath + "/vocab.json"
-	if _, err := os.Stat(vocabPath); err == nil {
-		fmt.Println("vocab.json exists")
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		t.Errorf("vocab.json does not exist")
-
-	} else {
-		t.Errorf("Error checking for vocab.json")
-	}
+	assertFileExists(t, vocabPath)
 
 	// Check for merges.txt
 	mergesPath := destPath + "/merges.txt"
-	if _, err := os.Stat(mergesPath); err == nil {
-		fmt.Println("merges.txt exists")
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		t.Errorf("merges.txt does not exist")
-
-	} else {
-		t.Errorf("Error checking for merges.txt")
-	}
+	assertFileExists(t, mergesPath)
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good (Fairseq Download).")
