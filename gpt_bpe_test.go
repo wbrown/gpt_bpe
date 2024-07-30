@@ -813,6 +813,7 @@ func TestLlamaTwoEncodeDecode(t *testing.T) {
 	assert.Equal(t, outputString, output)
 }
 
+// This is Mistral tokenizer V1, associated with 7b instruct https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
 func TestMistralEncoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	mistralTokens := mistralEncoder.Encode(&testString)
