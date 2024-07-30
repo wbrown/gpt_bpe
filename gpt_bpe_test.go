@@ -980,8 +980,8 @@ func TestLlama3RemoteDownloadTokenizer(t *testing.T) {
 
 	// Encode the string
 	encoded := encoderLlama3.Encode(&testString)
-	// Check that the encoded string is the same as the expected - Reference from python's transformers lib
-	expected := Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001}
+	// Check that the encoded string is the same as the expected - 128009 is 128001 in the original Llama3 model
+	expected := Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128009}
 	if !assert.Equal(t, expected, *encoded) {
 		t.Errorf("Expected: %v\nActual: %v", expected, *encoded)
 	}
