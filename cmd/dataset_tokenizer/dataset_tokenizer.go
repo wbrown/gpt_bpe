@@ -64,8 +64,7 @@ func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
 
 	numMatches := len(filePaths)
 	if numMatches == 0 {
-		return nil, errors.New(fmt.Sprintf(
-			"%s does not contain any .txt or .jsonl files", dirPath))
+		return nil, fmt.Errorf("%s does not contain any .txt or .jsonl files", dirPath)
 	}
 	pathInfos = make([]PathInfo, numMatches)
 	for matchIdx := range filePaths {
@@ -199,8 +198,7 @@ func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
 	} else if sortSpec == "path_descending" {
 		SortPathInfoByPath(matches, false)
 	} else {
-		return errors.New(fmt.Sprintf(
-			"Invalid sort spec: %s", sortSpec))
+		return fmt.Errorf("invalid sort spec: %s", sortSpec)
 	}
 	return nil
 }
@@ -321,11 +319,7 @@ func removeS3Prefix(input string) (hasS3Prefix bool, remainder string, s3FilePat
 	prefix := "s3://"
 	if strings.HasPrefix(input, prefix) {
 		//if it is just s3:// then return empty string
-		if len(input) == len(prefix) {
-			return false, input, ""
-		}
-		//if it is s3://bucket then return bucket and empty string
-		if strings.Index(input[len(prefix):], "/") == -1 {
+		if !strings.Contains(input[len(prefix):], "/") {
 			return true, input[len(prefix):], ""
 		}
 		//if it is s3://bucket/ then return bucket and empty string
@@ -582,8 +576,7 @@ func getAndCheckToken(t *gpt_bpe.GPTEncoder, s string,
 	if token == nil {
 		tokens := t.Encode(&s)
 		if len(*tokens) != 1 {
-			return 0, errors.New(fmt.Sprintf(
-				"'%s' is not a valid token for %s", s, id))
+			return 0, fmt.Errorf("'%s' is not a valid token for %s", s, id)
 		} else {
 			return (*tokens)[0], nil
 		}
@@ -683,8 +676,8 @@ func (tt TextsTokenizer) handleExclusions(
 				// Check if the token is in the merge, if it is, remove it
 				if merge == excludeTokenId {
 					mergePair := gpt_bpe.GPTPair{
-						string(tokenizer.Decoder[i.Left]),
-						string(tokenizer.Decoder[i.Right]),
+						Left:  string(tokenizer.Decoder[i.Left]),
+						Right: string(tokenizer.Decoder[i.Right]),
 					}
 					delete(tokenizer.TokenMerges, i)
 					delete(tokenizer.BpeRanks, mergePair)
@@ -1029,8 +1022,17 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 // Consumes a ContextsIterator function and serializes the contexts to an
 // aligned binary file.
 func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
-	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool) (int, error) {
+	encoder *gpt_bpe.GPTEncoder, sampling int, shuffle bool, enforceUint32 bool) (int, error) {
 	totalTokens := 0
+	var useUint32 bool
+	// We only use uint32 if we're enforcing it and vocab size is greater than
+	// 65536.
+	if encoder != nil {
+		if enforceUint32 && len(encoder.Encoder) > 65536 {
+			useUint32 = true
+		}
+	}
+
 	// create file AND filepath if not exists
 	if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil {
 		return 0, err
@@ -1053,11 +1055,6 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 				// Ignore every `sampling` percent context (rounded to int)
 				if sampling == 100 || (samplingIdx%20) < int(sampling/5) {
 					sampledContexts <- context
-					if encoder != nil {
-						println(len(context))
-						println("======================================")
-						println(encoder.Decode(&context))
-					}
 				}
 				samplingIdx += 1
 			}
@@ -1072,11 +1069,11 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	// Sometimes it is requested that we shuffle all contexts as they are
 	// written
 	for {
-		context, more := <-sampledContexts
-		if !more {
+		context, ok := <-sampledContexts
+		if !ok {
 			break
 		}
-		binContext := context.ToBin()
+		binContext := context.ToBin(useUint32)
 		// We keep track of the final file position
 		if endpos == 0 {
 			// On the first context, we discern the context size and make the
@@ -1128,6 +1125,11 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 
 		totalTokens += len(context)
 		endpos += len(*binContext)
+
+		// Break if EOF
+		if len(context) <= 1 {
+			break
+		}
 	}
 
 	return totalTokens, nil
@@ -1183,6 +1185,8 @@ func main() {
 		false, "disable sanitizing of misencoding")
 	s3Endpoint := flag.String("object_storage_endpoint", "https://object.las1.coreweave.com",
 		"CW S3 Endpoint to use for fetching data")
+	enforceUint32 := flag.Bool("uint32_enforce", false,
+		"enforce uint32 tokenization if needed (vocab size > 65535)")
 
 	flag.Parse()
 	if *inputDir == "" {
@@ -1327,7 +1331,7 @@ func main() {
 					log.Fatal(tokErr)
 				}
 				total, writeErr := WriteContexts(outputFilePath, contexts,
-					nil, sampling, false)
+					nil, sampling, false, *enforceUint32)
 				if writeErr != nil {
 					log.Fatal(writeErr)
 				}
@@ -1351,13 +1355,13 @@ func main() {
 		var writeErr error
 		numTokens, writeErr = WriteContexts(*outputFile, contexts, enc,
 			sampling,
-			*reorderPaths == "shuffle")
+			*reorderPaths == "shuffle", *enforceUint32)
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
 	}
 
-	duration := time.Now().Sub(begin).Seconds()
+	duration := time.Since(begin).Seconds()
 
 	log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", numTokens,
 		duration, float64(numTokens)/duration)

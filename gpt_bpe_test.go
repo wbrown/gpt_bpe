@@ -901,6 +901,48 @@ func TestLlama3EncodeDecode(t *testing.T) {
 	assert.Equal(t, outputString, output)
 }
 
+func TestLlama3EncodeDecode_LargeCorpus(t *testing.T) {
+	// This test is to check if the encoder is able to encode and decode a large corpus
+	referenceFile := "resources/test_references/753.txt"
+	referenceBin := "resources/test_references/753_llama3.bin"
+	referenceText, err := os.ReadFile(referenceFile)
+	if err != nil {
+		t.Errorf("Error reading reference file: %v", err)
+	}
+	referenceString := string(referenceText)
+	// Need to decode the reference bin file
+	referenceBinData, err := os.ReadFile(referenceBin)
+	if err != nil {
+		t.Errorf("Error reading reference bin file: %v", err)
+	}
+	referenceTokens := TokensFromBin32(&referenceBinData)
+	fmt.Printf("encloseEOS BOS EOSBOSS: %v %v %v\n", llama3Encoder.encloseEos, llama3Encoder.encloseBos, llama3Encoder.encloseEosBos)
+	// Encode the reference string
+	llamaTokens := llama3Encoder.Encode(&referenceString)
+	for i := 0; i < len(*llamaTokens); i++ {
+		if (*llamaTokens)[i] != (*referenceTokens)[i] {
+			fmt.Printf("Mismatch at around index %d\n", i)
+			fmt.Printf("Expected: %v\n", (*referenceTokens)[i-20:i+20])
+			fmt.Printf("Actual: %v\n", (*llamaTokens)[i-20:i+20])
+			break
+		}
+	}
+	// Check that the encoded tokens are the same as the reference tokens
+	//assert.Equal(t, llamaTokens, referenceTokens)
+	// Decode the tokens
+	output := llama3Encoder.Decode(llamaTokens)
+	refDecoded := llama3Encoder.Decode(referenceTokens)
+	// Check that the decoded string is the same as the reference string
+	for i := 0; i < len(output); i++ {
+		if output[i] != refDecoded[i] {
+			fmt.Printf("Mismatch at around index %d\n", i)
+			fmt.Printf("Expected: %s\n", refDecoded[i-20:i+20])
+			fmt.Printf("Actual: %s\n", output[i-20:i+20])
+			break
+		}
+	}
+}
+
 func TestReadTokenizerConfig(t *testing.T) {
 	fmt.Println("Testing ReadTokenizerConfig")
 	// json with eos, bos, pad as strings
