@@ -5,7 +5,6 @@ package resources
 
 import (
 	"embed"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +38,10 @@ import (
 //go:embed data/llama-tokenizer/tokenizer_config.json
 //go:embed data/llama-tokenizer/special_tokens_map.json
 //go:embed data/llama-tokenizer/encoder.json
+//go:embed data/llama3-tokenizer/config.json
+//go:embed data/llama3-tokenizer/tokenizer.json
+//go:embed data/llama3-tokenizer/tokenizer_config.json
+//go:embed data/llama3-tokenizer/special_tokens_map.json
 //go:embed data/mistral-tokenizer/merges.json
 //go:embed data/mistral-tokenizer/specials.txt
 //go:embed data/mistral-tokenizer/tokenizer_config.json
@@ -88,8 +91,8 @@ func FetchHTTP(uri string, rsrc string, auth string) (io.ReadCloser, error) {
 		return nil, remoteErr
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("HTTP status code %d",
-			resp.StatusCode))
+		return nil, fmt.Errorf("HTTP status code %d",
+			resp.StatusCode)
 	}
 	return resp.Body, nil
 }
@@ -108,8 +111,8 @@ func SizeHTTP(uri string, rsrc string, auth string) (uint, error) {
 	if remoteErr != nil {
 		return 0, remoteErr
 	} else if resp.StatusCode != 200 {
-		return 0, errors.New(fmt.Sprintf("HTTP status code %d",
-			resp.StatusCode))
+		return 0, fmt.Errorf("HTTP status code %d",
+			resp.StatusCode)
 	} else {
 		size, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
 		return uint(size), nil

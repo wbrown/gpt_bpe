@@ -1,0 +1,1552 @@
+***
+[Name: #hardware; Description: None; Guild: KoboldAI]
+***
+Riehl: [File URL attached]
+Sweet: Pinned a message.
+gold9: I built a machine to run GPT-J and GPT-2 XL through KoboldAI. The motherboard I used was the HUANANZHI X99 F8. I tunneled air to the card using a washing machine tube and a 3D printed socket with a 120mm turbo blower fan, along with a Tesla M40, Xenon 2650, and 128GB REG ECC. Display: Display outputs are not available on Tesla cards, which are designed for datacenters. My first attempt involved pairing a Tesla M40 (24GB) with a Geforce 710 (2GB). Due to the nvidia eco system driver division, these cards do not operate on the same platform. Geforce drivers may work well with datacenter drivers, but there will be fringe issues. When I tried to boot Telsa with a 710 geforce, I encountered all kinds of errors. After I install Tesla with 710, I can only boot Tesla once, but it switches to Tesla in the second boot and I end up getting an error message from x99 F8. In order to prevent any conflict between the driver and motherboard, I chose the ATI 4600 from 2008. The job can, however, be done with any GPU from AMD, Intel, or Nvidia Quadro. Cooling: In my experiment, I used a 120mm blower solution that is suited for burst loads only. It was perfect for working with KoboldAI. I was able to run them at slower speeds due to their larger size, and the pitch sound of 120mm is much quieter than direct mount twin 36mm server blower fans. Later I will probably switch back to 36mm twain configuration with a PWM speed controller to make training and deploying easier.
+gold9: [Image attached]
+Sweet: Sounds promising for me then, i got the Vega 64 so an M40 should play along
+gold9: it was really bad attempt and to pair it with Geforce! Vega 64 is great
+Sweet: I might yolo it 😛
+Sweet: Time to shine a flashlight in my case to see if it fits
+gold9: The GPU market price is skyrocket at the moment. Vega 64 costs 700 last time I checked
+Sweet: I bought the Vega 64 for 650 but last time i checked its selling over $1000 now
+Sweet: But i bought it new for 650
+Sweet: For the M40 it should work with 'Above 4G Crypto Mining support' right?
+gold9: You can hunt them from Aliexpress. I wouldn't do it but you can 🤣
+Sweet: Can't access my bios the runtime 7z is still uploading
+gold9: I didn't test it yet but it should
+gold9: What do you have for motherboard ?
+Sweet: [File URL attached]
+gold9: 3000 series Ryzen ?
+Sweet: 1000
+Sweet: Its from 2017
+Sweet: 3000 is supported but not in it
+gold9: They are still way better than outdate Xenon. I only got them because they support high REG ECC
+Sweet: And its overclocked to 3,9GHz
+Sweet: First gen ryzens have terrible stock clocks but a lot of overclocking headroom
+Sweet: I could go from 3,4GHz to 3,9GHz without increasing the voltage
+Sweet: So the difference with the 2nd gen is smaller
+Sweet: These days Ryzens kinda auto overclock, so they run much faster but barely any overclocking gains
+gold9: They are very efficient node. I will always choose the AMD AM4 socket over the Intel 2011V3 any day. I bought two motherboards as 2011v3 had a lot of issues
+Sweet: My motherboard has a lot of issues to unfortunately
+Sweet: All Ryzens did
+Sweet: But the problem got so noticable and terrible at the 5000 series they actually fixed it
+gold9: I have another machine with B450 but it is OME Asus motherboard
+gold9: I have issues with USB
+gold9: Razer keyboard weirdly disconnected during boot
+Sweet: USB + Audio for me
+gold9: I test it with other machine but I read that Ryzen X370, B450 and B550 have issues with USB
+Sweet: Some USB disconnects happen for me if things are turning on, and in Linux the audio controller is all wrong despite working fine on intel
+Sweet: Then they released that Ryzen 5000 bios update and those users reported it was fixed
+Sweet: So it seems like its not the USB thats the issue, but the PCI controller itself
+gold9: I thought Ryzen have the USB controller built inside Ryzen processor
+Sweet: Only for some ports
+Sweet: Those are typically the ones people advice to use
+gold9: I will try testing with different ports to see if it resolves the issue
+Sweet: Typically the ones closest to the CPU
+Sweet: Use a tool like HWInfo to check which controller they are on
+gold9: I am using USB switch to switch the USB on and off again 🤣
+Sweet: For me with some USB drive enclosures the external HDD resets when my monitor comes on or when certain setup programs are ran
+gold9: I can not see USB listed in HWInfo
+Sweet: Its under ports
+Sweet: [Image attached]
+Sweet: For me the USB 3.10 is the motherboard one
+Sweet: I mean CPU
+gold9: I don't see the USB option
+Sweet: Thats the sensor tab
+Sweet: You want the main menu
+gold9: How to open the main menu ? There are only setting with same option listed in it
+Sweet: Open HWInfo then don't do any checkboxes for sensors only and stuff
+Sweet: It will open a ton of screens
+Sweet: Including the main screen
+Sweet: [Image attached]
+gold9: oh thxs yeah, I see it now
+Sweet: Hard to tell in your case
+Sweet: But one of them is the CPU so if one is giving issues try the other one haha
+Sweet: I assume the top one is the CPU for you
+Sweet: In my case its only like 4 ports on the back and the front ports
+gold9: I have 6 ports. Two are USB 3.1 and the others USB 3
+Sweet: This says all of them are USB 3.1
+Sweet: But your GPU apparently has USB ports to, so you could always try plugging the razer in your GPU
+gold9: Proablly than 3.2 and 3.1 haha They are color coded differently in the back blue and green
+gold9: I kind lost with all new USB color code
+Sweet: Maybe to differentiate which ones are on the CPU?
+Sweet: Green isn't anything i know off
+Sweet: Blue is USB3.X
+gold9: It is Asus GL10DH with B450 chip
+gold9: I assumed it had the default port option of B450
+gold9: It said "AMD Turbo USB 3.2 GEN2"
+gold9: [Image attached]
+gold9: They are all 3.2 but some Gen 1 and other gen 2
+Sweet: Decided to roll with it and try my luck on this
+Sweet: Prices already went up slightly and i don't think that trend is going to stop as i am noticing the M40's go pretty rapidly on ebay
+Sweet: So i bought myself an M40 😄
+Sweet: Motherboard supports PCI Gen2, and Above 4G support
+gold9: I paid 360$ with shipping for the Tesla M40 24GB. I am not in US right now, but you can get it on eBay for ~270$. The Tesla M40 performs similarly to the 1060 super and 1070. There are a lot of people using it to play games as a cheaper alternative with all the crazy pricing. So, it will always worth something and a good investment
+gold9: [File URL attached]
+Sweet: Yup thats the one i bought
+Sweet: I did have to pay around $100 in shipping + import tax though
+gold9: You should get https://www.aliexpress.com/item/4000505282893.html?spm=a2g0s.9042311.0.0.67a44c4dbJGrHc
+gold9: The original GPU server bracket did not fit into my Corsair case so I had to replace it
+gold9: You will also need an 8pin to Dual 8pin Power Cable: https://www.aliexpress.com/item/32692411159.html?spm=a2g0s.9042311.0.0.67a44c4dtGt6h6
+Carena: Saving up for my own hardware... Stuff is expensive 😦
+gold9: world-wide shortage 💀 The same build would cost me no more than 600 USD in 2019. There were a lot of Intel Xeon workstations selling for 200 and 300 with 128GB ram and Tesla M40, the total cost would be around 700$ max, as everyone was switching to AMD Ryzen. Until this day, a 650W Corsair power supply, case, motherboard, 256GB SSD, and old Haswell Intel Xeon 2650 with 10 cores will cost you 300. The price only high on GPU and Memory. I paid 480$ for 128GB of ECC REG RAM, and 360$ for the GPU. It was possible to find ECC REG RAM on ebay for 280$ and GPU for 200$ with shipping.
+gold9: Best we to do it by getting old workstation or PC and pair it with M40
+Carena: I have a server, but that one is just a nono when it comes to hardware.
+Carena: Also have an Nvidia Jetson AGX that works really well for inference 🙂
+Carena: I use it to run colab on 😄
+gold9: I was planning to get Nvidia Jetson AGX but they cost as much as whole build right now 🤣
+gold9: that 30W is just amazing and great for 24/7 operation. I have to make a box for my build
+Carena: I know, one of the reasons why I said I wanted to have a "cloud"-based Colab 😛
+Sweet: Do i need that power cable for the M40? Since it needs 8-pin + 6-pin
+Sweet: Looks like it, ordering one
+gold9: Yes, I thought of retrofitting it, but the 8 pins that came with power supplies are a bit thick and the 3d print fan mount is in a tight space to reroute the cable under it. You would have to get slim fit cables. Retrofitting was not worth the trouble.
+gold9: What type of power supply do you have? When using Vega 64 and M40 on the same machine, you may require a beefy power supply upgrade!
+Sweet: Ill be fine 😄
+Sweet: The Vega 64 uses 3W in desktop mode
+Sweet: And i won't be gaming while running the tesla
+Sweet: I assume the tesla also only draws power when its used
+gold9: When used Tesla with KoboldAI draw ~30W
+Sweet: Thats nothing then
+Sweet: How about idle?
+gold9: 15W
+Sweet: Thats pretty high idle draw then
+Sweet: But nothing for me to worry about i got plenty of headroom
+gold9: If I recall correctly
+Sweet: The PSU is 850w
+Sweet: And its not a budget PSU either
+gold9: I just lost a machine for junky power supply
+gold9: but yeah, you will probably fine! 850W is enough at max
+Sweet: For sure
+Sweet: My Vega is a hungry card
+Sweet: It can peak at 300W
+gold9: 300W for tesla, 300W for Vega 64 and 1700x will probably max at 85W
+Sweet: I originally had some system crashes with 650W (Turned out to be heat not power) so i one upped
+Sweet: Ill max the 1700X and check
+gold9: Is it overclocked ?
+Sweet: Yup
+Sweet: But not overvolted
+gold9: Does B350 support 5000 series ?
+Sweet: Package power 163w
+Sweet: You will have to check your specific motherboard
+Sweet: But generally speaking no
+Sweet: But yeah CPU package power is 166W
+Sweet: So fans, soc, cpu, etc
+gold9: I recall some post about some motherboard of B350 supported
+gold9: 166W(CPU)+300W(Tesla)+300W(Vega) = 766W
+Sweet: Plus a little bit for everything else of course
+Sweet: But at that point my cooling would probably give out
+gold9: Hopefully when I upgrade, the Nvidia Quadro RTX 8000 will be available for the same price as Tesla M40 🤣
+gold9: Did you order fan's for it ?
+Sweet: Nope
+Sweet: Going to run it without a fan first
+Sweet: Especially if it only draws 30w when using kobold
+Sweet: For context i got a high airflow case
+Sweet: [Image attached]
+Sweet: So with a bit of luck those front fans are enough
+Sweet: They produce a lot of airflow when maxed out
+gold9: I am booting it to check what is the temp without the fan
+gold9: [Image attached]
+gold9: With GPT-J model
+gold9: But the temp rise up gradually
+Sweet: Do they also go down gradually?
+gold9: I don't see it going down
+gold9: [Image attached]
+gold9: Check hot spot
+Sweet: Its not a really bad temp though
+Sweet: Hot spot yes, but general gpu temp no
+gold9: I think it is fine, it rated for up to 90C
+Sweet: Wonder why it draws 60w doing this though
+Sweet: Its not really doing anything
+gold9: nothing
+Sweet: Really bad power draw for a home PC
+Sweet: But oh well
+gold9: I feel if I leave with no fan it will reach 90C and triger temp safty in the board
+Sweet: Seems to be the memory controller though
+Sweet: Probably in your case
+Sweet: But in my case the heat will rise to my PC and possibly trigger the front fans
+Sweet: Can you exit kobold and see what happens?
+gold9: [Image attached]
+gold9: It drops to 20W
+Sweet: Much better
+Sweet: So its the memory
+Sweet: I bet the temps will become a lot better now
+gold9: you can tunnel the air out of one of the fans to the card
+Sweet: Yup but all the airflow in the case is as wide as the case and very direct
+Sweet: So i think just having the big fans on when i use it should be enough
+Sweet: How much is it dropping for you now kobold's off?
+gold9: Just reopened Kobold with fan max to check the maximum consumption when I connect to the client
+gold9: Even with my setup, it started to heat up when I opened the client and cooled down when Kobold idle
+gold9: I am using Corsair 4000D which is well ventilated
+Sweet: How did you rig yours up?
+gold9: [Image attached]
+Sweet: Fans on the front or solid panel on the front?
+gold9: One fan in the front and one in the back while the tesla use 120mm blower to cool down
+gold9: But the whole top of the case is open case
+Sweet: Mine is more directed airflow then
+Sweet: Given my giant fans on the front
+Sweet: It will be blowing directly against the card
+gold9: the case open in the top cause the airflow to be less directed. So, I am kind force to use direct airflow with the card.
+Sweet: Mine is also open at the top
+Sweet: But i'm pretty sure it can also be closed
+Sweet: But since its two fans ill probably be able to get away with it
+Sweet: Its going to be hit by the bottom fan, while the top fan handles the CPU area
+gold9: After I receive my 36mm fan I will check another setup this week
+gold9: I got the chance to run GPT J with the current setup to write me some HTML, C, Java and Kotlin. It is unlikely that it will require a heavy cooling system.
+gold9: They looks like 140mm fans
+Sweet: I think they are
+Sweet: 200mm
+gold9: Is this full tower ?
+Sweet: Yup
+gold9: damn that is humongous fans lamo
+Sweet: Which is why i didn't order fans for the card haha
+Sweet: When these are on full blast you literally hear the air move
+gold9: Would love to see the final build! The 36mm fans are super loud consider the high RPM. You have the advantage of running lower RPM with higher air flow
+Sweet: Not just that
+Sweet: On full blast the fans aren't even that loud
+Sweet: You just hear wind
+Sweet: Its 1226rpm peak
+Sweet: Although that might have been my back fan
+Sweet: I don't think these report a rpm
+gold9: I was considering two 200mm noctua fans for the top ventilation
+Sweet: Hows your K80 @Valerian ?
+Riehl: still waiting on the power cable that combines to PCI power ables. >:/
+Sweet: Also ordered one of those at the same time with the card
+Riehl: and I need a GPU that fits a X1 slot..
+Riehl: I did two, but they were from different sellers.
+Riehl: got your M40 running?
+Sweet: Its in the mail
+Sweet: Anything in europe was $700
+Sweet: So it will take a while
+Riehl: the motherboard i have doesn't have integrated video.
+Riehl: oh lord.
+Sweet: So beginning of october most likely
+Riehl: :hype:
+Riehl: another issue is .. apparently the Tesla series drivers are kind of garbage.
+Sweet: Ordered one of those PSU adapters on ali, so hopefully they arrive around the same time
+Sweet: Drivers i have no fear in
+Riehl: i'm researching the issue - apparently there are other drivers that play nicer with the Tesla GPUs
+Sweet: I work as an IT tech support
+Sweet: / system administrators
+Sweet: Drivers are kind of my thing haha
+Riehl: oh sweet.
+Riehl: what would you recommend doing, then?
+Sweet: So if it takes some tinkering thats fun
+Sweet: From what i saw there are multiple different cuda versions bundled in the driver
+Sweet: So my first step will be matching what KoboldAI uses with whats in the driver
+Sweet: And not having an existing nvidia card will help
+Sweet: So my AMD should allow me to use it
+Riehl: I uh..
+Riehl: [Image attached]
+Riehl: *thought* about doing this to one of my existing low-end GPUS..
+Riehl: to make it fit a X1 PCI slot.
+Riehl: it supposedly works? ... but is highly not recommended.
+Sweet: I saw RX550's sometimes have single slot varients
+Sweet: For KoboldAi currently the cuda version is locked on 11.1
+Riehl: doing driver research?
+Sweet: Yup
+Riehl: it's awesome you work in tech support. 🙂
+Sweet: Looks like they don't have that
+Sweet: Its my work in tech / sys admin that allowed me to build those install scripts much easier
+Sweet: Figuring out how to install stuff is my thing
+Riehl: [Image attached]
+Riehl: this was the X1 GPU I found .. but it requires an adapter for my monitors to work.
+Sweet: What output do you need?
+Riehl: just basic video.
+Sweet: VGA?
+Sweet: Or HDMI
+Riehl: HDMI or DVI apaters
+Sweet: Isn't that output DVI?
+Riehl: i have converters for both DVI and VGA plugs
+Sweet: It looks like DVI
+Sweet: Then don't go with that
+Riehl: It's a DMS-59 pin port.
+Riehl: buuut..
+Sweet: Its easier to just go for a different card
+Riehl: there is an adapter
+Riehl: i was trying to go for cheap.
+Sweet: HD 5450 for example
+Sweet: Not sure how good compatibility is
+Sweet: But windows 10 does have drivers for it
+Sweet: [File URL attached]
+Sweet: Looks like less of a headache than that firepro would be haha
+Sweet: Since this seemingly has Displayport/HDMI , DVI and VGA
+Sweet: No adapters 😄
+Sweet: And you'd be using consumer drivers not firepro drivers
+Riehl: mm. but it's not a X1 slot. 😦
+Riehl: @Henky!! whatcha doing for cooling solutions?
+Riehl: nevermind - just scrolled up and saw what you're doing.
+Riehl: 👍
+Sweet: I hope it will work
+Sweet: But those 200mm's have a ton of cooling power
+Sweet: @Valerian Wait you meant something else than PCI instead of 1 slot occupying?
+Sweet: Then i misunderstood
+Sweet: Do you seek PCI or PCIe @Valerian ?
+Sweet: Or wait i can see PCIe from the screenshot
+Riehl: I'm cooling the K80 with a set up like this ..
+Riehl: [Image attached]
+Riehl: But the triple fans will block my secondary PCIe 4 slot.
+Riehl: I have a few PCI X1 slots near the bottom.
+Sweet: PCI or PCie?
+Sweet: Because for a retro PC i will soon be installing my Trio64 GPU
+Sweet: And that PC is capable of windows 10
+Sweet: So if it works on Windows 10 you'd be able to get that as a PCI card
+Sweet: They are absolutely ancient cards though
+Riehl: [Image attached]
+Sweet: Doubt windows would have a driver for it even
+Riehl: The very last one .. the X1 slot. mega small
+Sweet: So the PCIe varient then
+Riehl: yes
+Sweet: I'm not far off with my 5450
+Sweet: They do have one
+Sweet: The question is would you be able to obtain one
+Sweet: [File URL attached]
+Riehl: 🤔
+Sweet: Judging ebay the firepro + adapter is probably your best bet though
+Riehl: I mean-
+Sweet: Whats that cooler though @Valerian that looks sick
+Riehl: not what I bought, lol
+Riehl: [Image attached]
+Sweet: Interesting but yours looks really cool
+Riehl: i think the cool looking fans are lke $60 ...
+Sweet: I like the LED's on it
+Desberg: my question is how the air's gonna get past the plastic
+Sweet: No fins?
+Riehl: [File URL attached]
+Desberg: there are fins but you gotta actually remove the casing
+Riehl: I take hex-key to side screws; open the case, and peel the plastic shield off that covers the heat sinks.
+Desberg: so the shield's on when not in use? gotcha
+Riehl: er, i was just gonna leave the plastic off the top.
+Sweet: In my case i just hope the front fan will be enough
+Sweet: And i hope the card stays cool when not in use
+Riehl: [Image attached]
+Riehl: that way, the heat sink's are exposed
+Desberg: I see
+Desberg: I made a 3D printed attachment that attaches to the screws on the front of the card, which funnels the intake from a fan attached to it
+Sweet: Saw those on ebay as well
+Sweet: Like fan to the side kind of deal
+Riehl: kinda like a data center fan actually works
+Desberg: yeah since I have a 3D printer I just made my own, but they're fairly easy to attach
+Sweet: In my case there is a 200mm fan in the front of my case which would blow directly against the card when active
+Sweet: So i am hoping the M40 stays cool enough when not in use to keep my passive build
+Riehl: Henky is using a big-boy fan
+Sweet: But then when i want to use it i can turn that fan on a high speed and then that should do hopefulyl 😄
+Riehl: instead of tiny screamy jet engines
+Sweet: Yup
+Sweet: The case is also quite affordable
+Sweet: At least if you consider $100 for a case affordable
+Sweet: To me most good quality cases are around that price
+Riehl: i am very likely going to have to come to or or Henky about setting up linux to run this thing if we can't find windows drivers that play nice with it
+Sweet: [File URL attached]
+Sweet: @Valerian I am going to have Linux on mine either way since i want to be fully on linux by 2026
+Sweet: So already doal booting
+Desberg: and that is why I don't like running my K80 lol
+Riehl: this is the case I was *thinking* of putting it in..
+Sweet: How hot does your K80 get idle when the fans not on?
+Riehl: [Image attached]
+Riehl: opinions?
+Desberg: dunno, the fan's got a molex connector so it's not like I can very easily control that
+Desberg: they're pretty much just always on
+Sweet: @Valerian Looks server rack enough that you might get away with just the front fans if its near that area
+Sweet: @WAUthethird In my case i can use motherboard software to control the output power of the motherboard ports, so if i went for a setup like that i'd try to hook it up to those
+Sweet: But if its on the PSU then rip speed control indeed
+Desberg: yup, psu
+Sweet: Yeah thats not fun
+Sweet: Think my 200mm fan will work?
+Desberg: how are you attaching it? or is it in a server box
+Sweet: Its in my desktop PC
+Sweet: The fan is on the front
+Sweet: If you check the amazon link i posted you get the idea
+Sweet: Those on full blast produce a lot of airflow
+Desberg: seems like it'd be a bit challenging to get all that into the fins though
+Desberg: unless you've got a fancy rack thing like @Valerian
+Sweet: Its basically case wide airflow
+Desberg: ah yeah, that's what I've got
+Desberg: should be fine
+Sweet: And i am hoping that like the server varients it goes into the side
+Sweet: Not sure how they line up in the servers but i am assuming they are in a row and then air goes from the side
+Sweet: Since blade servers typically have this large fan array of super tiny fans
+Desberg: yeah, in one way and out the other so you've got one area of the server room that's a bit windy, and another area that's pretty warm
+Sweet: Once was in one where the aircon failed
+Desberg: ouch
+Sweet: That was insanely warm in the entire room
+Sweet: They had dying harddrives for months
+Desberg: not surprised why didn't they make fixing that a priority?
+Sweet: They did
+Sweet: But you don't notice it until the next day
+Sweet: They ended up taking the windows out so they could have the room cool down
+Sweet: It was not safe for humans in there
+Desberg: and by that time it was too late that's not fun
+Sweet: Pretty sure it happened on the weekend as well
+Sweet: And it wasn't the main server room either
+Sweet: The company had 2
+Sweet: So it was just this regular room with servers and an aircon
+Desberg: the main one didn't fail, right
+Sweet: Nope
+Sweet: That one was much more proper haha
+Sweet: But i remember trying to go inside it hours after they already were getting the air out for the backup check
+Desberg: can't have been a cheap fix-up
+Sweet: And i was not able to go in yet
+Sweet: To warm
+Sweet: I would not be surpriced if it ended up near 80 degrees celcious in there
+Riehl: holy wow...
+Desberg: hot damn
+Sweet: Imagine how hot the inside of your computer gets if you had no cool air anymore
+Sweet: Then have an entire room of them, and no more external air cooling or ventilation
+Sweet: The fact that company took the windows out already says a lot haha
+Desberg: sounds like a good reason to have backup a/c
+Sweet: We made daily backups on tape which were in different rooms entirely and some outside the building
+Sweet: And the other server room did not get hit
+Sweet: So no data was lost but they had to replace almost all the drives over the course of a year
+Desberg: sounds pricey
+Sweet: For sure
+Sweet: I remember them being very concerned about their raids
+Riehl: how often do things burn out in situations like that?
+Sweet: Burn out as in catch fire?
+Sweet: Or just failure
+Riehl: both.. ?
+Riehl: Ehm..
+Riehl: [Image attached]
+Riehl: @Henky!! these were the drivers that were suggested ...
+Riehl: i dunno if those were the ones you looked at already or not
+Sweet: Its one i am researching yes
+Sweet: But i do see one annoyance with them
+Sweet: Conda has no pytorch version compatible with it
+Sweet: Pytorch's repository basically has 11.0 and 11.1
+Sweet: So i am starting to doubt if using the official one is a good idea
+Sweet: conda-forge seems to have 11.2
+Sweet: So i am messing with kobold's install scripts a bit
+Sweet: Or more specifically the finetuneanon.yml
+Sweet: Otherwise 11.0 might be better for you and me, since we can grab a download for 11.0
+Sweet: @Valerian From what i can tell 11.2 is good for now
+Sweet: But i can't test anything until one of us has the card running and we can learn how strict it is on the requirements
+Nevlin: Doesn't Colab have K80s
+Sweet: They do yes
+Sweet: We are talking windows drivers at the moment
+Sweet: They have seperate drivers for the different cuda versions and i am wondering why thats the case
+Sweet: The one version pytorch uses (11.1) is not provided
+Sweet: 10.2 would work though
+Carena: @Henky!! welcome to my world, of compilation hell
+Riehl: @Henky!!
+Riehl: would this help?
+Sweet: Try the 11.2 first
+Sweet: Because 10.2 will not work on KoboldAI before changing a dependency file
+Sweet: If 11.2 works out of the box we don't need to mess with it
+gold9: 11.2 works fine with M40 but the GPU is monolithic which mean the driver will interface with it as a single GPU. I don't know much about K80 but if I recall correctly it is dual GPU in a single board. does cuda library interface with them as single board or as two gpu ?
+Sweet: I think two gpu's
+Sweet: VE mentioned before he might look into adding multi gpu support
+gold9: Nice!
+Nevlin: I already did, I'm just waiting for Sionnach to finish setting up
+Sweet: Oh neat, so thats going into united soon i assume?
+Nevlin: I have it in a branch
+Sweet: Nice 😄
+gold9: Does the multiple GPU allowed using multiple VRAM as a single ?
+Nevlin: It just does some computations on one GPU and the rest on another
+Nevlin: you can have some of the model on one GPU's VRAM and the rest on the other
+gold9: So I'll be limiited by the biggest VRAM in the system for model size ?
+Nevlin: No, you are limited by the sum of the VRAM in all your graphics cards combined
+Sweet: Is it like breakmodel or does it auto split?
+Nevlin: I just have it set to do an even split right now
+Nevlin: I'm trying to think of how to get the user interface to work with multiple GPUs and CPU
+gold9: oh that neat!
+Sweet: How about you give them the total, and ask per device how much blocks they want to commit to it with the remaining blocks also being shown in each prompt?
+Sweet: And then auto commits the remaining ones to the last device
+Sweet: That way in a single GPU setup you get the CPU question and nothing else
+Sweet: But in a GPU setup you can choose how much per GPU
+Sweet: Because if people add their old GPU's on to it they may have preferences
+Nevlin: I think for the multiple GPUs it'd be less confusing to ask for how many layers for each GPU and then commit the rest to CPU memory
+Nevlin: But that'd also require me to change the existing breakmodel thing to ask for how many layers to commit to GPU
+Sweet: Thats a good idea
+Sweet: I don't think that would be to big of an issue if we are clear about it
+Sweet: But ideally we'd automatically detect it
+Sweet: If we had a means of detecting the total size
+Sweet: Then you could recommend the amount to commit
+gold9: I mean there are limited amount of memory size out there 2,4,6,8,11,12,16,24 and they can be read by NVidia drive assuming that it gone be NVidia only solution. I didn't test AMD\ pytourch on linux yet
+Carena: Don't forget I run 32Gb...
+Carena: And it's a CPU/GPU shared memory
+Carena: This however is something that is not yet fully understood by the pytorch devs...
+Carena: The GPU only needs a pointer to the memory, not a full copy.
+gold9: hahha I think Javier AGX special case. But most likly future systems from ARM and RISC V gone be share memory with just pointer. But now, most x86 system are limited with memory.
+Carena: It's not a special case, I also seen GPU with 48Gb...
+gold9: Talking about CPU/GPU based system
+gold9: other than APU for ML
+gold9: Though I would love V100, the price is going to be astronomical
+gold9: or RTX 8000
+Carena: A100, 80Gb VRAm
+gold9: yeah and rtx8000 is 48. Is anyone here have A100 ?
+Carena: Vast.ai? I think you won't need anything bigger than 24Gb VRAM to be honest at this moment
+Carena: HFJ in half size is 12Gb, for training you need twice that...
+Sweet: Imagine being able to tune a model in chunks
+Sweet: Would be so nice
+gold9: I think the reloading each chucks will take forever
+Carena: Deepspeed?
+Sweet: Probably
+Sweet: Deepspeed is going to be something ill look in to when i have the m40
+Carena: Deepspeed is only handy if you have multiple gpu
+gold9: What is Deepspeed ?
+Sweet: Can't it tune J on a single 3090?
+Carena: 12Gb * 2... Doubtful.
+Sweet: [File URL attached]
+Carena: Freezes 25% of layers to fit
+Sweet: So wouldn't produce good results?
+Carena: As i said: doubtful
+Carena: It might, but unsure at what cost
+Carena: Ah, it uses finetuneanon's wonderful junk
+Carena: I tried that, it won't work properly
+Sweet: To be fair you did not try that with an m40 😛
+Carena: 2x 3090, and it OOMed at 24Gb
+Carena: Want to try my most devilish idea ever, and that is 6B-Ramsay
+Sweet: As your first 6B?
+Carena: Yup
+Carena: At least I will know how well it performs
+Carena: I know that if I do Shinen on 1.3B on my system, it takes around a month...
+Carena: I do have a paid 2080Ti at my disposal but last times I tried that broke on deepspeed
+Riehl: it is time
+Riehl: for operation
+Riehl: mutilate spare GPU.
+Riehl: wish me luck, i shall post my results. I *won't* be testing it on any good mobos or anything of value - just a garbage rig kept in storage.
+Riehl: oh and i sent the gpu that arrived in the mail back; that's money i could spend on something else.
+Sweet: And thus #hardware became a horror channel haha
+Sweet: Hopefully they survive it sio
+Riehl: well the good news is nothing caught fire
+Riehl: the GPU powered up, etc. but no post.
+Riehl: wasn't expecting it to work - but i have a bunch of old junk parts.
+Riehl: on the plus side - i've got a franken rig to test parts on now at least. 😅
+Sweet: The M40 arrived 😄
+Sweet: Now i will need to wait a couple of weeks for the PSU cable to show up
+Nevlin: Wow that was fast
+Sweet: Yeah its a week earlier
+Sweet: Thats like a one week delivery for something from the US
+Sweet: The cable will take much longer
+gold9: They were fast when they shipped M40. I had to wait a week to get cables even though I ordered them before the card arrived
+Sweet: I have no illusion in regards to the cable, i expect it in the second half of next month
+Sweet: China shipping is always super slow
+Sweet: If it takes to long i might just try and buy another one locally
+gold9: They have direct aliexpress shipping that usually takes less time. But I was in verge to order it for a bit extra from Amazon to just be sure nothing wrong with M40
+Sweet: I didn't go with the direct one for such a cheap component
+gold9: They are free after certain amount. I was building server rack cable management and I got them with other stuff
+Sweet: I didn't need anything else, so it would have been $13 shipping for a $4 part
+Sweet: Looks like i am very lucky, randomly got a track and trace alert despite using the free shipping option. "The cable arrived in my country" (Not really but its in the neighboring country close to the border). So it will probably be here very soon :D
+Ralf: What courier is it with?
+Sweet: Their free global shipping
+Sweet: My tracking app can't figure out the real traxking number of the couriers like it often can
+Ralf: It should be with a local carrier rn, no?
+Sweet: Yup
+Ralf: Are you using 17Track?
+Sweet: Nope, parcelsapp which is way better
+Ralf: I used Parcelsapp a long time, but shipments from China were just not accurate for me.
+Sweet: Interesting since i never found anything it did not accurately track
+Sweet: Tried like 5 of them on a chinese package and only parcelsapp managed to get details
+Carena: depends, if it's aliexpress it might
+Sweet: But it also is reliable outside of china where 17track fails on anything thats not international
+Sweet: For this specific package i only have cainiao tracking
+Ralf: Not using Aliexpress.
+Carena: Aliexpress also ships with Cainao
+Ralf: 17Track isn't working for you then? I use it on all my local DHL and DPD shipments.
+Carena: Aliexpress using 4 types: - EMS - Aliexpress (DHL & PostNL) - Cainao - China Post
+Sweet: @Ralf Didn't work on PostNL
+Sweet: For me no matter the type i always got cainiao tracking
+Ralf: Oh I remember EMS
+Ralf: Not gud
+Sweet: This one is Cainiao Super Economy Global
+Sweet: What was EMS like?
+Ralf: Ass.
+Ralf: Took a whole month to get my shipment to Germany. Ripped of my customs declaration papers in the process.
+Ralf: German Customs or "Der gute Zoll" seized it and it took EMS another whole month to get back to me.
+Sweet: For me the china post one is the trash one
+Sweet: With dealextreme it typically took me 2 months to get anything
+Ralf: I usually go with DPD now when getting something from China.
+Ralf: Customs doesn't even care about it.
+Sweet: Nice, these days PostNL has a system where on behalf of customs they deliver it to the post office and make you collect it there
+Sweet: But the post office is trash so i am trying to avoid them as much as possible
+Ralf: Yes, same in Germany with DHL and the Deutsche Post, but in general I pay customs in advance.
+Carena: @Henky!! Note that if you have an app, you can pay customs in advance
+Sweet: I don't have their app
+Sweet: But it happened with a package i had no track and trace for
+Sweet: With the M40 ebay handled all the customs stuff shipping and customs was a redicilous $100 though, they should not do that on second hand goods
+Sweet: It was a third of the price of the card
+Riehl: @Henky!! K80 is powered on, system is running ... trying to find drivers. :/
+Riehl: getting 11.2
+Riehl: @VE FORBRYDERNE I should be able to give you a screen shot of my GPU's soon. getting drivers set up.
+Riehl: also getting fan controllers configured.
+Riehl: hmm.. 11.2 may not with Keplar devices..
+Riehl: [File URL attached]
+Nevlin: colab somehow has both CUDA 10.2 and 11.2 installed for K80s
+Nevlin: I think at least one of those two should work
+Riehl: i tired to install KAI -- but finetune anons transformers failed to create a process.
+Nevlin: I've seen that happen before when trying to use conda in a path that has spaces in it
+Riehl: ah!
+Riehl: lemme look at that.
+Nevlin: if you're using the K drive option then this isn't the problem though
+Riehl: i think that is the issue.. my user account has a space.
+Riehl: lemme try the other option
+Riehl: [Image attached]
+Riehl: ooof.
+Riehl: i guess i have to use 11.2 then?
+Riehl: also, weirdly enough ... no GPUs appearing in Task Manager...
+Riehl: [Image attached]
+Riehl: though I know the devices are there.
+Riehl: restarted with 11.2, installing KAI again
+Nevlin: If you get the drivers installed correctly, you can run commandline.bat and type in this command to check how many GPUs PyTorch recognizes ``` python -c "print(__import__('torch').cuda.device_count())" ```
+Riehl: can do!
+Riehl: I also found this --
+Riehl: [Image attached]
+Riehl: does that help you at all?
+Nevlin: what am I looking at lol
+Riehl: uh, I think registry entries for installed GPUS.
+Riehl: [Image attached]
+Riehl: and that command showed this ...
+Riehl: wait
+Riehl: wrong cmd
+Nevlin: if it prints nothing it means PyTorch didn't recognize your cuda drivers
+Nevlin: I think
+Riehl: [Image attached]
+Riehl: it said .. "2"
+Nevlin: Your display GPU is from AMD right?
+Riehl: correct.
+Nevlin: Ok I'll just assume those two are your K80 cores
+Riehl: so it sees both cores?
+Nevlin: hold on
+Nevlin: yeah I guess so
+Riehl: want me to try to run a model?
+Nevlin: sure
+Riehl: kapow.
+Riehl: i'm guessing the models also cannot have spaces in the command line either, huh?
+Nevlin: I think they can
+Riehl: not sure what borked up then
+Riehl: [Image attached]
+Riehl: if that provides more details or not?
+Riehl: wait..
+Riehl: those aren't complete models. that's my fault.
+Riehl: they didn't transfer over from my external hard drive completely; this motherboard has kinda borky USB ports on the front.
+Riehl: transfering 6B over.
+Nevlin: You should probably try to load a 2.7B model first
+Riehl: yep -- trying a neo model first.
+Riehl: 🤞
+Riehl: and here we go~
+Riehl: holy shit
+Riehl: [Image attached]
+Riehl: I can run GPT neo without break model mode. It replies in like, a few seconds. Not instant..
+Nevlin: Around 4-5 seconds?
+Riehl: Yup!
+Nevlin: I have a version of KoboldAI here you can use to try to load 6B https://github.com/VE-FORBRYDERNE/KoboldAI/tree/k80-test
+Riehl: Temps --
+Nevlin: Is that good?
+Riehl: I think?
+Nevlin: I know nothing about hardware
+Riehl: I just looked up what is "hot" ... and it interwebs sais something like 65C ...
+Riehl: i've got a manual fan controller set up just in case .. (and a fire extinguisher)
+Riehl: i do have to get to bed. but i'm really excited.
+Riehl: I downloaded your special version -- going to set it up in the morning.
+Riehl: spent the evening building this thing. lol
+Riehl: it looks like ... a train wreck; the proper case hasn't shown up yet.
+Nevlin: That's what most stuff I build looks like
+Nevlin: Anyway, good night!
+Riehl: good night! talk to you tomorrow! thank you for help! I'm sure Henky will be excited, too!
+Riehl: i guess I'm only using 12 VRAM right now? or is it using both? I'm not sure.. ?
+Riehl: doesn't NEO require 16vram?
+Nevlin: No only the official ones do
+Nevlin: The finetuned ones need 8 GB
+Nevlin: We halved the memory requirements
+Riehl: I see!
+Riehl: before, I had to use break model mode to even run horni-li at full tokens
+Nevlin: Didn't you have an 8 GB card already?
+Nevlin: I guess maybe it needs more at max tokens then
+Riehl: I did!
+Riehl: head to sleep! being poked.
+Riehl: again, thank you!
+Carena: Anything between 60 and 65 is good. Beyond 70 you might start experiencing issues, and beyond 85 your card will go throttle. It can go up to 130c, but then it's thermal paste will melt.
+Riehl: thank you! testing K80 mode now!
+Riehl: @VE FORBRYDERNE
+Riehl: it appears to be working. both cores are operational - I'm running 6B Skein. Replies take a few moments to return
+Riehl: [Image attached]
+Carena: @Valerian you running on full GPU utilisation?
+Riehl: I think so? there's a monitor in the upper left of the screen - both cores seem to be showing activity
+Riehl: @mr_seeker
+Carena: I mean like: Full GPU usage as in RAM 😉
+Riehl: oh!
+Riehl: let me see what the ram is doing..
+Riehl: [Image attached]
+Riehl: I guess that's like 100% utilization?
+Riehl: [Image attached]
+Riehl: it's weird -- the GPU does not show up like a normal GPU in the performance tab. There are literally only two options in the NVIDIA settings: "Dev Mode enable" and "GPU utilization"
+Riehl: it doesn't give me any easy readouts of VRAM usage.
+Carena: Check nvidia-smi
+Riehl: Most of the information is very, very skant - with only a "Data center GPU detected" comment
+Carena: nvcc and nvidia-smi can see much more than windows 😉
+Riehl: [Image attached]
+Carena: Okay, it seems it's split between 2 K80?
+Carena: 6Gb + 6Gb 🙂
+Riehl: [Image attached]
+Riehl: seems to be running at least pretty cool-
+Carena: means multi-GPU works 😄
+Riehl: yes!
+Riehl: Hardware people! I have updated my Pinned message at the top to include cooling options - you can remove the cover from the GPU using hex keys and cool the GPU's heat sinks directly with traditional fans. 11.2 NVIDIA drivers for the Tesla K80 are confirmed good; unsure for M40 or other Tesla cards. As you get results, I'd be happy to add to the pinned messages for others who want to build their own home rig.
+Carena: I would love to get a new rig for training purposes...
+Sweet: @Valerian By default the K80 behaves as a compute card not a gpu
+Sweet: Can be switched but this mode is going to be the best for kobold
+Riehl: if I could learn how to do it - I would be happy to train stuff on my rig!
+Riehl: multi-tasking and stuff. i might be capable of doing that now
+Riehl: yeah .. i saw that. but it's kind of a debate on if it's even useful as a graphics card. some people swear by it, others say it's kinda garbage as a gaming card. I'm not really going to try at the moment. might be an interesting experiment later.
+Riehl: on another note .. **all** my old stories are absolutely effing amazing now.
+Riehl: at least a good few of them.
+Riehl: 6B is incredible.
+Carena: I tried it, but the 2.7B on 11Gb of RAM seemed to have caused OOM, so never followed up on it
+Riehl: ah. so i can't use all 24 for training i guess
+Sweet: @Valerian On skein i imagine?
+Riehl: yep! was running Skein locally this morning.
+Riehl: about to tinker with it a bit more.
+Riehl: trying to get my Zotac drivers installed so I can have two monitor support.
+Riehl: @Henky!! your M40 show up yet?? 🙂
+Sweet: M40 yes, cable no
+Liggitt: google coral products aren't compatible with anything kobold-ai related, are they?
+Liggitt: [File URL attached]
+Liggitt: seems like these are more geared towards picture, video and sound recognition 🤔
+Nevlin: All you really need for running most neural networks is really fast matrix multiplication and lots of fast memory so technically it could be done, but these things don't look like they have enough memory
+Nevlin: Also they use tensorflow and we use pytorch and jax
+Liggitt: they're out of stock too 😫
+Liggitt: i hate the chip shortage
+Liggitt: 25 bucks wouldn't have been too much for a little coral device to experiment
+Liggitt: *no stock*
+Liggitt: but yeah with how much VRAM pytorch gobbles up, these things would definitely be out-of-spec
+Desberg: I've got the USB coral accelerator
+Desberg: works amazingly well
+Carena: They might work with a bit of tinkering
+Carena: One issue though: coral is an 8-bit system.
+Sweet: So you need 8bit models?
+Carena: Yup, looks like. Also restrictions in what can be used
+Sweet: Finally landed up on my doorstep, when i got the time and energy this week ill be taking that tesla for a spin. I just really hope i can keep it cool otherwise ill need to figure out what the best fan setup is
+Carena: Wondering if deepspeed can split up the Train model over multiple gpu's, and how to do that...
+Sweet: Isn't that the purpose of GPTNeoX?
+Carena: Might get my hands on cheap 2080Ti
+Carena: Cluster of 4
+Sweet: Not gonna join the M40 gang?
+Carena: Rented
+Sweet: Ah
+Carena: If I go full M40, I need a new pc
+Carena: And with that the hardware to finetune 20B
+Carena: Chip shortage needs to end first
+Sweet: For sure
+Carena: AMD Threadripper Pro 64 core 3995WX 256gb 3200 ram 7x 3090 FEs. All running at pcie gen4 16x 2tb Sabbrent nvme 2x Corsair ax1600i 1x Corsair ax1200i 480mm EKWB XE Radiator 240mm EKWB XE Radiator 7x Noctua 3000rpm industrial fans dual D5 EKWB pumps Corsair 3090 waterblocks with heatsinks and fans on the backplates All EKWB fittings and tubing. 12/16 That is a rig for vast.ai
+Sweet: Ran into an issue slotting my M40
+Sweet: The plate on the back is not fit for my case, it seems nonstandard compared to some of the online pictures
+Carena: Nonstandard?
+Carena: Is it a server based one?
+Sweet: Seems like it
+Sweet: The screw is to high
+Sweet: [Image attached]
+Sweet: Yup thats a nogo
+Sweet: @Valerian This will be good for you to include in the guide
+Sweet: There are multiple backplates and models and if you get one like mine you can't use it in a desktop case at all
+Sweet: The correct bracket seems to be called : PK3RJ
+Sweet: [File URL attached]
+Riehl: I think you can replace it?
+Sweet: Yes, its with screws
+Sweet: But people need to account for the fact they may need to buy this
+Sweet: Its something you can really only tell from the picture in the listing
+Sweet: Ill now need to wait another month before i have the bracket, otherwise i'd have ordered one haha
+Lavinia: Time to break out the zip ties.
+Sweet: I didn't wanna risk it with the slot
+Sweet: But would have gone further if i was more certain about my cooling
+Carena: [Image attached]
+Carena: To give an idea on what phone you might need for AI-related tasks (higher is better)
+Fowle: What kinda bracket does an M40 need to fit in a normal dual slot?
+Sweet: PK3RJ
+Sweet: Best way i can describe the look is that it has teeth at the bottom
+Sweet: If its flat you got the server version
+Fowle: Thanks
+gold9: It fits perfectly on M40: https://www.aliexpress.com/item/4000505282893.html?spm=a2g0s.9042311.0.0.27424c4dSliEoa
+Singband: I eventually need to try to get an Nvidia card. Or find out some new method to do without. One of the two.
+Sweet: That one fits to, but the PK3RJ has the original mesh
+Sweet: So the one i linked here is similarly priced and more original : https://www.ebay.com/itm/183756406633
+Riehl: @Henky!! lemme know which parts work - maybe we can pin a M40 how-to
+Riehl: or make an addendum
+Sweet: The PK3RJ most likely applies to both the M40 and K80 so it could go in the universal guide. Its not on my card yet but ill know soon enough if it fits
+Sweet: My M40 adventure may have come to an end
+Sweet: Not sure if its going to work in my PC
+Sweet: Getting insufficient system rsrcs
+Sweet: @Valerian Any ideas?
+Riehl: Insufficient system rsrcs?
+Riehl: like what kind of errors are coming up / symptoms?
+Riehl: hmm..
+Riehl: [File URL attached]
+Sweet: I managed to fix it
+Sweet: I needed to disable CSM mode
+Sweet: But its still not looking good
+Riehl: how so?
+Sweet: I am having multiple device conflicts
+Sweet: I got the tesla working now
+Sweet: But my network and usb controller are broken
+Riehl: which ones are conflicting? hurray!
+Sweet: So it may not have enough PCI lanes for all of them
+Riehl: interesting.
+Sweet: At least thats my theory
+Sweet: My main windows doesn't start anymore
+Riehl: the machine i built also starting have USB issues; front ports just stopped working flat out
+Sweet: Windows To Go running from USB starts and it has the card
+Sweet: But 2 of my other devices are down
+Riehl: using windows 10?
+Sweet: Yes, but a much newer one on the usb stick
+Sweet: The card was getting warm since i can't use my cooler software
+Sweet: So i just shut everything down
+Riehl: Pfff...
+Sweet: Once it had a while to cool off ill do one reinstall of windows
+Sweet: So it can detect and install everything fresh
+Sweet: If it works hurray!
+Riehl: like ... I know the M40 is more advanced / newer than the K80
+Sweet: If not, then this board is not capable
+Sweet: I think its oversaturating my PCI
+Riehl: what cards do you have installed besides the M40?
+Sweet: Vega 64
+Sweet: So i assume that one to uses quite a lot
+Sweet: And both of them eat up to much
+Riehl: i got myself a baby display controller
+Sweet: If i had known this i would not have bought that $50 board, i'd just have updated my PC when the old one died
+Sweet: Its also my gaming PC so i'd remove the M40 before installing a shitty GPU
+Riehl: OH oh no
+Riehl: see, i had spare parts given to me
+Sweet: I'd need a spare PC to put it in to
+Riehl: i literally had an old motherboard my brother gifted to me when he built a new mining machine
+Sweet: And my spare PC is certainly not going to handle this
+Riehl: Hm.
+Riehl: lemme look up...
+Sweet: So i am either going to shelve the M40 or sell it if i can't get this stable
+Sweet: Because chances are on Ryzen 3000 or 5000 it would work
+Riehl: [File URL attached]
+Riehl: this is what he gave me
+Sweet: Thats yours?
+Sweet: Because mine should be beefier than that
+Riehl: i put a little baby small slot GPU in the most bottom slot at the very bottom
+Riehl: it's not used for anything else other than KoboldAI.
+Riehl: literally dedicated to that entirely
+Sweet: I think i know why its a gameover
+Riehl: ?
+Sweet: It may not support dual X16 cards
+Sweet: But getting conflicting information on that
+Riehl: i wouldn't want you to cook your gaming machine. :/
+Sweet: Max PCI lanes is 20
+Riehl: i also have a ryzen, too
+Sweet: Which one?
+Riehl: uh, off the top of my head, can't recall..
+Riehl: I *think* a 5000 series?
+Riehl: it doesn't have an integrated GPU - that's why i needed the small graphics card
+Sweet: I am worried i am PCI lanes short basically
+Sweet: Which would not make much sense
+Sweet: Why support 2 PCIx16 cards on the board?
+Riehl: if i remember correctly with the B450 .. if you put two cards into the PCIx16 slots, it reduces their speed by 1/2
+Sweet: Mine is a x370 which is one generation older but a higher end chipset
+Sweet: [File URL attached]
+Riehl: interesting..
+Sweet: It would indeed run it at 8x 8x
+Sweet: But
+Sweet: What i am worried about
+Sweet: Is that it would make that a 16X and then i am short on the rest of the PCI devices
+Sweet: But we'll see after i reinstall
+Riehl: [File URL attached]
+Riehl: i found this - haven't watched it -- but it *wince* talks about modifying the bios?
+Sweet: Another aspect is that mine is the 24GB version
+Riehl: oh
+Sweet: Not wrecking another board haha
+Sweet: The bios chip is soldered to the board
+Sweet: And i already bought a new board this week because of a bad bios flash haha
+Riehl: well we've confirmed the K80 *works*
+Sweet: Well, not entirely
+Riehl: perhaps you could sell the M40 and try a K80?
+Sweet: We have not confirmed the K80 works
+Sweet: Because the M40 works
+Sweet: Its my other PCI devices that don't
+Riehl: I'm running a K80. :/
+Sweet: Yeah but you mentioned the front port issue
+Sweet: So to confirm it works you need to check if all your devices in device manager are working correctly
+Sweet: Because the M40 is usable
+Sweet: Its the rest of the system that isn't
+Riehl: i see-
+Sweet: So i could theoretically rig my USB network adapter to the PC and use it
+Sweet: It would most likely work
+Sweet: But thats not a way for me to use my PC
+Sweet: I'd still be down the usb controller i need for my external drive, and the good ethernet
+Sweet: Currently installing windows back
+Sweet: @Valerian Is yours working with all the PCI devices in your system?
+Sweet: Or do you also have other devices not working?
+Sweet: Like one of the usb controllers
+Riehl: when i was building it - i was reading that the motherboard itself has some issues with USBs refusing to work if certain SSDs / PCI cards are installed - regardless of the GPU.
+Riehl: it's kind of a silly board.
+Riehl: There's two 'thumb stick' ssd ports on the mobo itself, but if you use one of them - it switches off the PCI card next to it -- unless you go into the bios and override it.
+Riehl: The front USBs work (infrequently) -- my external hd would display. I started copying data off it - and suddenly the usb stopped working.
+Riehl: the rear USBs function, as does the network card
+Riehl: i have the secondary graphics card installed - but i have not installed dirvers for it for fear of it conflicting with the K80's drivers.
+Riehl: supposedly I can install two different sets of graphics drivers -- but the options to do so don't seem available or windows 10 is kind silly about doing it -- like, it doesn't recognize the drivers when I try to manually select them for that device.
+Riehl: I *can't* use two monitors - depsite haveing two display ports for some reason. i imagine because the drivers are running only the Tesla drivers.
+Riehl: I also don't have sound on that machine.
+Riehl: likely - again - a driver issue - as I imagine data center drivers aren't designed for any audio output because of their purposes
+Riehl: in terms of temps -- it's been remarkably cool - and i haven't had any crashes yet.
+Riehl: but also - the machine is simply built around the K80. I don't do any gaming or anything else on it besides run KoboldAI. :/
+Sweet: Yeah
+Sweet: I think i got my conclusion
+Sweet: I can't support all the components in this build
+Sweet: Its most likely the Vega 64 + M40 combination that eats up to many lanes
+Sweet: Found out more information
+Sweet: Its NOT the M40 that causes my issues
+Sweet: The reason i only noticed it while i had the M40 in was because Above 4G support was never properly enabled for me
+Sweet: Its why initially the M40 didn't initialize
+Sweet: Its the above 4G support that breaks my network adapter and usb controller on its own
+Sweet: That means that prior to buying one not only do you need to check if its present in the bios, but if everything on your system still works when its enabled. And you have to make sure CSM support is disabled when you test that.
+Sweet: Its most likely an issue with the motherboard i have and not the M40
+Sweet: Especially since its happening without the M40 slotted in my system
+Sweet: And stops happening the moment i turn above 4g off
+Riehl: Huh...
+Sweet: Looks like a motherboard quirk sio
+Riehl: *nodnods!*
+Sweet: Which i wish i knew before i bought the same board again xD
+Sweet: I bought it because it had Gen2 and Above 4G support
+Sweet: But turns out the Above 4G support is only partial
+Riehl: How can it only be "partial?" that's kinda weird
+Sweet: Unless i can somehow solve it with drivers but i have not been able to solve it yet
+Sweet: Like Above 4G support works
+Sweet: But then my network adapter and one of the usb controllers does not
+Riehl: but it emsses with other controllers.
+Riehl: hm. bios update maybe?
+Sweet: I can't
+Sweet: Its the second highest bios and the newer one introduces stability issues
+Sweet: This is the highest stable bios you can put on the board
+Sweet: And i am not repeating the downgrade again haha
+Sweet: I don't want to throw a second one in the trash xD
+Sweet: Not that downgrading would work, because lower versions don't have the Gen2 support
+Riehl: [File URL attached]
+Riehl: Are the PCI slots configured for "Gen 2"?
+Riehl: i'm looking through bios issues / bugs / etc
+Sweet: They are, originally i forgot and it didn't boot at all
+Sweet: For reference, i am running the beta NV bios
+Sweet: Its the second newest bios
+Sweet: The newest beta bios breaks legacy boot completely
+Sweet: And i like to use legacy boot when testing stuff
+Riehl: @Henky!! any luck? :/
+Jacinta: Hi guys, anyone know why the k80 are so cheap right now?
+Jacinta: If there even there's a reason
+Carena: Because they are being dumped by miners?
+Jacinta: Eh, fair enough, because of ETH2.0 incoming?
+Carena: Could be.
+Sweet: K80's (and to some extend M40's) are a dead end in terms of support so datacenters don't want them. And performance wise they are weaker than a 1080 so miners don't want them. They are stupidly difficult to use at home and have no video outputs so gamers don't want them. Which leaves us.
+Jacinta: Makes tons of sense, thank you
+Carena: [File URL attached]
+Sweet: Isn't that one that you have?
+Carena: Nope, I have the Xavier
+Sweet: Would it be any good for us / affordable?
+Carena: It depends
+Carena: Xavier was pricey
+Carena: It's ampere technology, but I had difficulty getting the 2.7B to train already
+Sweet: Looks like AMD users just got a lot harder time getting it to work
+Sweet: And as a result i am out of GPU testing capabilities since i now don't have a working M40 and i also no longer have a working GPU at all
+Sweet: I am almost certain its the 4.5 ROCm update that broke compatibility
+Sweet: But naturally AMD is terrible so they did not update the other dependencies
+Sweet: On the bright side they may have finally added RDNA support
+Sweet: So when the dependency hell can be resolved more people might be able to attempt to run it
+Fowle: @Henky!! How could I try to run Kobold locally on my machine?
+Sweet: Which hardware do you have?
+Fowle: Since GPU is a bust
+Sweet: If your going for the CPU route, how much ram do you have?
+Fowle: I have 40GB
+Sweet: Lol, alright xD
+Sweet: In that case if you are fine with longer generation times you can run the CPU version
+Sweet: In your case the development version will probably work the best
+Fowle: does the CPU matter?
+Sweet: [File URL attached]
+Sweet: It matters in how slow it will be
+Sweet: But it will be able to run it
+Fowle: 2600
+Sweet: My 1700X handles it fine
+Fowle: 3.8ghz boost
+Sweet: Mine is 3,9Ghz 16 threads
+Fowle: 6 cores 12 threads
+Sweet: Yours might take a little longer but should be relatively close
+Sweet: Expect to wait a minute
+Fowle: ok thanks
+Sweet: Longer once the stories go further
+Sweet: So if you want to use it for slower more casual play with your ram it will work solid with the 2.7B's
+Fowle: ok
+Sweet: 6B expect a multi minute wait
+Sweet: You can still do it since you got enough ram
+Sweet: You will need the HFJ models though, the HF don't work CPU only
+Fowle: Does ram speed matter
+Sweet: Nah
+Sweet: Just ram size
+Fowle: ok
+Fowle: Thank you henky for your help
+Sweet: No problem 😄
+Fowle: @Henky!! One more thing, which script do I execute?
+Sweet: install_requirements.bat as admin
+Sweet: Then later play.bat
+Fowle: I have linux
+Sweet: Oh
+Sweet: In that case you will either need to set everything up manually or use docker
+Sweet: I recommend play-cuda.sh
+Sweet: With docker and docker-compose installed it should get you going
+Fowle: What if I have an AMD GPU
+Sweet: Which one?
+Fowle: 5500xt
+Sweet: Don't do anything
+Sweet: Don't even attempt it
+Sweet: I tried it today and AMD broke their stuff
+Fowle: oof
+Sweet: if you try it now the chance of it working is 0
+Sweet: The chance to get it to work later would be low to
+Sweet: And your GPU was never supported
+Fowle: So nothing has changed, oof
+Sweet: However, with a bit of luck it might be in 4.5
+Sweet: So its worth trying once its working again on my supported GPU
+Fowle: So forget CPU play then?
+Sweet: With play-cuda.sh
+Fowle: ok
+Sweet: Just forget about the AMD side for now haha
+Sweet: You can still install docker and use the docker for nvidia
+Sweet: Although that might not support CPU play well
+Sweet: Let me look
+Sweet: Doesn't support CPU play properly
+Sweet: Can be easily changed to support CPU play instead though
+Sweet: You will have to make a tiny modification to it
+Fowle: What is the mod?
+Sweet: In play-cuda.sh it copies the finetune.yml file
+Sweet: That one only supports GPU usage
+Sweet: You will want to change that to the huggingface.yml file
+Sweet: So it downloads that one instead
+Fowle: what about env.yml?
+Sweet: That is where it copies it to
+Fowle: Ah ok
+Sweet: You may need to modify more
+Sweet: But we will see if it works
+Fowle: > ./play-cuda.sh: 4: docker-compose: not found
+Sweet: You need docker and docker-compose installed
+Sweet: Getting docker working is your own responsibility with your distro haha
+Sweet: Docker has good guides for pretty much all distro's
+Sweet: Which one do you have?
+Fowle: popos
+Sweet: So ubuntu
+Fowle: basically
+Sweet: Which one? 20.04 or 21?
+Fowle: Pop!_OS 20.04 LTS
+Sweet: [File URL attached]
+Sweet: Thats how to get the proper docker engine
+Sweet: Once you have that docker-compose should be apt-get installable
+Sweet: But in summary since they list so many instructions
+Sweet: ``` sudo apt-get update sudo apt-get install \ ca-certificates \ curl \ gnupg \ lsb-release```
+Sweet: ```curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg```
+Sweet: ``` echo \ "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \ $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null```
+Sweet: ``` sudo apt-get update sudo apt-get install docker-ce docker-ce-cli containerd.io```
+Sweet: Those ones from their manual are the relevant ones
+Sweet: Once you have all that it should be something like ```sudo apt-get install docker-compose```
+Fowle: > ERROR: The Compose file './docker-compose.yml' is invalid because: > services.koboldai.deploy.rsrcs.reservations value Additional properties are not allowed ('devices' was unexpected) > Unsupported config option for services.koboldai: 'group_add'
+Sweet: I wonder if you ended up getting a old version
+Sweet: Alright try this ```apt remove docker-compose```
+Sweet: To get rid of it again
+Fowle: ok
+Fowle: removed
+Sweet: docker-compose giving the not found error again?
+Fowle: ./play-cuda.sh: 4: docker-compose: not found
+Fowle: yep
+Fowle: Now what
+Fowle: Trying again
+Fowle: But if I install it again the other error occurs
+Sweet: pip3 install docker-compose
+Sweet: So you have the new one
+Sweet: It has to be uninstalled though
+Sweet: It is 3am for me so i am not the most responsive atm xD
+Fowle: oof sorry
+Sweet: They think its a good idea to do construction at night
+Sweet: So ill be kept up until they finally stop
+Fowle: > Requirement already satisfied: docker-compose in /usr/lib/python3/dist-packages (1.25.0)
+Sweet: Did you uninstall it when you tried it again?
+Fowle: Ok now it's installing thanks
+Fowle: Error just now > ERROR: Service 'koboldai' failed to build : The command '/bin/bash -c apt update && apt install xorg -y' returned a non-zero code: 100
+Sweet: Don't know
+Sweet: I have not touched this on ubuntu in months
+Sweet: Neither do i normally use the cuda version, someone else made that one
+Sweet: Try something like
+Sweet: systemctl status docker
+Sweet: To see if its even running
+Sweet: You must also be a member of the docker group otherwise you will need to run the file with sudo
+Fowle: running
+Sweet: Try running it with sudo then
+Sweet: Maybe that will make it start
+Fowle: Full error message > rexommendation@pop-os:~/KoboldAI-united$ sudo ./play-cuda.sh > non-network local connections being added to access control list > Building koboldai > Step 1/5 : FROM mambaorg/micromamba > ---> 71c065a6981f > Step 2/5 : WORKDIR /content/ > ---> Using Cache > ---> c24add7fe95d > Step 3/5 : COPY env.yml /home/micromamba/env.yml > ---> Using Cache > ---> b0fd3c767a63 > Step 4/5 : RUN apt update && apt install xorg -y > ---> Running in 2f4ea236e366 > > WARNING: apt does not have a stable CLI interface. Use with caution in scripts. > > Reading package lists... > E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied) > ERROR: Service 'koboldai' failed to build : The command '/bin/bash -c apt update && apt install xorg -y' returned a non-zero code: 100
+Sweet: Ill see if i get the same on manjaro
+Fowle: Ok let me know how that goes, I'll just use colab for now. Thanks for your support.
+Sweet: Getting the same thing here so something broke that docker environment
+Fowle: I guess I will just stick to the colab for now
+Sweet: I do have a fix for that, but currently having merge conflicts and i am not used to github's way of dealing with merging it all back
+Sweet: I don't want to create a branch on the main one
+Sweet: I just want it to apply the changes to ours
+Nevlin: If you have a local git client you can resolve merge conflicts that way
+Sweet: I got github.com and the github desktop client
+Sweet: The merge itself is obvious, its your version bump it doesn't like
+Sweet: But i don't want to clutter the real one
+Nevlin: You are trying to merge the official branch into united, right?
+Sweet: Yup
+Sweet: I fixed the cuda docker
+Sweet: So i need to merge it with your united changes intact, without those landing in a public branch
+Nevlin: ok let me do it
+Sweet: And i assume your dynamic world info merge was safe
+Sweet: I didn't get a good chance to test it, but if others here have i can allow that one to
+Sweet: Merged the dynamic world scan first
+Nevlin: opened a pull request
+Sweet: Was that effectively you cloning main on your end and then pushing it back into mine?
+Nevlin: I did a `git checkout` to united, then `git merge`d the main branch into it, then manually fixed the merge conflicts in Visual Studio Code
+Sweet: @ReXommendation If you get the latest version you will have that file fixed its failing on
+Fowle: Ok thanks
+Sweet: It will still fail since you don't have an nvidia gpu
+Sweet: In the docker-cuda/docker-compose.yml file
+Sweet: Remove anything starting at devices: and lower
+Sweet: You only need the first half of the file
+Sweet: That will stop it from trying to look for a GPU that does not exist
+Sweet: Then you should have a CPU version instead of a cuda version
+Sweet: And don't forget to mod that first file to get the huggingface again if your updating all the files
+Fowle: Now do I just wait? > rexommendation@pop-os:~/KoboldAI-united$ sudo ./play-cuda.sh > non-network local connections being added to access control list > Building koboldai > Step 1/6 : FROM mambaorg/micromamba > ---> 71c065a6981f > Step 2/6 : WORKDIR /content/ > ---> Using Cache > ---> c24add7fe95d > Step 3/6 : COPY env.yml /home/micromamba/env.yml > ---> Using Cache > ---> b0fd3c767a63 > Step 4/6 : RUN micromamba install -y -n base -f /home/micromamba/env.yml > ---> Running in 5de05ffaeb4f > > __ > __ ______ ___ ____ _____ ___ / /_ ____ _ > / / / / __ `__ \/ __ `/ __ `__ \/ __ \/ __ `/ > / /_/ / / / / / / /_/ / / / / / / /_/ / /_/ / > / .___/_/ /_/ /_/\__,_/_/ /_/ /_/_.___/\__,_/ > /_/
+Sweet: Yup
+Sweet: The display doesn't really work well but let it sit
+Fowle: Looks fine but copy and paste makes it look bad
+Sweet: In my case most of the install process got cut out from view by docker
+Sweet: But it downloaded a mini version of ubuntu inside the docker with the tools we use on windows to deploy all the dependencies
+Sweet: Right now its downloading all the python dependencies and setting it up for you
+Sweet: And then lastly it adds X11 to the docker so it can show you the file open dialogs
+Fowle: Ah ok
+Sweet: After that it will attempt to launch it
+Sweet: If you modified all the files correctly you get the main menu
+Fowle: How long with it take to download and install
+Sweet: Depends on your internet
+Sweet: Its around 10GB on windows
+Sweet: KoboldAI needs a LOT of dependencies haha
+Sweet: But this cuda docker is really nice
+Sweet: It uses the distribution tools i use for the windows side of things to
+Sweet: Its the AMD side that is annoying
+Sweet: They limit it to python 3.6
+Fowle: It seems frozen
+Sweet: Like i said, the display of it is bad
+Sweet: But its still going
+Fowle: ok
+Sweet: You can check how much CPU its using if your unsure
+Sweet: It should be hogging your CPU pretty decently
+Fowle: Lol I can hear its fan
+Fowle: So in this version can I use softprompting?
+Sweet: Yup
+Fowle: Yee
+Sweet: The henk717 / united version has that feature
+Fowle: Still frozen
+Sweet: Whats your CPU usage?
+Fowle: bouncing 22-27
+Sweet: Which process?
+Fowle: total
+Sweet: Yeah but which process is causing it?
+Fowle: track-extract is 8 percent
+Sweet: I don't recall that one
+Sweet: Did it do a whole lot of lines that say linking?
+Sweet: Like what is your terminal saying?
+Fowle: lots of Finished blas (00m:00s) 1 KB 5 B/s Finished pyasn1 (00m:00s) 53 KB 226 B/s Finished tenso
+Fowle: unmoving
+Fowle: do I terminate it and retry?
+Sweet: The moving part of that one is out of sight
+Sweet: Its most likely still downloading
+Nevlin: The last one usually takes a really long time
+Sweet: If you terminate and retry on Linux it will automatically delete all your progress and you have to do it all again
+Sweet: Its safe to do so, it just means all your progress is lost
+Fowle: It's still going
+Fowle: I'm just waiting
+Fowle: Oh wait micromamba is taking 2%
+Sweet: 2% and probably all your bandwith haha
+Fowle: lol
+Fowle: 60 megabits lol
+Fowle: Linking
+Fowle: How long does it take for transformers to install?
+Fowle: or flask
+Nevlin: Did it finish downloading everything yet
+Nevlin: It took my computer like 30 minutes to install
+Fowle: > Successfully installed filelock-3.3.2 flask-cloudflared-0.0.5 huggingface-hub-0.1.2 joblib-1.1.0 packaging-21.2 pyparsing-2.4.7 pyyaml-6.0 regex-2021.11.10 sacremoses-0.0.46 tokenizers-0.10.3 tqdm-4.62.3 transformers-4.12.0.dev0 It's just waiting
+Nevlin: Well I've never installed via Docker before
+Nevlin: Can you leave it on for like 15 more minutes just to see what happens
+Fowle: Sure
+Sweet: Once it begins linking its in the final phase, depends a lot on your storage speed
+Fowle: It's doing nothing now
+Sweet: pytorch takes a while to link
+Sweet: If it fails you exit back to the terminal
+Fowle: I'm past the linking
+Sweet: Got an error?
+Fowle: nope > Transaction finished
+Sweet: Whats most likely happening is that it finished creating the image and is packing it up
+Fowle: also accidentally pressed ctrl+c
+Sweet: Hopefully its not cancelling it then
+Fowle: trying to copy paste
+Fowle: it did
+Fowle: rerunning
+Sweet: Hopefully it at least completed mamba
+Sweet: Otherwise you have to do all that again xD
+Sweet: Either way i am going to call it a night, just be patient i am sure you will get far since i know the installation process should succeed at least beyond the steps that take long
+Fowle: Memory usage is getting kinda high
+Fowle: Cache
+Sweet: From the updates or from the program itself?
+Fowle: Just Cache is
+Sweet: Cache is supposed to be high
+Sweet: If Cache is high thats a good thing
+Fowle: ok
+Sweet: It means files it has in memory for faster access
+Sweet: Linux free's it up if you need actual ram
+Fowle: ok gn
+Sweet: This is what mine shows like
+Sweet: [Image attached]
+Fowle: interesting
+Jacinta: Found out that I can make an hacky modification to my server to allow beefy GPU support but I have to remove the motherboard to do it D:
+Jacinta: Does a k80 heat much by the way? They are fanless right?
+Carena: They need to be cooled
+Jacinta: Idea discarded then, the PCIs are outside the fan shroud. The official GPU kit adds 4 fan as well but apparently it can't be installed, you either have it already or you don't.
+Sweet: Got good news for AMD users, i got my system back up and running
+Sweet: Not with docker though, i am still uncertain what is going wrong on that part
+Sweet: If you want to run KoboldAI on AMD i recommend installing it manually with the requirements.txt that is bundled
+Sweet: Then, go to the pytorch website, find the pip install command for the rocm torch. And install this version on top. Replaces the regular pytorch with the rocm version. Then if you manage to resolve the other distro specific dependency hell (For me all i needed to do was install tk as a package) it will work.
+Sweet: Meanwhile in my M40 saga, i got my USB network adapter yesterday and it has been working wonderfully! Its a USB hub + network adapter in one so i can now afford to loose both my network card and the 2 USB ports i loose when i enable the Above 4G crypto
+Tmas: Here's an excel report on all the GPU options geared toward kobold ai models/maybe gaming with my recommendations. Feel free to suggest changes.
+Sweet: @Tmas 3060's also have 12GB of vram, and for people who want to go for a cheap rig it together and pray that it works solution you could go with K80's or M40's
+Fretwell: i checked the price for a k80 its around 3-5k euros
+Fretwell: i might have looked at the wrong thing i think
+Fretwell: the one i saw was an nvidia quadro tesla80
+Carena: New, yes...
+Fretwell: isn't it a bad idea to buy already used gpu's? You don't know how much they will last.
+Tmas: I missed that. I'll revise my report.
+Tmas: Depends. Server grade GPUs most likely were heavily used, put in storage for x amount of time, then perhaps sold second hand. Consumer cards are pretty safe in my experience with buying them.
+Fretwell: would a k80 fall under Server grade or Consumer Grade?
+Sweet: Server grade
+Sweet: So no fan, needs mods to be cool enough and a good motherboard that can handle it
+Tmas: Correct
+Fretwell: idk if my motherboard can use it
+Fretwell: i don't even think i can add more ram to it
+Tmas: Should be a standard x16 lane
+Tmas: Ram or a GPU?
+Fretwell: from what i read the max ram my motherboard can use in 16 ram
+Sweet: These K80's and M40's you need Above 4G decoding support
+Sweet: And PCI Gen2
+Fretwell: baseboard is the motherboard right?
+Sweet: Would be yes
+Fretwell: for some reason i can't find my motherboard online, there is the normal one but mine is a cf one
+Fretwell: the gen2 is PCI express 2.0?
+Sweet: I don't think so
+Sweet: Because mine is PCI Express 3.0 and its a seperate option in the bios
+Fretwell: i found the specs for mine
+Sweet: Which board is it?
+Fretwell: [Image attached]
+Fretwell: i also ordered a new hdd so i don't overstress my ssd
+Sweet: @Tmas RX6900's are flatout a bad recommendation in your list. They don't support any acceleration at all. ROCm is not supported on those either.
+Tmas: Noted. Wasn't sure about AMD cards so I tried to give them the benefit of the doubt.
+Sweet: [File URL attached]
+Sweet: For consumer cards only the Vega's can run with 8GB but its not really worth the hassle of having people use Linux
+Sweet: I don't think we should recommend people to buy AMD until they improve ROCm support
+Riehl: [File URL attached]
+Riehl: $195
+Yup: >Ready for resale
+Yup: [Image attached]
+Riehl: they absolutely need to be cooled. There are a variety of ways to cool it-- 1. You can purchase a 3d-printed mount for the back and mount a blower 2. You can unscrew the hex-screws on the top of the card and remove the case - allowing you to either use a large fan (Like Henky does) or you can use an independant 2-3 fan "card" which sits right next to the K80 and blows air directly onto it. Some folks even use thermal metal 'tape' to press the fans directly to the heat sinks - though I'm not sure that's a good idea.
+Riehl: I'm using a used K80 that I bought for $150. The K80 is an out-dated mining card which isn't useful for bitcoin mining at this point. There are warehouses full of the things.
+Riehl: I mean, it's a risk? But i've built several machines for half the price of new parts. It's a gamble. :/
+Yup: Still, that's more on the "used" side than "unused"
+Riehl: Brand New, you're looking at 300-400 dollars, ... typically from China,
+Yup: anyway my location is so remote that in here the mining farm sold is, as I just checked that ad, made of 6 x 1070
+Riehl: ngl, ... they're *probably* used. But in good-looking shape.
+Yup: "Need money urgently"
+Yup: No point to even joke anymore
+Riehl: oof
+Yup: Server-usage could have less used cards, but those are less resold and more used till death
+Yup: Somewhat funny that my quite obsolete 750Ti *still* has more CUDA cores than the recently purchased 940MX (on a laptop)
+Yup: they're on the same screen
+Yup: (on that note, what the hell is "GRID"? apparently something about virtual desktops from 2015 and so on)
+Sweet: GRID is what you use to power virtual machines in case you want to make your own geforce now or need it for VDI. Because Nvidia is scummy they need that expensive card on top of a license which i think is a montly paid one. Makes it completely out of budget for most smaller businesses.
+Fretwell: i got my new hdd but the pc doesn't detect it
+Riehl: is it an SSD?
+Fretwell: a 2T hdd
+Fretwell: ssd 's don't have a long lifespan as an hdd
+Fretwell: atm i have the new hdd inside the computer case while the old one i have it on an external docking station
+Sweet: Right click on the startmenu and choose the disk management, if its detectef you will get a popup to initialize it (I recommend GPT due to its size). Then you can create a partition there. HDD's have no drive letters by default.
+Sweet: SSD's these days have a longer lifespan
+Fretwell: this is everything in the disk managment
+Sweet: Hows the part look on the bottom?
+Fretwell: only these 2 appear
+Sweet: No not that haha
+Sweet: In disk management on the bottom
+Sweet: It should show the disks
+Fretwell: [Image attached]
+Sweet: Not a third one?
+Fretwell: nope
+Sweet: Then its not detected on a hardware level
+Sweet: Got it connected to the motherboard and power?
+Fretwell: used same wire as for the old one
+Fretwell: atm the old one is connected on a docking rack on the pc
+Sweet: What if you put the new one on that?
+Fretwell: is already in
+Sweet: The docking rack or in the PC?
+Fretwell: in the pc
+Sweet: The PC is not seeing it though
+Sweet: The tricky part is even if it does see it you won't get a drive letter
+Fretwell: do i need to manually install the drive for the hdd?
+Sweet: You need to keep checking in disk management
+Sweet: And then make a partition once it shows up
+Fretwell: i just plugged the hard disk in after i unpacked it
+Tmas: Revised list based on @Henky!!'s suggestion.
+Sweet: Don't have the time and energy to really revise it further, but i made some quick changes. AMD RX is a terrible recommendation and should only ever be done if people have them since its not officially supported at all and in terms of the higher RX's they are not supported in general. Vega's if people want to use Linux and are super cheap or if they already have them could be used but i didn't add them. I did add my M40 to the mix since its better than a K80 but shares its issues.
+Riehl: Is your harddrive formated for Legacy Bios or UEFI bios? ... Also -- the life of an SSD is largely based on the maker of the ssd drive.
+Riehl: [Image attached]
+Riehl: If your BIOS is set to Legacy boot -- (and likely the OS is installed in Legacy mode ... which is bad news in itself) ... the SSD won't be recognized.
+Fretwell: it's an hdd
+Fretwell: from stargate
+Fretwell: i didn't format it or anything
+Fretwell: just unpacked it and plugged it in the pc
+Riehl: But nothing is showing up, huh.
+Riehl: well - if you have another computer available, you can try connecting it and seeing if that computer reads it. If it does, the hdd is at least good and it's something going on with communicating with the computer you're putting it in.
+Fretwell: i did connect a verry old hard disk from 2017 and it detected it
+Fretwell: is there a limit to hard disk size from the motherboard?
+Sweet: Limits from the motherboard should not be a thing if you format it in the GPT layout. UEFI motherboards can just handle it, and if you got something ancient like my retro PC windows would.
+Fretwell: i didn't format the hdd
+Fretwell: oh and also seems nvidia released a new gpu, an rtx 2060 with 12 gb of ram
+Fretwell: and it's almost the same price as a 3060
+Sweet: So its no use haha
+Sweet: People might as well buy the 3060
+Fretwell: for runing an ai it's better to buy the 2060 12gb ram because it has more vram
+Sweet: 3060 also has 12
+Sweet: The Ti has 8 because logic but the regular has 12
+Fretwell: isn't the Ti supposed to be better?
+Sweet: The 3000 range is completely illogical
+Sweet: The 3060 has 12gb of vram
+Sweet: 3070 has 8
+Sweet: 3060Ti has 8
+Fretwell: that makes no sense
+Fretwell: a higher model having less vram
+Fretwell: and quite a lot less aswell
+Sweet: 3080 has 10
+Sweet: 3080ti has 12
+Sweet: I think its because of the shortages
+Fretwell: 3070 is almost twice the price of a 3060
+Sweet: 3060 is probably a gimped version of something better that was to broken to be that
+Fretwell: whi would you buy a 3070? its only 58% better
+Fretwell: if its twice the price just buy 2 3060, you get way more vram that way
+Sweet: For most people speed is more important than VRAm
+Fretwell: the 3090 seems to have 24 gb of vram aparently
+Sweet: Yup, that one is the best consumer GPU for us but its very expensive
+Fretwell: i think if i were to chose betwen a new tesla k80 or an nvidia 3090 i would go with the 3090, it is much cheaper than a new tesla k80
+Fretwell: i think the 3090 is faster than a tesla k80
+Fretwell: yes is waay faster the bandwith is more than 3x faster
+Fretwell: also the base clock speed is much faster
+Sweet: 3090 beats the K80 in everything
+Sweet: Unless the K80 is significantly cheaper the 3090 is the way to go
+Fretwell: the k80 has much higher proces size
+Sweet: Which is bad
+Fretwell: rtx 3090 has 8 proces size while k80 has 28
+Fretwell: the 3090 has gddr6x memory while the k80 has gddr5
+Fretwell: also the 3090 supports a way never version of cuda
+Fretwell: the left one is the 3090 and the right one is the k80
+Masry: The last time i checked the k80 was way cheaper. 400 dollars for a new k80 vs 2000 for a new 3090
+Lavinia: I'm sad the 3090ti is still 24gb. Was hoping for 48. Maybe even 32. Ram is faster so go gaming performance...
+Lavinia: I played Icarus the other night and cranked up the textures and the texture pool to max. Managed to use 20gb of VRAM.
+Carlock: If someone could share their experience running let say 2.7b AID on a 3060 12gb I would apparaciate their toughts on how it is. What's the response time is like, etc. Thanks!
+Sweet: I got a weaker GPU than that and mine you can expect around 2-10 second response times
+Sweet: Your going to have a very good experience with 2.7B's
+Carlock: Ohh I just asking because a german site supposedly has it in stock, no idea if they actually ship it but I'm getting tempted. Thanks!
+Fretwell: finally it detects it
+Riehl: what was the issue?
+Fretwell: i didn't defragment the hdd
+Fretwell: had to put it in a docking station and detect it from disk management
+Sweet: Format / partition you mean
+Sweet: But thats why i adviced disk management as the check if it was connected properly
+Carlock: Ok, so anyone who is interested in upgrade their GPU's in this dark times I got a 3060 12GB in a Ryzen 3600 + 32 GB (kinda meh, kinda slow RAM) system. I'm playing with the model that has the folder name of: "gpt-neo-2.7B-aid", I think it's linked in Kobold AI's wiki. I'm not able to run this purely on GPU, however I'm able to load it in CPU+CPU mode with 0 layers allocated to system ram. With this setup it takes around 6 seconds to generate a response which is kind of crazy.
+Fretwell: for me takes 12 seconds to generate on 2.7B
+Carena: 12Gb should be enough to run a 2.7B model, unsure why you can't load a full model in there, unless you use Windows...
+Sweet: Even on windows it should have fit
+Sweet: Unless he uses the official transformers on 0.16 then it would be very inefficient and a tight fit
+Carlock: Ohh yeah, I didn't reinstall and I was using the official transofmers, resintalled now and that's lowered the response time to 4 seconds! Thanks!
+Sweet: If you switch to our development version http://github.com/henk717/koboldai and the official transformers that one installs you get an even better version of KoboldAI 😄
+Sweet: Its nearing the end of its development cycle
+Emelda: Perhaps a bit too hypothetical, but it would be nice if we could get a version of KoboldAI to run on Maker/Hacker SBCs, like the Jetson Nano: https://developer.nvidia.com/embedded/jetson-nano-developer-kit
+Sweet: That specific one they show is to weak
+Sweet: 4GB of shared memory won't get you enough to run any good model
+Sweet: Your regular PC will be more suitable
+Emelda: That would be the "too hypothetical" part.
+Sweet: And for context, KoboldAI runs on anything that has the python dependencies we need. KoboldAI itself can't be ported to anything since it does not need to be as its platform agnostic, people would need to port the required dependencies.
+Sweet: So if people had a version of pytorch and transformers for that specific platform chances are KoboldAI will work on it
+Emelda: I know platforms like that have Python, I don't know about specific things like pytorch, though.
+Mirelle: Go look at the Tesla M40. They come in a 12 and a 24 model and can be had for 150-275. Their compute is old so slower than a 3090, but faster than a K80 (and you don't have to worry about the dual GPU and memory partitioning of a K40). I've got one and can run GPT-J-6B at max everything and still have a TINY amount of vram left 🙂
+Sweet: I got one to, but not yet hooked up
+Sweet: Cooler for it will arrive somewhere next month
+Sweet: Its been a bit of a painful journey though xD
+Mirelle: I getto'ed it with duct tape (the silver reflecting kind) to make a shroud. I'm using it with a GPU miner external connect so it's not too bad to be geto there
+Sweet: In my case i bought one and tried it out
+Sweet: Then i no longer had working internet and lost a USB controller
+Sweet: Now i got a substitute with a really good USB hub with built in ethernet that has been shockingly good
+Sweet: But the cooling will also be tricky
+Sweet: So the one i ordered is a kit
+Sweet: Its a 3D printed mount
+Sweet: And on top of that is a server fan
+Mirelle: [Image attached]
+Sweet: Thats so ghetto xD
+Sweet: But will be quieter than mine
+Sweet: Is that even inside your case?
+Mirelle: Nope. Sitting on a shelf in my rack. Using one of the miner 1x riser cards with a USB A-A cable long enough to go out the back of the server case and up to the shelf.
+Mirelle: Super dusty in the garage, but racks are loud, so banned from the house it is.
+Sweet: Yeah i'm also worried for how loud my PC will become once i have it in
+Sweet: I have such a silent PC right now
+Sweet: I just hope the card won't overheat if i don't cool it and don't use it
+Fretwell: how loud can it get?
+Sweet: 60DB
+Sweet: Which is why i am trying to go for a fan i can control with my motherboard
+Fretwell: mine become a bit loud when it the ussage goes up a bit
+Sweet: Since i would not want a permanent 60db in my room
+Sweet: Your card has no server fans right?
+Fretwell: i do hear a small grinding sound idk if it's the cpu or gpu
+Sweet: Because we are talking this kind of loud : https://www.youtube.com/watch?v=qgXcYp6rn_0
+Fretwell: my card has 2 fans on it which came with the gpu
+Sweet: GPU fans have nothing on server fans xD
+Sweet: My GPU can get loud to, but not this loud
+Fretwell: are the server fans any good?
+Mirelle: That setup is quite quiet if I turn the fan speed down. When it's generating it's no louder than what I'd expect from a CPU fan.
+Sweet: They are way faster than desktop fans and much smaller
+Mirelle: The rack though, I've got an infiniband switch, and it is super loud and high pitched
+Fretwell: wait can i control the fan speed using the nvidia control panel?
+Mirelle: Server fans prioritize air movement over everything, so they are loud and high pitched
+Sweet: Possibly, otherwise afterburner can probably do it
+Sweet: That and a small size
+Mirelle: I hooked mine up to a spare fan controller port on my motherboard, then used some software (don't recall what) to tie that to the gpu temp
+Fretwell: i don't think i have issues with cooling my gpu never goes 80 degrees
+Sweet: They also had a blower fan version which looked neater, but that one had a molex connector
+Sweet: And i refuse to have the blower fan be as loud as my retro PC
+Sweet: My retro PC also has a blower fan at 100% at all times
+Mirelle: Ya, a blower would probably work well, but would be louder
+Fretwell: what about water cooling?
+Sweet: And its fine when i want to use my retro PC, but its not fine to have that on permanently in the room every day
+Sweet: I don't do water cooling
+Sweet: Never liked the idea of having water in my PC and its also less quiet than my current setup
+Mirelle: I've done lots of water cooling (current daily is GPU water cooled), but water blocking an M40 would be difficult
+Sweet: But i'm basically hoping the card will stay cool at idle with minimal airflow
+Sweet: Then i can program my bios to just never turn that fan on
+Sweet: And when i use it i can then use a tool in Windows to turn it up
+Fretwell: wouln't it be easyer to but the gpu inside a fridge?
+Mirelle: The M40 stays cool under idle with almost no air-flow for me
+Sweet: Great to hear since i was planning to install it in my system soon
+Sweet: Even before the fan arrives
+Sweet: Kinda depends on how long shipping will take though
+Mirelle: If you're thinking idle with no fan, then it'll get tosty
+Sweet: Idle with a tiny little bit of front fan?
+Mirelle: but idle with like 500rpm fan would probably be OK
+Mirelle: Don't know. Depends on the airflow in the case. I tried it in my server case (three 120s blowing through the back) and it couldn't handle a load. Didn't try an idle
+Fretwell: i m thinking of getting a 3090 which has 12 or 24vram
+Sweet: Ill spare myself the fanless attempt then
+Sweet: 3090 with 12 would be a waste of money
+Sweet: Then just get a 3060
+Mirelle: Unless you want to game and sometimes do AI
+Fretwell: mostly for gaming
+Mirelle: But for AI 12G 3090 is a bit of a waste
+Sweet: Still, 3090 kind of budget with only 12GB vram isn't worth it
+Sweet: Go all the way or go cheaper xD
+Mirelle: Ya, if you're dropping that kind of cash (assuming you don't go crazy with scalpers)....
+Fretwell: but for a while a barrely played any games, just listening to music and watching videos or reading stuff
+Fretwell: for now i might just get a better cpu and 16 more ram
+Fretwell: i mostly play mc and i need a better cpu so i can render chunks faster
+Sweet: Ram first
+Sweet: Unless your new CPU requires a new board
+Fretwell: 1.18.1 is a ram hog, i get ram issues with only 100 mods
+Fretwell: and constant freezes
+Sweet: My modpack was a ram hog to
+Sweet: And thats on 1.70
+Fretwell: 1.7.10 barrely took any ram
+Fretwell: i was able to run some pretty huge modpacks with 8 ram
+Fretwell: and it had over 400+ mods
+Mirelle: I'll show my ignorance, what's mc?
+Fretwell: minecraft
+Mirelle: Ahhhh. Should have guessed
+Fretwell: this is how much ram i have allocated
+Fretwell: on fabric i have no issues with ram i have over 250+ mods and the ram barelly goes over 12 but mostly noticed that mc is mostly dependent on the cpu and ram
+Sweet: I'd still need to remake my minecraft launcher so i can't easily launch my mod
+Sweet: It uses mojang accounts
+Sweet: But it was effectively minecraft on steroids
+Sweet: But made to feel like old minecraft and with a persistant inventory
+Sweet: So no parrying or anything like that, no food bars
+Sweet: Still the spam click combat system
+Sweet: Minecraft as i used to enjoy it but with much more in it
+Fretwell: now they forced account migration
+Sweet: Yeah, so nobody can use my mod pack xD
+Fretwell: i personally like both combats as much
+Fretwell: for pvp the spam click one is better but for pve the new one is more rewarding
+Sweet: Given the toughness of everything in the world the spam clicking is desirable
+Sweet: The mod pack is full of stuff
+Sweet: Many different worlds
+Sweet: Difficult creatures
+Sweet: Boss mobs
+Sweet: Etc
+Fretwell: well the only thing that the spam click would be good is agains the ice and fire dragons
+Sweet: Or these for example
+Sweet: [Image attached]
+Fretwell: that looks alot like the warden ngl
+Sweet: They can ignite stuff and do quite a decent bit of knocking damage
+Sweet: And they can jump up things
+Sweet: So you can't just get on a tree or roof
+Fretwell: are they from advent of ascension?
+Sweet: Yup
+Sweet: Advent of ascention is in the pack
+Fretwell: its a pretty good rpg mod ngl
+Sweet: Old version of Lycanites Mobs is in there to
+Sweet: Same with generation raidable dungeons
+Sweet: And that one that spawns like raidable casles and fortresses
+Sweet: But also the good tech mods, farm mods, fishing mods
+Sweet: Quake movement
+Sweet: So you can do things like air strafing and bunny hopping
+Fretwell: seems the mod won't get updates anymore, there seems that something happened to the mod creator
+Fretwell: if you like the raidable castles and fortresses you should take a look at when dungeons arise it has quite a few massive structures that are acually pretty well built in terms of design and they are also challanging
+Sweet: There is one version of minecraft i'd love to play but does not exist
+Sweet: Let me see if i can find it
+Fretwell: which one?
+Sweet: To many minecraft content on youtube to find it back
+Sweet: But it basically turned minecraft into a super good RPG, where you could really befriend the villagers, have kingdoms in the world, etc
+Sweet: And then use them to do raids on other ones, protect your community, etc
+Fretwell: oh
+Fretwell: i think i have that modpack
+Fretwell: i think it was called mineshadts and monsters
+Fretwell: and it is for 1.16.4
+Sweet: Looks neat, but i'm currently not going to redo an entire modpack from scratch xD
+Fretwell: i think the world i m tryng to generate is broken lol
+Sweet: [File URL attached]
+Sweet: @Valerian I finally have the M40 up and running 😄
+Sweet: And you should definately update your cuda driver
+Sweet: Anything higher is compatible, anything lower isn't so updating to 11.6 saves you hassle
+Sweet: So far mine has been keeping steady with the fan on 50% when in use
+Sweet: And i might get away with the fan off entirely if its not recently been used
+Sweet: Otherwise a very low fan speed is enough to hold it, but not enough to run multiple generations in a row
+Sweet: So i am still trying to find the sweet spot
+Sweet: Oddly noticing far longer loading times now that i have the GPU
+Sweet: Even before it hits the GPU
+Sweet: In WDDM mode i do indeed lose 2GB of VRAM, but with the benefit that Argus Monitor can detect the temp
+Sweet: So now i have dynamic fan speed for the gpu in software 😄
+Riehl: You can also train locally now, too!
+Riehl: I think I need to talk to VE about getting the LS scanner working, the LUA keeps breaking. 😦
+Sweet: Training it shat itself, but running so far goes great 😄
+Sweet: Very pleased with my final setup, it runs passive when i am not using it, when it gets a certain temperature it automatically turns the loud fan on
+Riehl: If you do local soft prompt training, you have to use a special "break model" that VE made.
+Riehl: but happy to hear!
+Riehl: 6B awesome. Pity I can't run any of the newer models. *sadness*
+Sweet: I don't think breakmodel benefits me mine is a single GPU
+Sweet: United has breakmodel for those now, needs testing
+Riehl: I could try? which ones would you recommend?
+Sweet: Fairseq 6B perhaps?
+Sweet: --model KoboldAI/fairseq-dense-6.7B
+Mirelle: @Henky!! I found, at least on linux, probably windows too, the M40 sits at ~70Watts of power with KoboldAI even when KoboldAI is idle. If you run this command (nvidia-smi -ac 405,324) it reduces that power to 16watts (and helps with heat). Turns out that if something is loaded in VRAM, the Mem clock stays at max, even though nothing is happening. running that command sets it down to 405, but it still spikes up to the previous value when in use.
+Carena: That command does not work with every application, mind you. I don't have nvidia-smi ;)
+Sweet: Its bundled with our M40 drivers, not all nvidia cards would have that indeed
+Sweet: Neat, i indeed noticed it could be high
+Sweet: I tried nvidia-smi -ac 3004,1114 so it would be allowed to have high clocks and it seems to persist in terms of power savings
+Sweet: Looks like it could be a hardware / driver bug that if you set something gets fixed
+Sweet: My command seems placebo
+Sweet: Mine just sometimes stays a 69watts for a little but always goes back even on stock settings
+Fretwell: i m planning on getting a new gpu, is it possibile to run kobold with an rtx 3060 and 2060 at the same time?
+Carena: It is. It just splits the layers
+Fretwell: like are the cuda versions compatibile?
+Fretwell: an rtx 3060 is slightly more expensive than my current gpu
+Carena: CUDA support for the 2060 might expire sooner than the 3060
+Fretwell: would 14 gb of vram be enough for 6B?
+Carena: 14Gb on Linux maybe, but note that Microsoft requires 20% of GPU for its own purposes
+Fretwell: if is 2gb less than enough i should be able to get 10 layers full tokens
+Mirelle: Huh. On mine it's definatly real. I moved the GPU in my case and my getto-fan method didn't work. If it's sitting at the 60W load it hits 89 degrees (new fan is coming today). If I run that command, it stays at 17W or so and runs at like 30-40 degrees.
+Carena: I am in the process of getting accurate numbers on the fine-tuning speed, and having said that, I might also be able to calculate the speed at which you fine-tune. I do need some data though, which is the speed at which your graphics card can fine-tune a 125m model.
+Jacinta: @mr_seeker Don't know how much data you managed to collect but if you want I can make a ML performance model to fill some gaps
+Jacinta: Just did that for another project, although accuracy on extrapolation is not that great
+Carena: ML performance model?
+Jacinta: Machine learning, so we can get an estimate on how it would perform on a card for which we have no data

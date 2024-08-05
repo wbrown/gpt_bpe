@@ -24,7 +24,7 @@ const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
 const defaultPadTokenString = "[PAD]"
 
-type Token uint16
+type Token uint32
 type Tokens []Token
 
 type GPTEncoder struct {
@@ -106,6 +106,7 @@ const VOCAB_ID_CLIP = "clip-tokenizer"
 const VOCAB_ID_NERDSTASH_V1 = "nerdstash_v1-tokenizer"
 const VOCAB_ID_NERDSTASH_V2 = "nerdstash_v2-tokenizer"
 const VOCAB_ID_LLAMA = "llama-tokenizer"
+const VOCAB_ID_LLAMA_3 = "llama3-tokenizer"
 const VOCAB_ID_MISTRAL = "mistral-tokenizer"
 
 func NewGPT2Encoder() GPTEncoder {
@@ -138,6 +139,11 @@ func NewLlama2Encoder() GPTEncoder {
 	return *encoder
 }
 
+func NewLlama3Encoder() GPTEncoder {
+	encoder, _ := NewEncoder(VOCAB_ID_LLAMA_3)
+	return *encoder
+}
+
 func NewMistralEncoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_MISTRAL)
 	return *encoder
@@ -147,6 +153,7 @@ func NewMistralEncoder() GPTEncoder {
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
+	log.Printf("Loading encoder for vocab id: %s\n", vocabId)
 	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId, "")
 
 	if vocabErr != nil {
@@ -203,9 +210,13 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	bytesUnicode, unicodeBytes := makeByteTranslationTables()
 
 	// Read encoder mappings.
+	vocab, err := resources.GetVocab(&rsrcs, hfConfig)
+	if err != nil {
+		return nil, err
+	}
 	encoderTokens := make(map[string]Token)
-	if json.Unmarshal(*rsrcs["vocab.json"].Data, &encoderTokens) != nil {
-		log.Fatal("Error unmarshalling `vocab.json`")
+	for k, v := range vocab {
+		encoderTokens[k] = Token(v)
 	}
 
 	// Build the unitrim array dynamically.
@@ -236,33 +247,15 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Read merge table into BpeRanks
 	bpeRanks := make(map[GPTPair]float64)
-	if mergesTxt, ok := rsrcs["merges.txt"]; ok {
-		scanner := bufio.NewScanner(bytes.NewBuffer(*mergesTxt.Data))
-		idx := uint16(0)
-		firstLine := true
-		for scanner.Scan() {
-			if firstLine == true {
-				firstLine = false
-				continue
-			}
-			left_right := strings.SplitN(scanner.Text(), " ", 2)
-			bpeRanks[GPTPair{
-				left_right[0],
-				left_right[1]}] = float64(idx)
-			idx += 1
-		}
-	} else if mergesJson, ok := rsrcs["merges.json"]; ok {
-		var mergesTable [][]string
-		err := json.Unmarshal(*mergesJson.Data, &mergesTable)
-		if err != nil {
-			panic(err)
-		}
-		// Iterate over the merges and add them to the BPE ranks
-		for rank, merge := range mergesTable {
-			bpeRanks[GPTPair{merge[0], merge[1]}] =
-				float64(rank)
-		}
+	rscBpeRanks, err := resources.GetMergesAsBpeRank(&rsrcs)
+	if err != nil {
+		return nil, err
 	}
+	// Convert rscBpeRanks to bpeRanks (map[GPTPair]float64)
+	for k, v := range rscBpeRanks {
+		bpeRanks[GPTPair{k.Left, k.Right}] = v
+	}
+
 	// Build our TokenMerges
 	tokenMerges := make(map[TokenPair]Token)
 	for pair := range bpeRanks {
@@ -345,18 +338,32 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	// Add in default pad token if not already set
-	padTokenNotFound := (hfConfig.PadTokenStr == nil)
+	padTokenNotFound := (hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == "")
 	if padTokenNotFound {
-		// Inject the pad token into the encoder to uintmax16,
-		// throw an error if vocab is larger than uintmax16
-		if len(encoderTokens) >= math.MaxUint16 {
-			log.Fatalf("Vocab size of %d is larger than uint16 max of %d. "+
-				"Please specify a pad token in the vocab file.",
-				len(encoderTokens), math.MaxUint16)
+		// Attempt to resolve from specials
+		for k := range specials {
+			if strings.Contains(k, "pad") {
+				hfConfig.PadTokenStr = &k
+				padTokenNotFound = false
+				break
+			}
 		}
-		padToken := defaultPadTokenString
-		encoderTokens[padToken] = math.MaxUint16
-		hfConfig.PadTokenStr = &padToken
+		// Inject the pad token into the encoder to uintmax32,
+		// throw an error if vocab is larger than uintmax32
+		if len(encoderTokens) >= math.MaxUint32 {
+			log.Fatalf("Vocab size of %d is larger than uint32 max of %d. "+
+				"Please specify a pad token in the vocab file.",
+				len(encoderTokens), math.MaxUint32)
+		}
+		if padTokenNotFound {
+			padToken := defaultPadTokenString
+			if len(encoderTokens) >= math.MaxUint16 {
+				encoderTokens[padToken] = math.MaxUint32
+			} else {
+				encoderTokens[padToken] = math.MaxUint16
+			}
+			hfConfig.PadTokenStr = &padToken
+		}
 	}
 
 	// Create the encoder
@@ -682,16 +689,20 @@ func findAllStringsIndexes(text string, strings []string) [][]int {
 // ToBPE
 // Given pre-split text, perform bigram ranking and merges, and returns Tokens
 func (encoder *GPTEncoder) ToBPE(text string) Tokens {
+	// If the text is in the cache, return it.
 	if lookup, ok := encoder.Cache.Get(text); ok {
 		encoder.LruHits++
 		return lookup.(Tokens)
 	} else {
 		encoder.LruMisses++
 	}
+	// Split the text into words.
 	word := strings.Split(text, "")
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
 	rankedPairs := encoder.getRankedPairs(word)
+
 	if len(rankedPairs) == 0 {
+		// If the word is a single character, we can just encode it directly.
 		var tokens Tokens
 		if token, ok := encoder.Encoder[word[0]]; ok {
 			tokens = Tokens{token}
@@ -708,6 +719,8 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 		encoder.Cache.Add(text, tokens)
 		return tokens
 	}
+
+	// Iterate over the ranked pairs and merge them.
 	for {
 		bigram := rankedPairs[0].bigram
 		if _, ok := encoder.BpeRanks[bigram]; !ok {
@@ -733,17 +746,23 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 			}
 		}
 		word = newWord
+
+		// If we've reduced the word to a single token, we're done.
 		if len(word) == 1 {
 			break
 		} else {
 			rankedPairs = encoder.getRankedPairs(word)
 		}
 	}
+
+	// Encode the word into tokens.
 	if len(word) > 0 {
 		idx := len(word) - 1
 		word[idx] = word[idx]
 	}
 	tokens := make(Tokens, 0)
+
+	// If we have a special token, we cap it off.
 	for _, token := range word {
 		if lookup, ok := encoder.Encoder[token]; ok {
 			tokens = append(tokens, lookup)
@@ -758,6 +777,8 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 			}
 		}
 	}
+
+	// Cache the tokens.
 	encoder.Cache.Add(text, tokens)
 	return tokens
 }
@@ -1048,7 +1069,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			word := nextWord()
 			// If we have no word, then we're done.
 			if word == nil {
-				if encoder.encloseEosBos && !eosReturned {
+				if (encoder.encloseEosBos || encoder.encloseEos) && !eosReturned {
 					accumulator = append(accumulator, encoder.EosToken)
 					eosReturned = true
 				}
@@ -1078,7 +1099,7 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				for {
 					pair := TokenPair{accumulator[idx],
 						accumulator[idx+1]}
-					if merged, ok := encoder.TokenMerges[pair]; ok {
+					if merged, ok := encoder.TokenMerges[pair]; ok && merged != 0 {
 						before := accumulator[:idx]
 						var after Tokens
 						if idx+2 < len(accumulator) {
@@ -1220,7 +1241,7 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
 func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
-	// First convert our bytearray into a uint16 `Token` array.
+	// First convert our bytearray into a uint32 `Token` array.
 	tokens := TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)
