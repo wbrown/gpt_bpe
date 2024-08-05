@@ -138,7 +138,7 @@ func BenchmarkStreamingEncode(b *testing.B) {
 				}
 			}
 			b.StopTimer()
-			duration := time.Now().Sub(start)
+			duration := time.Since(start)
 			tokensPerSecond := float64(tokensCt) / duration.Seconds()
 			lruStats := fmt.Sprintf(" (LRU: Hits: %d, Misses: %d, "+
 				"Evictions: %d, %0.2f%% Hit Rate, Size: %d)",
@@ -178,7 +178,7 @@ func BenchmarkStreamingEncodeSanitize(b *testing.B) {
 			}
 		}
 		b.StopTimer()
-		tokensPerSecond := float64(tokensCt) / time.Now().Sub(start).Seconds()
+		tokensPerSecond := float64(tokensCt) / time.Since(start).Seconds()
 		b.Logf("%d tokens generated at %0.2f per second", tokensCt,
 			tokensPerSecond)
 	}
@@ -208,6 +208,72 @@ func TestSanitizedRuneReader_ReadRune(t *testing.T) {
 		output := string(runes)
 		assert.Equal(t, sanitizerTests[testIdx].Expected, output)
 	}
+}
+
+func TestEncodeText1(t *testing.T) {
+	textsTokenizer := NewTextsTokenizer()
+	textsTokenizer.ContextSize = 2048
+	textsTokenizer.TokenizerId = "gpt2"
+	textsTokenizer.EndOfText = ""
+	textsTokenizer.PadToken = ""
+	textsTokenizer.Boundary = "\n"
+	textsTokenizer.Unitrim = true
+	textsTokenizer.BoundaryBegin = false
+	var enc *gpt_bpe.GPTEncoder
+
+	reorderPaths := ""
+	sampling := 100
+	enforceUint32 := true // Only if needed
+	outputFile := "base.chunk"
+
+	enc, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
+		log.Fatal(tokErr)
+	}
+
+	frankensteinPath := "../../resources/frankenstein.txt"
+	// Open a named rune reader for the text file.
+	reader := make(chan namedRuneReader)
+	go func() {
+		if file, err := os.Open(frankensteinPath); err != nil {
+			log.Fatal(err)
+		} else {
+			reader <- namedRuneReader{"../../resources/frankenstein.txt", CreateTextSanitizer(file)}
+			defer file.Close()
+		}
+	}()
+
+	begin := time.Now()
+	contexts, tokErr := textsTokenizer.TokenizeTexts(reader, "./test")
+	if tokErr != nil {
+		log.Fatal("Error tokenizing texts: ", tokErr)
+	}
+
+	total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", enforceUint32)
+	if writeErr != nil {
+		log.Fatal("Error writing contexts: ", writeErr)
+	}
+
+	duration := time.Since(begin).Seconds()
+	log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total, duration, float64(total)/duration)
+
+	fileSize := getFileSize(outputFile)
+	log.Printf("File size: %d bytes", fileSize)
+	assert.True(t, fileSize > 0)
+	assert.True(t, int(fileSize)/total == 2) //gpt2 tokens are 2 bytes, ie uint16
+}
+
+func getFileSize(path string) int64 {
+	file, err := os.Open(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	fileInfo, err := file.Stat()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return fileInfo.Size()
 }
 
 func TestSampling40(t *testing.T) {
@@ -247,12 +313,12 @@ func TestSampling40(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
+		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		duration := time.Now().Sub(begin).Seconds()
+		duration := time.Since(begin).Seconds()
 		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
 			duration, float64(total)/duration)
 	}
@@ -289,12 +355,12 @@ func TestSampling40(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
+		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		duration := time.Now().Sub(begin).Seconds()
+		duration := time.Since(begin).Seconds()
 		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total2,
 			duration, float64(total2)/duration)
 	}
@@ -342,12 +408,12 @@ func TestShuffle(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle")
+		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		duration := time.Now().Sub(begin).Seconds()
+		duration := time.Since(begin).Seconds()
 		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
 			duration, float64(total)/duration)
 	}
@@ -383,12 +449,12 @@ func TestShuffle(t *testing.T) {
 		var enc2 *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle")
+		total2, writeErr := WriteContexts(outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle", false)
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
-		duration := time.Now().Sub(begin).Seconds()
+		duration := time.Since(begin).Seconds()
 		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total2,
 			duration, float64(total2)/duration)
 	}

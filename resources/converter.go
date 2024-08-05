@@ -387,12 +387,12 @@ func WriteSpecials(
 func ConvertSentencepieceFiles(modelPath string, verbose bool) {
 	bytes, err := ioutil.ReadFile(modelPath)
 	if err != nil {
-		print(fmt.Errorf("Unable to read file err %v", err))
+		print(fmt.Errorf("unable to read file err %v", err))
 	}
 	var model sentencepiece.ModelProto
 	err = proto.Unmarshal(bytes, &model)
 	if err != nil {
-		print(fmt.Errorf("Unable to unmarshal proto err %v", err))
+		print(fmt.Errorf("unable to unmarshal proto err %v", err))
 	}
 	//get parent of modelPath
 	outputPath := path.Dir(modelPath)

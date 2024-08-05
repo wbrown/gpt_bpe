@@ -78,7 +78,7 @@ func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 	fmt.Printf("input: %s\n", s)
 	encoded := *encoder.Encode(&s)
 	fmt.Printf("Tokens: %v\n", encoded)
-	tokensArr := C.CBytes(*encoded.ToBin())
+	tokensArr := C.CBytes(*encoded.ToBin(false))
 	tokens := C.Tokens{
 		tokens: (*C.uint32_t)(tokensArr),
 		len:    C.size_t(len(encoded)),
