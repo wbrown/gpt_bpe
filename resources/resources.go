@@ -42,7 +42,6 @@ import (
 //go:embed data/llama3-tokenizer/tokenizer.json
 //go:embed data/llama3-tokenizer/tokenizer_config.json
 //go:embed data/llama3-tokenizer/special_tokens_map.json
-//go:embed data/llama3-tokenizer/vocab.bpe
 //go:embed data/mistral-tokenizer/merges.json
 //go:embed data/mistral-tokenizer/specials.txt
 //go:embed data/mistral-tokenizer/tokenizer_config.json
