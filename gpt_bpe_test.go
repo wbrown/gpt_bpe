@@ -916,7 +916,6 @@ func TestLlama3EncodeDecode_LargeCorpus(t *testing.T) {
 		t.Errorf("Error reading reference bin file: %v", err)
 	}
 	referenceTokens := TokensFromBin32(&referenceBinData)
-	fmt.Printf("encloseEOS BOS EOSBOSS: %v %v %v\n", llama3Encoder.encloseEos, llama3Encoder.encloseBos, llama3Encoder.encloseEosBos)
 	// Encode the reference string
 	llamaTokens := llama3Encoder.Encode(&referenceString)
 	for i := 0; i < len(*llamaTokens); i++ {

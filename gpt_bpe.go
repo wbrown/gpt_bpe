@@ -247,33 +247,15 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Read merge table into BpeRanks
 	bpeRanks := make(map[GPTPair]float64)
-	if mergesTxt, ok := rsrcs["merges.txt"]; ok {
-		scanner := bufio.NewScanner(bytes.NewBuffer(*mergesTxt.Data))
-		idx := uint32(0)
-		firstLine := true
-		for scanner.Scan() {
-			if firstLine == true {
-				firstLine = false
-				continue
-			}
-			left_right := strings.SplitN(scanner.Text(), " ", 2)
-			bpeRanks[GPTPair{
-				left_right[0],
-				left_right[1]}] = float64(idx)
-			idx += 1
-		}
-	} else if mergesJson, ok := rsrcs["merges.json"]; ok {
-		var mergesTable [][]string
-		err := json.Unmarshal(*mergesJson.Data, &mergesTable)
-		if err != nil {
-			panic(err)
-		}
-		// Iterate over the merges and add them to the BPE ranks
-		for rank, merge := range mergesTable {
-			bpeRanks[GPTPair{merge[0], merge[1]}] =
-				float64(rank)
-		}
+	rscBpeRanks, err := resources.GetMergesAsBpeRank(&rsrcs)
+	if err != nil {
+		return nil, err
 	}
+	// Convert rscBpeRanks to bpeRanks (map[GPTPair]float64)
+	for k, v := range rscBpeRanks {
+		bpeRanks[GPTPair{k.Left, k.Right}] = v
+	}
+
 	// Build our TokenMerges
 	tokenMerges := make(map[TokenPair]Token)
 	for pair := range bpeRanks {

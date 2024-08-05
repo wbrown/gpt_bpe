@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -746,6 +748,7 @@ func LoadExternalResources(vocabId string, token string) (resources *Resources, 
 	} else {
 		resources = rslvdResources
 	}
+	fmt.Printf("Resources: %v\n", resources)
 	return resources, nil
 
 }
@@ -794,6 +797,64 @@ func ResolveHFFromResources(resources *Resources, hfConfig *HFConfig) (*HFConfig
 	}
 
 	return hfConfig, nil
+}
+
+func GetMergesAsBpeRank(resources *Resources) (map[GPTPair]float64, error) {
+	bpeRanks := make(map[GPTPair]float64)
+	// Try to get from merges.txt
+	if mergesTxt, ok := (*resources)["merges.txt"]; ok {
+		scanner := bufio.NewScanner(bytes.NewBuffer(*mergesTxt.Data))
+		idx := uint32(0)
+		firstLine := true
+		for scanner.Scan() {
+			if firstLine == true {
+				firstLine = false
+				continue
+			}
+			left_right := strings.SplitN(scanner.Text(), " ", 2)
+			bpeRanks[GPTPair{
+				Left:  left_right[0],
+				Right: left_right[1],
+			}] = float64(idx)
+			idx += 1
+		}
+	} else if mergesJson, ok := (*resources)["merges.json"]; ok {
+		var mergesTable [][]string
+		err := json.Unmarshal(*mergesJson.Data, &mergesTable)
+		if err != nil {
+			return nil, err
+		}
+		// Iterate over the merges and add them to the BPE ranks
+		for rank, merge := range mergesTable {
+			bpeRanks[GPTPair{merge[0], merge[1]}] =
+				float64(rank)
+		}
+	} else if tokenizerJson, ok := (*resources)["tokenizer.json"]; ok {
+		// Finally try to get from tokenizer.json, merges entry
+		var tokenizerJsonMap map[string]interface{}
+		err := json.Unmarshal(*tokenizerJson.Data, &tokenizerJsonMap)
+		if err != nil {
+			return nil, err
+		}
+		model, ok := tokenizerJsonMap["model"]
+		if !ok {
+			return nil, errors.New("could not get model from tokenizer.json")
+		}
+		merges, ok := model.(map[string]interface{})["merges"]
+		if !ok {
+			return nil, errors.New("could not get merges from tokenizer.json")
+		}
+		// Iterate over the merges and add them to the BPE ranks, in form of string[]
+		for rank, merge := range merges.([]interface{}) {
+			mergeStr := merge.(string)
+			mergeSplit := strings.Split(mergeStr, " ")
+			bpeRanks[GPTPair{mergeSplit[0], mergeSplit[1]}] =
+				float64(rank)
+		}
+	} else {
+		return nil, errors.New("could not find merges")
+	}
+	return bpeRanks, nil
 }
 
 // GetVocab
@@ -1082,9 +1143,13 @@ func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
 	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
 		resources := make(Resources, 0)
 
-		if config := GetEmbeddedResource(vocabId + "/encoder." +
+		if vocab := GetEmbeddedResource(vocabId + "/encoder." +
+			"json"); vocab != nil {
+			resources["vocab.json"] = *vocab
+		}
+		if config := GetEmbeddedResource(vocabId + "/config." +
 			"json"); config != nil {
-			resources["vocab.json"] = *config
+			resources["config.json"] = *config
 		}
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
 			resources["merges.txt"] = *vocab
