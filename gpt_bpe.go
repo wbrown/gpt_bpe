@@ -707,7 +707,7 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 	// Lookup text given before proceeding
 	if encoder.ignoreMerges {
 		if token, ok := encoder.Encoder[text]; ok {
-			encoder.Cache.Add(text, token)
+			encoder.Cache.Add(text, Tokens{token})
 			return Tokens{token}
 		}
 	}
