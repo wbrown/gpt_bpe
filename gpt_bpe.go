@@ -48,6 +48,7 @@ type GPTEncoder struct {
 	BosToken        Token
 	EosToken        Token
 	PadToken        Token
+	ignoreMerges    bool
 	encloseEosBos   bool
 	encloseBos      bool
 	encloseEos      bool
@@ -182,6 +183,12 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 			}
 		}
 	}
+	if specialConfig.SplitRegex == nil {
+		splitRegexPtr := rsrcs.ResolveSplitRegex()
+		if splitRegexPtr != nil {
+			specialConfig.SplitRegex = splitRegexPtr
+		}
+	}
 
 	puncRunes := make([]rune, 0)
 	if specialConfig.PuncRunes != nil {
@@ -210,7 +217,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	bytesUnicode, unicodeBytes := makeByteTranslationTables()
 
 	// Read encoder mappings.
-	vocab, err := resources.GetVocab(&rsrcs, hfConfig)
+	vocab, err := rsrcs.GetVocab(hfConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +345,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 
 	// Add in default pad token if not already set
-	padTokenNotFound := (hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == "")
+	padTokenNotFound := hfConfig.PadTokenStr == nil || *hfConfig.PadTokenStr == ""
 	if padTokenNotFound {
 		// Attempt to resolve from specials
 		for k := range specials {
@@ -388,6 +395,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		encoderTokens[*hfConfig.BosTokenStr],
 		encoderTokens[*hfConfig.EosTokenStr],
 		encoderTokens[*hfConfig.PadTokenStr],
+		*hfConfig.IgnoreMerges,
 		specialConfig.EncloseEosBos,
 		*hfConfig.AddBosToken,
 		*hfConfig.AddEosToken,
@@ -696,6 +704,14 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 	} else {
 		encoder.LruMisses++
 	}
+	// Lookup text given before proceeding
+	if encoder.ignoreMerges {
+		if token, ok := encoder.Encoder[text]; ok {
+			encoder.Cache.Add(text, token)
+			return Tokens{token}
+		}
+	}
+
 	// Split the text into words.
 	word := strings.Split(text, "")
 	word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
