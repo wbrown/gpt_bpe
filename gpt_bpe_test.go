@@ -1257,6 +1257,27 @@ func TestModelDownloadLlama(t *testing.T) {
 	fmt.Println("All Exists - Looks good.")
 }
 
+func TestLlama3Merge(t *testing.T) {
+	// This test is to check if the encoder is able to merge the tokens correctly
+	// If it fails, the merge function in the streaming_encode does not check for invalid merge pairs correctly
+	//testString := "Description\ndescription\n Description\n description"
+	testString := "1234"
+	llamaTokens := llama3Encoder.Encode(&testString)
+	decodedTokens := make([]string, len(*llamaTokens))
+	for i := 0; i < len(*llamaTokens); i++ {
+		decodedTokens[i] = string(llama3Encoder.Decoder[(*llamaTokens)[i]])
+	}
+
+	if len(*llamaTokens) != 4 {
+		t.Errorf("Expected 4 tokens, got %d", len(*llamaTokens))
+	}
+
+	if decodedTokens[1] != "123" && decodedTokens[2] != "4" {
+		t.Errorf("Expected 123|4, got %s|%s",
+			decodedTokens[1], decodedTokens[2])
+	}
+}
+
 func TestModelDownloadMistral(t *testing.T) {
 	// Download a downstream mistral model due to mistral being gated
 	modelId := "Open-Orca/Mistral-7B-OpenOrca"
