@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe/cmd/tokenizer_repl
 
-go 1.18
+go 1.22
 
 replace github.com/wbrown/gpt_bpe => ../../
 
