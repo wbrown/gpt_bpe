@@ -538,6 +538,13 @@ func TestNerdstashEncoder_Encode(t *testing.T) {
 	}
 }
 
+func TestNerdstashEncoder_EncodeSpaces(t *testing.T) {
+	testString := "        12 => '',\n"
+	expected := Tokens{16, 124, 125, 10631, 1695, 49231, 85}
+	encoded := nerdstashV2Encoder.Encode(&testString)
+	assert.Equal(t, expected, *encoded)
+}
+
 func TestNerdstashEncoder_Encode2(t *testing.T) {
 	// read the jsonl test file in
 	testFile, err := os.Open("resources/subset.jsonl")
@@ -659,9 +666,8 @@ func TestCLIPEncoder_Decode(t *testing.T) {
 		}
 
 		if clipCorpus[idx] != decoded[idx] {
-			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
-				decoded[idx-20:idx+20])
-			return
+			t.Errorf("idx: %d, clipCorpus: %v, decoded: %v\n", idx, clipCorpus[idx], decoded[idx])
+			break
 		}
 	}
 	// assert.Equal(t, clipCorpus, decoded)
@@ -843,8 +849,62 @@ func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
 	}
 	frankensteinString := string(frankensteinText)
 	mistralTokens := mistralEncoder.Encode(&frankensteinString)
+	frankensteinString = "<s>" + frankensteinString
 	output := mistralEncoder.Decode(mistralTokens)
-	assert.Equal(t, "<s> "+frankensteinString, output)
+	for i := 0; i < len(output); i++ {
+		if output[i] != frankensteinString[i] {
+			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, string(frankensteinString[i]), string(output[i]))
+			break
+		}
+	}
+}
+
+func TestMistralEncodeDecode_Emojis(t *testing.T) {
+	// This test is to check if the encoder is able to encode and decode emojis
+	// Requires the ability to properly handle byte tokens in the encoder
+	testString := "expensive 😦 padding ⁂ padding"
+	tokens := mistralEncoder.Encode(&testString)
+	output := mistralEncoder.Decode(tokens)
+	testString = "<s>" + testString
+	assert.Equal(t, testString, output)
+}
+
+func TestMistralEncodeDecode_LargeCorpus(t *testing.T) {
+	// This test is to check if the encoder is able to encode and decode a large corpus
+	referenceFile := "resources/test_references/753.txt"
+	referenceBin := "resources/test_references/753_mistralv1.bin"
+	referenceText, err := os.ReadFile(referenceFile)
+	if err != nil {
+		t.Errorf("Error reading reference file: %v", err)
+	}
+	referenceString := string(referenceText)
+	// Need to decode the reference bin file
+	referenceBinData, err := os.ReadFile(referenceBin)
+	if err != nil {
+		t.Errorf("Error reading reference bin file: %v", err)
+	}
+	referenceTokens := TokensFromBin32(&referenceBinData)
+	// Encode the reference string
+	mistralTokens := mistralEncoder.Encode(&referenceString)
+	for i := 0; i < len(*mistralTokens); i++ {
+		if (*mistralTokens)[i] != (*referenceTokens)[i] {
+			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, (*referenceTokens)[i], (*mistralTokens)[i])
+		}
+	}
+	assert.Equal(t, mistralTokens, referenceTokens)
+	// Decode the tokens to check if the decoded string is the same as the reference string
+	output := mistralEncoder.Decode(mistralTokens)
+	referenceString = "<s>" + referenceString
+	for i := 0; i < len(output); i++ {
+		if output[i] != referenceString[i] {
+			fmt.Printf("Mismatch at around index %d\n", i)
+			fmt.Printf("Expected: %s\n", referenceString[i-20:i+20])
+			fmt.Printf("Actual: %s\n", output[i-20:i+20])
+			t.Errorf("Mismatch at around index %d Expected: %s, Actual: %s", i, string(referenceString[i]), string(output[i]))
+			break
+		}
+	}
+	assert.Equal(t, referenceString, output)
 }
 
 func TestLlama3EncodeDecodeFrankenstein(t *testing.T) {
@@ -920,10 +980,7 @@ func TestLlama3EncodeDecode_LargeCorpus(t *testing.T) {
 	llamaTokens := llama3Encoder.Encode(&referenceString)
 	for i := 0; i < len(*llamaTokens); i++ {
 		if (*llamaTokens)[i] != (*referenceTokens)[i] {
-			fmt.Printf("Mismatch at around index %d\n", i)
-			fmt.Printf("Expected: %v\n", (*referenceTokens)[i-20:i+20])
-			fmt.Printf("Actual: %v\n", (*llamaTokens)[i-20:i+20])
-			break
+			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, (*referenceTokens)[i], (*llamaTokens)[i])
 		}
 	}
 	// Check that the encoded tokens are the same as the reference tokens
@@ -978,6 +1035,141 @@ func TestReadTokenizerConfig(t *testing.T) {
 	assert.Equal(t, encoder.EosToken, Token(6669))
 	assert.Equal(t, encoder.BosToken, Token(10989))
 	assert.Equal(t, encoder.PadToken, Token(5428))
+
+	// Finish the test, allow defered cleanup
+	fmt.Println("All Exists - Looks good.")
+}
+
+func TestLlama3Merge(t *testing.T) {
+	// This test is to check if the encoder is able to merge the tokens correctly
+	// If it fails, the merge function in the streaming_encode does not check for invalid merge pairs correctly
+	//testString := "Description\ndescription\n Description\n description"
+	testString := "1234"
+	llamaTokens := llama3Encoder.Encode(&testString)
+	decodedTokens := make([]string, len(*llamaTokens))
+	for i := 0; i < len(*llamaTokens); i++ {
+		decodedTokens[i] = string(llama3Encoder.Decoder[(*llamaTokens)[i]])
+	}
+
+	if len(*llamaTokens) != 4 {
+		t.Errorf("Expected 4 tokens, got %d", len(*llamaTokens))
+	}
+
+	if decodedTokens[1] != "123" && decodedTokens[2] != "4" {
+		t.Errorf("Expected 123|4, got %s|%s",
+			decodedTokens[1], decodedTokens[2])
+	}
+}
+
+func TestGPT2DefaultPadding(t *testing.T) {
+	// GPT2 defines a padding token, we test if it properly gets this token
+	// corresponds to <|padding|> in the vocab
+	assert.Equal(t, gpt2Encoder.PadToken, Token(50257))
+	assert.Equal(t, gpt2Encoder.Encoder["<|padding|>"], Token(50257))
+}
+
+func TestPilePadding(t *testing.T) {
+	// Pile defines a padding token, we test if it properly gets this token
+	// corresponds to <|padding|> in the vocab
+	assert.Equal(t, pileEncoder.PadToken, Token(1))
+	assert.Equal(t, pileEncoder.Encoder["<|padding|>"], Token(1))
+}
+
+func TestClipPadding(t *testing.T) {
+	// CLIP defines a padding token, we test if it properly gets this token
+	// corresponds to <|endoftext|> in the vocab
+	assert.Equal(t, clipEncoder.PadToken, Token(49407))
+	assert.Equal(t, clipEncoder.Encoder["<|endoftext|>"], Token(49407))
+}
+
+func TestNerdstashPadding(t *testing.T) {
+	// Nerdstash defines a padding token, we test if it properly gets this token
+	// corresponds to <|pad|> in the vocab
+	assert.Equal(t, nerdstashV2Encoder.PadToken, Token(0))
+	assert.Equal(t, nerdstashV2Encoder.Encoder["<|pad|>"], Token(0))
+}
+
+func TestLlamaPadding(t *testing.T) {
+	// Llama doesn't define a padding token, we test if it properly defaults to
+	// [PAD] as 65535
+	assert.Equal(t, llama2Encoder.PadToken, Token(65535))
+	assert.Equal(t, llama2Encoder.Encoder["[PAD]"], Token(65535))
+}
+
+func TestMistralPadding(t *testing.T) {
+	// Mistral doesn't define a padding token, we test if it properly defaults to
+	// [PAD] as 65535
+	assert.Equal(t, mistralEncoder.PadToken, Token(65535))
+	assert.Equal(t, mistralEncoder.Encoder["[PAD]"], Token(65535))
+}
+
+func TestLlama3Padding(t *testing.T) {
+	// Llama doesn't define a padding token, we test if it properly defaults to
+	// [PAD] as 4294967295 due to the uint32 max value
+	assert.Equal(t, llama3Encoder.PadToken, Token(4294967295))
+	assert.Equal(t, llama3Encoder.Encoder["[PAD]"], Token(4294967295))
+}
+
+func TestGPTDecoder_Decode(t *testing.T) {
+	// TBD
+}
+
+func TestRankPairs(t *testing.T) {
+}
+
+func downloadModel(modelId string, destPath string) error {
+	// Download the model
+	destPathPTR := &destPath
+	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
+	os.MkdirAll(destPath, 0755)
+	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	if rsrcErr != nil {
+		return rsrcErr
+	}
+	return nil
+}
+
+func assertFileExists(t *testing.T, filePath string) {
+	if _, err := os.Stat(filePath); err != nil && os.IsNotExist(err) {
+		t.Errorf("File does not exist: %s", filePath)
+	} else if err != nil {
+		t.Errorf("Error checking file: %v", err)
+	}
+
+}
+
+func TestModelDownload(t *testing.T) {
+	// Download the model
+	modelId := "gpt2"
+	destPath := "./TestModelDownload"
+	err := downloadModel(modelId, destPath)
+	if err != nil {
+		os.RemoveAll(destPath)
+		t.Errorf("Error downloading model: %v", err)
+	}
+	defer os.RemoveAll(destPath)
+
+	// Check that the model files are there
+	// We want to check for the presence of the following files:
+	// config.json, pytorch_model.bin,
+	// tokenizer.json, vocab.json
+
+	// Check for config.json
+	configPath := destPath + "/config.json"
+	assertFileExists(t, configPath)
+
+	// Check for pytorch_model.bin
+	modelPath := destPath + "/pytorch_model.bin"
+	assertFileExists(t, modelPath)
+
+	// Check for tokenizer.json
+	tokenizerConfigPath := destPath + "/tokenizer.json"
+	assertFileExists(t, tokenizerConfigPath)
+
+	// Check for vocab.json
+	vocabPath := destPath + "/vocab.json"
+	assertFileExists(t, vocabPath)
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
@@ -1050,71 +1242,6 @@ func TestMistralRemoteDownloadTokenizer(t *testing.T) {
 	if !assert.Equal(t, expected, *encoded) {
 		t.Errorf("Expected: %v\nActual: %v", expected, *encoded)
 	}
-}
-
-func TestGPTDecoder_Decode(t *testing.T) {
-	// TBD
-}
-
-func TestRankPairs(t *testing.T) {
-}
-
-func downloadModel(modelId string, destPath string) error {
-	// Download the model
-	destPathPTR := &destPath
-	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
-	os.MkdirAll(destPath, 0755)
-	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
-		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
-	if rsrcErr != nil {
-		return rsrcErr
-	}
-	return nil
-}
-
-func assertFileExists(t *testing.T, filePath string) {
-	if _, err := os.Stat(filePath); err != nil && os.IsNotExist(err) {
-		t.Errorf("File does not exist: %s", filePath)
-	} else if err != nil {
-		t.Errorf("Error checking file: %v", err)
-	}
-
-}
-
-func TestModelDownload(t *testing.T) {
-	// Download the model
-	modelId := "gpt2"
-	destPath := "./TestModelDownload"
-	err := downloadModel(modelId, destPath)
-	if err != nil {
-		os.RemoveAll(destPath)
-		t.Errorf("Error downloading model: %v", err)
-	}
-	defer os.RemoveAll(destPath)
-
-	// Check that the model files are there
-	// We want to check for the presence of the following files:
-	// config.json, pytorch_model.bin,
-	// tokenizer.json, vocab.json
-
-	// Check for config.json
-	configPath := destPath + "/config.json"
-	assertFileExists(t, configPath)
-
-	// Check for pytorch_model.bin
-	modelPath := destPath + "/pytorch_model.bin"
-	assertFileExists(t, modelPath)
-
-	// Check for tokenizer.json
-	tokenizerConfigPath := destPath + "/tokenizer.json"
-	assertFileExists(t, tokenizerConfigPath)
-
-	// Check for vocab.json
-	vocabPath := destPath + "/vocab.json"
-	assertFileExists(t, vocabPath)
-
-	// Finish the test, allow defered cleanup
-	fmt.Println("All Exists - Looks good.")
 }
 
 func TestModelDownloadPythia(t *testing.T) {
@@ -1257,27 +1384,6 @@ func TestModelDownloadLlama(t *testing.T) {
 	fmt.Println("All Exists - Looks good.")
 }
 
-func TestLlama3Merge(t *testing.T) {
-	// This test is to check if the encoder is able to merge the tokens correctly
-	// If it fails, the merge function in the streaming_encode does not check for invalid merge pairs correctly
-	//testString := "Description\ndescription\n Description\n description"
-	testString := "1234"
-	llamaTokens := llama3Encoder.Encode(&testString)
-	decodedTokens := make([]string, len(*llamaTokens))
-	for i := 0; i < len(*llamaTokens); i++ {
-		decodedTokens[i] = string(llama3Encoder.Decoder[(*llamaTokens)[i]])
-	}
-
-	if len(*llamaTokens) != 4 {
-		t.Errorf("Expected 4 tokens, got %d", len(*llamaTokens))
-	}
-
-	if decodedTokens[1] != "123" && decodedTokens[2] != "4" {
-		t.Errorf("Expected 123|4, got %s|%s",
-			decodedTokens[1], decodedTokens[2])
-	}
-}
-
 func TestModelDownloadMistral(t *testing.T) {
 	// Download a downstream mistral model due to mistral being gated
 	modelId := "Open-Orca/Mistral-7B-OpenOrca"
@@ -1312,55 +1418,6 @@ func TestModelDownloadMistral(t *testing.T) {
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
-}
-
-func TestGPT2DefaultPadding(t *testing.T) {
-	// GPT2 defines a padding token, we test if it properly gets this token
-	// corresponds to <|padding|> in the vocab
-	assert.Equal(t, gpt2Encoder.PadToken, Token(50257))
-	assert.Equal(t, gpt2Encoder.Encoder["<|padding|>"], Token(50257))
-}
-
-func TestPilePadding(t *testing.T) {
-	// Pile defines a padding token, we test if it properly gets this token
-	// corresponds to <|padding|> in the vocab
-	assert.Equal(t, pileEncoder.PadToken, Token(1))
-	assert.Equal(t, pileEncoder.Encoder["<|padding|>"], Token(1))
-}
-
-func TestClipPadding(t *testing.T) {
-	// CLIP defines a padding token, we test if it properly gets this token
-	// corresponds to <|endoftext|> in the vocab
-	assert.Equal(t, clipEncoder.PadToken, Token(49407))
-	assert.Equal(t, clipEncoder.Encoder["<|endoftext|>"], Token(49407))
-}
-
-func TestNerdstashPadding(t *testing.T) {
-	// Nerdstash defines a padding token, we test if it properly gets this token
-	// corresponds to <|pad|> in the vocab
-	assert.Equal(t, nerdstashV2Encoder.PadToken, Token(0))
-	assert.Equal(t, nerdstashV2Encoder.Encoder["<|pad|>"], Token(0))
-}
-
-func TestLlamaPadding(t *testing.T) {
-	// Llama doesn't define a padding token, we test if it properly defaults to
-	// [PAD] as 65535
-	assert.Equal(t, llama2Encoder.PadToken, Token(65535))
-	assert.Equal(t, llama2Encoder.Encoder["[PAD]"], Token(65535))
-}
-
-func TestMistralPadding(t *testing.T) {
-	// Mistral doesn't define a padding token, we test if it properly defaults to
-	// [PAD] as 65535
-	assert.Equal(t, mistralEncoder.PadToken, Token(65535))
-	assert.Equal(t, mistralEncoder.Encoder["[PAD]"], Token(65535))
-}
-
-func TestLlama3Padding(t *testing.T) {
-	// Llama doesn't define a padding token, we test if it properly defaults to
-	// [PAD] as 4294967295 due to the uint32 max value
-	assert.Equal(t, llama3Encoder.PadToken, Token(4294967295))
-	assert.Equal(t, llama3Encoder.Encoder["[PAD]"], Token(4294967295))
 }
 
 func TestModelDownloadFairseq(t *testing.T) {
