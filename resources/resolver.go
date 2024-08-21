@@ -1095,6 +1095,11 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 					hasReadForVocabSize = true
 				}
 			}
+
+			// Read for newLineMode
+			if Newlinemode, ok := configMap["newlinemode"].(string); ok {
+				hfConfig.Newlinemode = &Newlinemode
+			}
 		}
 
 		// Read tokenizer_config.json
@@ -1163,6 +1168,11 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 					addedSpecialsTokens[valStr] = uint32(keyToken)
 				}
 				hfConfig.AddedSpecialsTokens = &addedSpecialsTokens
+			}
+
+			// Read for tokenizer Class
+			if tokenizerClass, ok := configMap["tokenizer_class"].(string); ok {
+				hfConfig.TokenizerClass = &tokenizerClass
 			}
 		}
 

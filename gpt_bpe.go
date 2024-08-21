@@ -64,6 +64,7 @@ type GPTEncoder struct {
 	LruSize         int
 	SplitterThreads int
 	VocabId         string
+	tokenizerClass  string
 }
 
 type GPTPair struct {
@@ -411,6 +412,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		BPE_LRU_SZ,
 		4,
 		vocabId,
+		*hfConfig.TokenizerClass,
 	}
 	encoder.UpdateSpecialsTree()
 	return encoder, nil
@@ -967,6 +969,9 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			// If we've discovered a special token, then we need to split the
 			// runeAccumulator before the special token.
 			var line string
+			// Some tokenizers like Nerdstash will have a special token that consists
+			// of multiple smaller special tokens. We need to handle this case. so we don't split
+			// the line prematurely.
 			if specialToken {
 				line = string(runeAccumulator[:len(runeAccumulator)-len(
 					candidateNode.runes)])
@@ -1067,10 +1072,6 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
 	}
-	// Temporary hack - inject a space token at the end of the accumulator for mistral-tokenizer
-	if encoder.VocabId == "mistral-tokenizer" {
-		accumulator = append(accumulator, encoder.Encoder[" "])
-	}
 
 	return func(desiredTokens int) *Tokens {
 		for {
@@ -1110,6 +1111,12 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				encodedTokens = encoder.ToBPE(fragment)
 			}
 			accumulator = append(accumulator, encodedTokens...)
+
+			// Llama3 and other PreTrainedTokenizerFast tokenizers do not use this
+			// logic, so we can skip it.
+			if encoder.tokenizerClass == "PreTrainedTokenizerFast" {
+				continue
+			}
 			if len(accumulator)-len(encodedTokens) > 0 {
 				idx := len(accumulator) - len(encodedTokens) - 1
 				for {
@@ -1170,6 +1177,10 @@ func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) *[]byte {
 
 // Encode encodes a string into a sequence of tokens.
 func (encoder *GPTEncoder) Encode(text *string) *Tokens {
+	// Temporary hack - inject a space token at the end of the accumulator for mistral-tokenizer
+	if encoder.VocabId == VOCAB_ID_MISTRAL {
+		*text = " " + *text
+	}
 	runeReader := strings.NewReader(*text)
 
 	return encoder.EncodeReader(runeReader)
@@ -1196,11 +1207,16 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	// Accumulate tokens until it is unicode complete.
 	tokensAcc := make(Tokens, 0)
 	runesAcc := make([]rune, 0)
-
-	for _, token := range *encoded {
+	for i, token := range *encoded {
 		tokensAcc = append(tokensAcc, token)
-		if encoder.TokensReady(&tokensAcc) {
-			bs := make([]byte, 0, 32)
+		bs := make([]byte, 0)
+		// If we have a byte token and a byteEncoder,
+		// then we need to accumulate until we have a full rune.
+		// If we are at the end of the encoded tokens, then we need to
+		// decode the accumulated tokens regardless.
+		flagHoldForByte := encoder.IsByteToken(&token) && encoder.IsLastTokenByte(&tokensAcc)
+		//fmt.Printf("flagHoldForByte: %v isByteToken: %v isLastTokenByte: %v\n", flagHoldForByte, encoder.IsByteToken(&token), encoder.IsLastTokenByte(&tokensAcc))
+		if encoder.TokensReady(&tokensAcc) && (i == len(*encoded)-1 || !flagHoldForByte) {
 			for _, safeToken := range tokensAcc {
 				if v, ok := encoder.Decoder[safeToken]; ok {
 					bs = append(bs, v...)
@@ -1261,6 +1277,24 @@ func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
 	tokens := TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)
+}
+
+// IsByteToken
+// Determine if the token is a byte token.
+func (encoder *GPTEncoder) IsByteToken(token *Token) bool {
+	if encoder.BytesEncoder == nil {
+		return false
+	}
+	return int(*token) <= len(*encoder.BytesEncoder)
+}
+
+// IsLastTokenByte
+// Determine if the last token in the sequence is a byte token.
+func (encoder *GPTEncoder) IsLastTokenByte(tokens *Tokens) bool {
+	if encoder.BytesEncoder == nil || len(*tokens) == 0 {
+		return false
+	}
+	return encoder.IsByteToken(&(*tokens)[len(*tokens)-1])
 }
 
 // TokensReady
