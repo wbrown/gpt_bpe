@@ -18,6 +18,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 const BPE_LRU_SZ = 65536
@@ -25,9 +26,8 @@ const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
 const defaultPadTokenString = "[PAD]"
 
-type Token uint32
-type Tokens []Token
-type TokenMap map[string]Token
+type Token = types.Token
+type Tokens = types.Tokens
 
 type GPTEncoder struct {
 	Encoder         map[string]Token
@@ -363,7 +363,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	cache, _ := lru.NewARC(BPE_LRU_SZ)
 
 	replacements := make(map[string]string)
-	if hfConfig.Newlinemode != nil && *hfConfig.Newlinemode == "s" {
+	if hfConfig.NewLineMode != nil && *hfConfig.NewLineMode == "s" {
 		replacements["\n"] = "</s>"
 	}
 
@@ -1335,7 +1335,7 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 // Decode Tokens from a byte array into a string.
 func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
 	// First convert our bytearray into uint32 `Token` array.
-	tokens := TokensFromBin(encoded)
+	tokens := types.TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)
 }

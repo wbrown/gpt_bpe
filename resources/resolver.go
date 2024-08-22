@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/types"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -22,6 +22,10 @@ import (
 
 	"github.com/dustin/go-humanize"
 )
+
+type Token types.Token
+type Tokens types.Tokens
+type TokenMap types.TokenMap
 
 type JsonMap map[string]interface{}
 
@@ -875,21 +879,21 @@ func CheckFileExist(path string) bool {
 
 // HFConfig contains the tokenizer configuration that gpt_bpe uses.
 type HFConfig struct {
-	ModelId             *string           `json:"omitempty"`
-	ModelType           *string           `json:"model_type,omitempty"`
-	EosTokenId          *gpt_bpe.Token    `json:"eos_token_id,omitempty"`
-	BosTokenId          *gpt_bpe.Token    `json:"bos_token_id,omitempty"`
-	PadTokenId          *gpt_bpe.Token    `json:"pad_token_id,omitempty"`
-	BosTokenStr         *string           `json:"bos_token,omitempty"`
-	EosTokenStr         *string           `json:"eos_token,omitempty"`
-	PadTokenStr         *string           `json:"pad_token,omitempty"`
-	VocabSize           *uint32           `json:"vocab_size,omitempty"`
-	NewLineMode         *string           `json:"newlinemode,omitempty"`
-	TokenizerClass      *string           `json:"tokenizer_class"`
-	AddBosToken         *bool             `json:"add_bos_token,omitempty"`
-	AddEosToken         *bool             `json:"add_eos_token,omitempty"`
-	AddedSpecialsTokens *gpt_bpe.TokenMap `json:"added_specials_tokens,omitempty"`
-	IgnoreMerges        *bool             `json:"ignore_merges,omitempty"`
+	ModelId             *string   `json:"omitempty"`
+	ModelType           *string   `json:"model_type,omitempty"`
+	EosTokenId          *Token    `json:"eos_token_id,omitempty"`
+	BosTokenId          *Token    `json:"bos_token_id,omitempty"`
+	PadTokenId          *Token    `json:"pad_token_id,omitempty"`
+	BosTokenStr         *string   `json:"bos_token,omitempty"`
+	EosTokenStr         *string   `json:"eos_token,omitempty"`
+	PadTokenStr         *string   `json:"pad_token,omitempty"`
+	VocabSize           *uint32   `json:"vocab_size,omitempty"`
+	NewLineMode         *string   `json:"newlinemode,omitempty"`
+	TokenizerClass      *string   `json:"tokenizer_class"`
+	AddBosToken         *bool     `json:"add_bos_token,omitempty"`
+	AddEosToken         *bool     `json:"add_eos_token,omitempty"`
+	AddedSpecialsTokens *TokenMap `json:"added_specials_tokens,omitempty"`
+	IgnoreMerges        *bool     `json:"ignore_merges,omitempty"`
 }
 
 // SpecialConfig contains the special tokens and special token configuration
@@ -909,9 +913,9 @@ type SpecialConfig struct {
 func NewHFConfig() *HFConfig {
 	defaultModelId := ""
 	defaultModelType := "gpt2"
-	defaultEosTokenId := gpt_bpe.Token(0)
-	defaultBosTokenId := gpt_bpe.Token(0)
-	defaultPadTokenId := gpt_bpe.Token(0)
+	defaultEosTokenId := Token(0)
+	defaultBosTokenId := Token(0)
+	defaultPadTokenId := Token(0)
 	defaultBosTokenStr := "<|startoftext|>"
 	defaultEosTokenStr := "<|endoftext|>"
 	defaultPadTokenStr := ""
@@ -920,7 +924,7 @@ func NewHFConfig() *HFConfig {
 	defaultTokenizerClass := "GPT2BPETokenizer"
 	defaultAddBosToken := false
 	defaultAddEosToken := false
-	defaultAddedSpecialsTokens := make(gpt_bpe.TokenMap)
+	defaultAddedSpecialsTokens := make(TokenMap)
 	HFConfig := &HFConfig{
 		ModelId:             &defaultModelId,
 		ModelType:           &defaultModelType,
@@ -1133,7 +1137,7 @@ func (rsrcs *Resources) UnmarshalUntilData(
 // Adapter function to get the vocab from either vocab.json or encoder.json.
 func (rsrcs *Resources) GetVocab(
 	hfConfig *HFConfig,
-) (gpt_bpe.TokenMap, error) {
+) (TokenMap, error) {
 	// Vocab is stored in either the vocab.json or encoder.json file
 	// We want to unmarshal the vocab file into an interface to work with
 	// We attempt to unmarshal under the vocab.json key first, then
@@ -1169,9 +1173,9 @@ func (rsrcs *Resources) GetVocab(
 	}
 
 	// Convert the vocab to a map of tokens
-	tokens := make(gpt_bpe.TokenMap)
+	tokens := make(TokenMap)
 	for k, v := range *vocab {
-		tokens[k] = gpt_bpe.Token(v.(float64))
+		tokens[k] = types.Token(Token(v.(float64)))
 	}
 
 	// Add the special tokens to the vocab
@@ -1194,20 +1198,20 @@ func (rsrcs *Resources) resolveTokenIds(hfConfig *HFConfig) error {
 	}
 
 	// Get the token ids for eos, bos, and pad tokens
-	var eosTokenId, bosTokenId, padTokenId *gpt_bpe.Token
+	var eosTokenId, bosTokenId, padTokenId *Token
 	if eosToken, ok := vocab[*hfConfig.EosTokenStr]; ok {
-		eosTokenId = new(gpt_bpe.Token)
-		*eosTokenId = eosToken
+		eosTokenId = new(Token)
+		*eosTokenId = Token(eosToken)
 		hfConfig.EosTokenId = eosTokenId
 	}
 	if bosToken, ok := vocab[*hfConfig.BosTokenStr]; ok {
-		bosTokenId = new(gpt_bpe.Token)
-		*bosTokenId = bosToken
+		bosTokenId = new(Token)
+		*bosTokenId = Token(bosToken)
 		hfConfig.BosTokenId = bosTokenId
 	}
 	if padToken, ok := vocab[*hfConfig.PadTokenStr]; ok {
-		padTokenId = new(gpt_bpe.Token)
-		*padTokenId = padToken
+		padTokenId = new(Token)
+		*padTokenId = Token(padToken)
 		hfConfig.PadTokenId = padTokenId
 	}
 
@@ -1220,7 +1224,7 @@ func (rsrcs *Resources) resolveTokenIds(hfConfig *HFConfig) error {
 // Continuation of ResolveHFFromResources.
 func (rsrcs *Resources) resolveVocabSize(hfConfig *HFConfig) (err error) {
 	// Get the vocab from the resources
-	var vocab gpt_bpe.TokenMap
+	var vocab TokenMap
 	if vocab, err = rsrcs.GetVocab(hfConfig); err != nil {
 		return err
 	}
@@ -1280,11 +1284,11 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 
 			// Read for EOS BOS token ID
 			if eosTokenId, ok := configMap["eos_token_id"].(float64); ok {
-				eosTokenIdInt := gpt_bpe.Token(eosTokenId)
+				eosTokenIdInt := Token(eosTokenId)
 				hfConfig.EosTokenId = &eosTokenIdInt
 			}
 			if bosTokenId, ok := configMap["bos_token_id"].(float64); ok {
-				bosTokenIdInt := gpt_bpe.Token(bosTokenId)
+				bosTokenIdInt := Token(bosTokenId)
 				hfConfig.BosTokenId = &bosTokenIdInt
 			}
 
@@ -1361,12 +1365,12 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 			// Will later be used to readd into vocab if needed
 			if addedTokensDecoder, ok :=
 				configMap["added_tokens_decoder"].(JsonMap); ok {
-				addedSpecialsTokens := make(gpt_bpe.TokenMap)
+				addedSpecialsTokens := make(TokenMap)
 				for k, v := range addedTokensDecoder {
 					// Get under content key, key is float64
 					keyToken, _ := strconv.ParseFloat(k, 64)
 					valStr := v.(JsonMap)["content"].(string)
-					addedSpecialsTokens[valStr] = gpt_bpe.Token(keyToken)
+					addedSpecialsTokens[valStr] = types.Token(Token(keyToken))
 				}
 				hfConfig.AddedSpecialsTokens = &addedSpecialsTokens
 			}
