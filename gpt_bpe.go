@@ -534,10 +534,11 @@ func makeUnitrimArr(encoderMap map[string]Token) []int {
 			b >>= 3 // trim to relevant bits
 			byteDebt := int(byteDebtLUT[b])
 			if byteDebt < 0 {
-				// Continuation bytes are tracked relative to the bytes preceding them
+				// Continuation bytes are tracked relative to the bytes
+				// preceding them
 				tokenDebt += byteDebt
 			} else {
-				// Starting bytes have no relation to the bytes preceding them
+				// Starting bytes have no relation to bytes preceding them
 				tokenDebt = byteDebt
 			}
 
@@ -1099,8 +1100,8 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 					return nil
 				}
 			}
-			// Otherwise, we add the word to the accumulator. We have to handle
-			// the special tokens here, since they're not in the vocab.
+			// Otherwise, we add the word to the accumulator. We have to
+			// handle the special tokens here, since they're not in vocab.
 			var encodedTokens Tokens
 			specialToken, isSpecial := encoder.Specials[*word]
 			if isSpecial {
@@ -1112,9 +1113,9 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			}
 			accumulator = append(accumulator, encodedTokens...)
 
-			// Llama3 and other PreTrainedTokenizerFast tokenizers do not use this
-			// logic, so we can skip it.
-			if encoder.tokenizerClass == "PreTrainedTokenizerFast" {
+			// If we're ignoring merges in `ToBPE`, we don't want to do
+			// accumulation-merges here.
+			if encoder.ignoreMerges {
 				continue
 			}
 			if len(accumulator)-len(encodedTokens) > 0 {
@@ -1210,22 +1211,22 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 	for i, token := range *encoded {
 		tokensAcc = append(tokensAcc, token)
 		bs := make([]byte, 0)
-		// If we have a byte token and a byteEncoder,
-		// then we need to accumulate until we have a full rune.
-		// If we are at the end of the encoded tokens, then we need to
-		// decode the accumulated tokens regardless.
-		flagHoldForByte := encoder.IsByteToken(&token) && encoder.IsLastTokenByte(&tokensAcc)
-		//fmt.Printf("flagHoldForByte: %v isByteToken: %v isLastTokenByte: %v\n", flagHoldForByte, encoder.IsByteToken(&token), encoder.IsLastTokenByte(&tokensAcc))
+		// If we have a byte token and a byteEncoder, then we need to
+		// accumulate until we have a full rune. If we are at the end of
+		// the encoded tokens, then we need to decode the accumulated
+		// tokens regardless.
+		flagHoldForByte := encoder.IsByteToken(&token) &&
+			encoder.IsLastTokenByte(&tokensAcc)
+
 		if encoder.TokensReady(&tokensAcc) && (i == len(*encoded)-1 || !flagHoldForByte) {
 			for _, safeToken := range tokensAcc {
 				if v, ok := encoder.Decoder[safeToken]; ok {
 					bs = append(bs, v...)
 				}
 			}
-			// Convert our bytearray to string, interpreting as UTF-8 and then
-			// to 32-bit runes.
-			// If we don't have a BytesEncoder, then we are using GPT BPE's
-			// byte encoding for Unicode.
+			// Convert our bytearray to string, interpreting as UTF-8 and
+			// then to 32-bit runes. If we don't have a BytesEncoder, then we
+			// are using GPT BPE's byte encoding algorithm for Unicode.
 			var runes = []rune(string(bs))
 			var fragment string
 			if encoder.BytesEncoder == nil {
