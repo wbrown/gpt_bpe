@@ -74,8 +74,11 @@ func TokensFromBin32(bin *[]byte) *Tokens {
 	return &tokens
 }
 
-func (encoder GPTEncoder) TrimNewlines(tokens *Tokens, direction TrimDirection,
-	limit uint) (*Tokens, error) {
+func (encoder *GPTEncoder) TrimNewlines(
+	tokens *Tokens,
+	direction TrimDirection,
+	limit uint,
+) (*Tokens, error) {
 	var err error
 	trimmed := make(Tokens, 0)
 	if uint(len(*tokens)) <= limit {
@@ -119,8 +122,13 @@ func (encoder GPTEncoder) TrimNewlines(tokens *Tokens, direction TrimDirection,
 	return &accTokens, err
 }
 
-func (encoder GPTEncoder) AlignAndSizeTokens(tokens *Tokens,
-	desiredLength int) (alignedTokens Tokens, endAt int) {
+func (encoder *GPTEncoder) AlignAndSizeTokens(
+	tokens *Tokens,
+	desiredLength int,
+) (
+	alignedTokens Tokens,
+	endAt int,
+) {
 	chunk := (*tokens)[0:desiredLength]
 	// We trim to valid tokens, as we don't want partials
 	// that are truncated multi-tokens.
