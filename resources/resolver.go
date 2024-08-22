@@ -41,8 +41,10 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 	if time.Since(wc.Last).Seconds() > 10 {
 		wc.Reported = true
 		wc.Last = time.Now()
-		log.Printf("Downloading %s... %s / %s completed.",
-			wc.Path, humanize.Bytes(wc.Total), humanize.Bytes(wc.Size))
+		log.Printf(
+			"Downloading %s... %s / %s completed.",
+			wc.Path, humanize.Bytes(wc.Total), humanize.Bytes(wc.Size),
+		)
 	}
 	return n, nil
 }
@@ -76,14 +78,15 @@ func (rsrcs *Resources) Cleanup() {
 		file := rsrc.file
 		switch t := file.(type) {
 		case os.File:
-			t.Close()
+			_ = t.Close()
 		case fs.File:
-			t.Close()
+			_ = t.Close()
 		}
 	}
 }
 
-// return file
+// GetFile
+// Returns the file handle for a given resource name.
 func (rsrcs *Resources) GetFile(name string) (interface{}, error) {
 	if rsrcEntry, ok := (*rsrcs)[name]; ok {
 		return rsrcEntry.file, nil
@@ -152,7 +155,9 @@ func getResourceEntryAliases(typ ResourceType) map[string][]string {
 // Wrapper around FetchHTTP that fetches a resource from huggingface.co.
 func FetchHuggingFace(id string, rsrc string) (io.ReadCloser, error) {
 	token := os.Getenv("HF_API_TOKEN")
-	return FetchHTTP("https://huggingface.co/"+id+"/resolve/main", rsrc, token)
+	return FetchHTTP(
+		"https://huggingface.co/"+id+"/resolve/main", rsrc, token,
+	)
 }
 
 // SizeHuggingFace
@@ -187,8 +192,10 @@ func Fetch(uri string, rsrc string, token string) (io.ReadCloser, error) {
 		return FetchHTTP(uri, rsrc, token)
 	} else if _, err := os.Stat(path.Join(uri, rsrc)); !os.IsNotExist(err) {
 		if handle, fileErr := os.Open(path.Join(uri, rsrc)); fileErr != nil {
-			return nil, fmt.Errorf("error opening %s/%s: %v",
-				uri, rsrc, fileErr)
+			return nil, fmt.Errorf(
+				"error opening %s/%s: %v",
+				uri, rsrc, fileErr,
+			)
 		} else {
 			return handle, fileErr
 		}
@@ -229,13 +236,18 @@ type Specials map[string]string
 // If specials.json does not exist in dir, create it from the
 // special_tokens_map.json file.
 func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
-	realizedSpecials Specials, err error) {
-	realizedSpecials = make(Specials, 0)
+	realizedSpecials Specials, err error,
+) {
+	realizedSpecials = make(Specials)
 	// If we already have specials.json, we don't need to generate it.
 	if _, ok := (*rsrcs)["specials.json"]; ok {
-		if specErr := json.Unmarshal(*(*rsrcs)["specials.json"].Data,
-			&realizedSpecials); specErr != nil {
-			return nil, fmt.Errorf("cannot unmarshal specials.json: %s", specErr)
+		if specErr := json.Unmarshal(
+			*(*rsrcs)["specials.json"].Data,
+			&realizedSpecials,
+		); specErr != nil {
+			return nil, fmt.Errorf(
+				"cannot unmarshal specials.json: %s", specErr,
+			)
 		}
 		return realizedSpecials, nil
 	}
@@ -246,9 +258,11 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 		return nil, nil
 	}
 
-	specialTokens := make(map[string]interface{}, 0)
-	if specialErr := json.Unmarshal(*specialsJson.Data,
-		&specialTokens); specialErr != nil {
+	specialTokens := make(map[string]interface{})
+	if specialErr := json.Unmarshal(
+		*specialsJson.Data,
+		&specialTokens,
+	); specialErr != nil {
 		return nil, specialErr
 	}
 
@@ -263,38 +277,52 @@ func (rsrcs *Resources) ResolveSpecialTokens(dir string) (
 			case string:
 				specialToken = mvt
 			default:
-				log.Fatalf("unknown format for `special_tokens_map."+
-					"json`: %v", t)
+				log.Fatalf(
+					"unknown format for `special_tokens_map."+
+						"json`: %v", t,
+				)
 			}
 		default:
-			log.Fatalf("unknown format for `special_tokens_map."+
-				"json`: %v", t)
+			log.Fatalf(
+				"unknown format for `special_tokens_map."+
+					"json`: %v", t,
+			)
 		}
 		realizedSpecials[k] = specialToken
 	}
 	if len(realizedSpecials) > 0 {
 		specialsFile, specialFileErr := os.OpenFile(
 			path.Join(dir, "specials.json"),
-			os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
+			os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755,
+		)
 		if specialFileErr != nil {
-			return nil, fmt.Errorf("cannot generate specials.json: %s",
-				specialFileErr)
+			return nil, fmt.Errorf(
+				"cannot generate specials.json: %s",
+				specialFileErr,
+			)
 		}
 		specialsJsonBytes, specialsErr := json.Marshal(realizedSpecials)
 		if specialsErr != nil {
-			specialsFile.Close()
-			return nil, fmt.Errorf("cannot marshal specials.json: %s", specialsErr)
+			_ = specialsFile.Close()
+			return nil, fmt.Errorf(
+				"cannot marshal specials.json: %s", specialsErr,
+			)
 		}
 		if _, writeErr := specialsFile.Write(
-			specialsJsonBytes); writeErr != nil {
-			specialsFile.Close()
-			return nil, fmt.Errorf("cannot write specials.json: %s", specialsErr)
+			specialsJsonBytes,
+		); writeErr != nil {
+			_ = specialsFile.Close()
+			return nil, fmt.Errorf(
+				"cannot write specials.json: %s", specialsErr,
+			)
 		}
 		if _, seekErr := specialsFile.Seek(0, 0); seekErr != nil {
 			return nil, fmt.Errorf("cannot seek specials.json: %s", seekErr)
 		}
-		if mmapErr := rsrcs.AddEntry("specials.json",
-			specialsFile); mmapErr != nil {
+		if mmapErr := rsrcs.AddEntry(
+			"specials.json",
+			specialsFile,
+		); mmapErr != nil {
 			return nil, mmapErr
 		}
 	}
@@ -313,7 +341,7 @@ func ResolveResources(
 	*Resources,
 	error,
 ) {
-	foundResources := make(Resources, 0)
+	foundResources := make(Resources)
 	resources := GetResourceEntries(rsrcType)
 	aliases := getResourceEntryAliases(rsrcType)
 
@@ -333,8 +361,10 @@ func ResolveResources(
 					for _, alias = range aliasesList {
 						rsrcSize, rsrcSizeErr = Size(uri, alias, token)
 						if rsrcSizeErr == nil {
-							log.Printf("Resolving %s/%s as alias %s/%s...",
-								uri, file, uri, alias)
+							log.Printf(
+								"Resolving %s/%s as alias %s/%s...",
+								uri, file, uri, alias,
+							)
 							break
 						}
 					}
@@ -343,82 +373,123 @@ func ResolveResources(
 			if rsrcSizeErr != nil {
 				// If the resource is required, we cannot continue.
 				if flag&RESOURCE_REQUIRED != 0 {
-					log.Printf("%s/%s not found, required!",
-						uri, file)
-					return &foundResources, fmt.Errorf("cannot retrieve required `%s from %s`: %s",
-						uri, file, rsrcSizeErr)
+					log.Printf(
+						"%s/%s not found, required!",
+						uri, file,
+					)
+					return &foundResources, fmt.Errorf(
+						"cannot retrieve required `%s from %s`: %s",
+						uri, file, rsrcSizeErr,
+					)
 				} else {
 					// Otherwise, we can skip it.
 					continue
 				}
 				// If the resource exists, and is the correct size, we can skip it.
 			} else if targetStat, targetStatErr := os.Stat(targetPath); !os.IsNotExist(
-				targetStatErr) && uint(targetStat.Size()) == rsrcSize {
-				log.Printf("Skipping %s/%s... already exists, "+
-					"and of the correct size.", uri, file)
+				targetStatErr,
+			) && uint(targetStat.Size()) == rsrcSize {
+				log.Printf(
+					"Skipping %s/%s... already exists, "+
+						"and of the correct size.", uri, file,
+				)
 				openFile, skipFileErr := os.OpenFile(
 					path.Join(*dir, file),
-					os.O_RDONLY, 0755)
+					os.O_RDONLY, 0755,
+				)
 				if skipFileErr != nil {
-					return &foundResources, fmt.Errorf("error opening '%s' for read: %s",
-						file, skipFileErr)
+					return &foundResources, fmt.Errorf(
+						"error opening '%s' for read: %s",
+						file, skipFileErr,
+					)
 
 					// If the resource exists, but is the wrong size, we need to
 					// download it.
 				} else {
 					rsrcFile = *openFile
 				}
-			} else if rsrcReader, rsrcErr := Fetch(uri, alias, token); rsrcErr != nil {
+			} else if rsrcReader, rsrcErr := Fetch(
+				uri, alias, token,
+			); rsrcErr != nil {
 				return &foundResources, fmt.Errorf(
 					"cannot retrieve `%s from %s`: %s",
-					uri, alias, rsrcErr)
+					uri, alias, rsrcErr,
+				)
 			} else {
 				if dirErr := os.MkdirAll(
-					path.Dir(path.Join(*dir, file)), 0755); dirErr != nil {
-					return &foundResources, fmt.Errorf("cannot create directory for '%s': %s",
-						file, dirErr)
+					path.Dir(path.Join(*dir, file)), 0755,
+				); dirErr != nil {
+					return &foundResources, fmt.Errorf(
+						"cannot create directory for '%s': %s",
+						file, dirErr,
+					)
 				}
 				openFile, rsrcFileErr := os.OpenFile(
 					path.Join(*dir, file),
-					os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
-				rsrcFile = *openFile
+					os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755,
+				)
 				if rsrcFileErr != nil {
-					return &foundResources, fmt.Errorf("error opening '%s' for write: %s",
-						file, rsrcFileErr)
+					return &foundResources, fmt.Errorf(
+						"error opening '%s' for write: %s",
+						file, rsrcFileErr,
+					)
 				}
+				rsrcFile = *openFile
+
 				counter := &WriteCounter{
 					Last: time.Now(),
 					Path: fmt.Sprintf("%s/%s", uri, file),
 					Size: uint64(rsrcSize),
 				}
-				bytesDownloaded, ioErr := io.Copy(&rsrcFile,
-					io.TeeReader(rsrcReader, counter))
-				rsrcReader.Close()
+				bytesDownloaded, ioErr := io.Copy(
+					&rsrcFile,
+					io.TeeReader(rsrcReader, counter),
+				)
+				_ = rsrcReader.Close()
 				if ioErr != nil {
-					return &foundResources, fmt.Errorf("error downloading '%s': %s",
-						alias, ioErr)
+					return &foundResources, fmt.Errorf(
+						"error downloading '%s': %s",
+						alias, ioErr,
+					)
 				} else {
-					log.Printf("Downloaded %s/%s... "+
-						"%s completed.", uri, alias,
-						humanize.Bytes(uint64(bytesDownloaded)))
+					log.Printf(
+						"Downloaded %s/%s... "+
+							"%s completed.", uri, alias,
+						humanize.Bytes(uint64(bytesDownloaded)),
+					)
 				}
 			}
-			if mmapErr := foundResources.AddEntry(file,
-				&rsrcFile); mmapErr != nil {
-				return &foundResources, fmt.Errorf("error trying to mmap file: %s",
-					mmapErr)
+
+			if mmapErr := foundResources.AddEntry(
+				file,
+				&rsrcFile,
+			); mmapErr != nil {
+				return &foundResources, fmt.Errorf(
+					"error trying to mmap file: %s",
+					mmapErr,
+				)
 			}
 		}
 	}
 
 	// check if tokenizer.model exists, if so, expand to files
-	flagTokenizerModelExist := CheckFileExist(path.Join(*dir, "tokenizer.model"))
+	flagTokenizerModelExist := CheckFileExist(
+		path.Join(
+			*dir, "tokenizer.model",
+		),
+	)
 	if flagTokenizerModelExist {
 		// check size of tokenizer.model
-		targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.model"))
+		targetStat, targetStatErr := os.Stat(
+			path.Join(
+				*dir, "tokenizer.model",
+			),
+		)
 		if targetStatErr != nil {
-			return &foundResources, fmt.Errorf("cannot stat tokenizer.model: %s",
-				targetStatErr)
+			return &foundResources, fmt.Errorf(
+				"cannot stat tokenizer.model: %s",
+				targetStatErr,
+			)
 		}
 		if targetStat.Size() == 0 {
 			flagTokenizerModelExist = false
@@ -426,7 +497,10 @@ func ResolveResources(
 	}
 
 	if flagTokenizerModelExist {
-		log.Printf("Directory %s contains tokenizer.model, extracting to files", path.Join(*dir, "tokenizer.model"))
+		log.Printf(
+			"Directory %s contains tokenizer.model, extracting to files",
+			path.Join(*dir, "tokenizer.model"),
+		)
 		ConvertSentencepieceFiles(path.Join(*dir, "tokenizer.model"), false)
 
 		// Add the new files to the resources
@@ -436,31 +510,51 @@ func ResolveResources(
 			if _, ok := foundResources[f.Name()]; !ok {
 				openFile, rsrcFileErr := os.OpenFile(
 					path.Join(*dir, f.Name()),
-					os.O_RDONLY, 0755)
-				rsrcFile := *openFile
+					os.O_RDONLY, 0755,
+				)
 				if rsrcFileErr != nil {
-					return &foundResources, fmt.Errorf("error opening '%s' for read: %s",
-						f.Name(), rsrcFileErr)
+					return &foundResources, fmt.Errorf(
+						"error opening '%s' for read: %s",
+						f.Name(), rsrcFileErr,
+					)
 				}
-				if mmapErr := foundResources.AddEntry(f.Name(),
-					&rsrcFile); mmapErr != nil {
-					return &foundResources, fmt.Errorf("error trying to mmap file: %s",
-						mmapErr)
+				rsrcFile := *openFile
+				if mmapErr := foundResources.AddEntry(
+					f.Name(),
+					&rsrcFile,
+				); mmapErr != nil {
+					return &foundResources, fmt.Errorf(
+						"error trying to mmap file: %s",
+						mmapErr,
+					)
 				}
-				log.Printf("Added %s to resources via sentancepiece conversion\n", f.Name())
+				log.Printf(
+					"Added %s to resources via sentancepiece conversion\n",
+					f.Name(),
+				)
 			}
 		}
 
 	} else {
 		// check if tokenizer exists by checking if tokenizer.json exists
 		// and has data in it
-		flagTokenizerExist := CheckFileExist(path.Join(*dir, "tokenizer.json"))
+		flagTokenizerExist := CheckFileExist(
+			path.Join(
+				*dir, "tokenizer.json",
+			),
+		)
 		if flagTokenizerExist {
 			// check size of tokenizer.json
-			targetStat, targetStatErr := os.Stat(path.Join(*dir, "tokenizer.json"))
+			targetStat, targetStatErr := os.Stat(
+				path.Join(
+					*dir, "tokenizer.json",
+				),
+			)
 			if targetStatErr != nil {
-				return &foundResources, fmt.Errorf("cannot stat tokenizer.json: %s",
-					targetStatErr)
+				return &foundResources, fmt.Errorf(
+					"cannot stat tokenizer.json: %s",
+					targetStatErr,
+				)
 			}
 			if targetStat.Size() == 0 {
 				flagTokenizerExist = false
@@ -478,12 +572,16 @@ func ResolveResources(
 			if !flagVocabExist {
 				model, err := ExtractModelFromTokenizer(dir)
 				if err != nil {
-					return &foundResources, fmt.Errorf("could not extract model from tokenizer %s", err)
+					return &foundResources, fmt.Errorf(
+						"could not extract model from tokenizer %s", err,
+					)
 				}
 
 				err = ExtractVocabFromTokenizer(model, dir, &foundResources)
 				if err != nil {
-					return &foundResources, fmt.Errorf("could not extract vocab from tokenizer %s", err)
+					return &foundResources, fmt.Errorf(
+						"could not extract vocab from tokenizer %s", err,
+					)
 				}
 			}
 
@@ -491,12 +589,16 @@ func ResolveResources(
 			if !flagMergesExists {
 				model, err := ExtractModelFromTokenizer(dir)
 				if err != nil {
-					return &foundResources, fmt.Errorf("could not extract model from tokenizer %s", err)
+					return &foundResources, fmt.Errorf(
+						"could not extract model from tokenizer %s", err,
+					)
 				}
 
 				err = ExtractMergesFromTokenizer(model, dir, &foundResources)
 				if err != nil {
-					return &foundResources, fmt.Errorf("could not extract merges from tokenizer %s", err)
+					return &foundResources, fmt.Errorf(
+						"could not extract merges from tokenizer %s", err,
+					)
 				}
 			}
 		} else if !flagTokenizerExist {
@@ -518,13 +620,23 @@ func ResolveResources(
 
 	// if model does not exist, check if we have the sharded config
 	if !flagModelExists {
-		flagShardConfigExists := CheckFileExist(path.Join(*dir, "pytorch_model.bin.index.json"))
+		flagShardConfigExists := CheckFileExist(
+			path.Join(
+				*dir, "pytorch_model.bin.index.json",
+			),
+		)
 		log.Printf("Shard config exists: %t", flagShardConfigExists)
 		//if sharded config exists, attempt to download the shards
 		if flagShardConfigExists {
-			numShards, err := FindNumberOfShardsFromConfig(path.Join(*dir, "pytorch_model.bin.index.json"))
+			numShards, err := FindNumberOfShardsFromConfig(
+				path.Join(
+					*dir, "pytorch_model.bin.index.json",
+				),
+			)
 			if err != nil {
-				log.Printf("Could not find number of shards from config: %s\n", err)
+				log.Printf(
+					"Could not find number of shards from config: %s\n", err,
+				)
 				return &foundResources, errors.New("could not find number of shards from config")
 			}
 
@@ -538,17 +650,26 @@ func ResolveResources(
 
 				paddedShardString := fmt.Sprintf("%05d", i)
 				// Construct the shard path
-				shardPath := fmt.Sprintf("pytorch_model-%s-of-%s.bin", paddedShardString, paddedTotalShards)
+				shardPath := fmt.Sprintf(
+					"pytorch_model-%s-of-%s.bin", paddedShardString,
+					paddedTotalShards,
+				)
 				log.Printf("Resolving shard %s\n", shardPath)
 
 				targetPath := path.Join(*dir, shardPath)
 				rsrcSize, rsrcSizeErr := Size(uri, shardPath, token)
 				if rsrcSizeErr != nil {
-					fmt.Printf("Could not get size of shard %s: %s\n", shardPath, rsrcSizeErr)
+					fmt.Printf(
+						"Could not get size of shard %s: %s\n", shardPath,
+						rsrcSizeErr,
+					)
 					return &foundResources, errors.New("could not get size of shard")
 				}
 				//print size of shard
-				log.Printf("Remote Size of shard %s is %s\n", shardPath, humanize.Bytes(uint64(rsrcSize)))
+				log.Printf(
+					"Remote Size of shard %s is %s\n", shardPath,
+					humanize.Bytes(uint64(rsrcSize)),
+				)
 
 				//check if shard exists locally
 				flagShardExists := CheckFileExist(targetPath)
@@ -556,11 +677,17 @@ func ResolveResources(
 					//check if shard local size is correct compared to remote size
 					localShardInfo, err := os.Stat(targetPath)
 					if err != nil {
-						fmt.Printf("Could not get size of local shard %s: %s\n", shardPath, err)
+						fmt.Printf(
+							"Could not get size of local shard %s: %s\n",
+							shardPath, err,
+						)
 						return &foundResources, errors.New("could not get size of local shard")
 					}
 					if (rsrcSize > 0) && (rsrcSize == uint(localShardInfo.Size())) {
-						log.Printf("Skipping Shard %s, exists and is of correct size...\n", shardPath)
+						log.Printf(
+							"Skipping Shard %s, exists and is of correct size...\n",
+							shardPath,
+						)
 						continue
 					}
 				}
@@ -569,16 +696,20 @@ func ResolveResources(
 				var rsrcReader io.ReadCloser
 				rsrcReader, err = Fetch(uri, shardPath, token)
 				if err != nil {
-					return &foundResources, fmt.Errorf("error trying to fetch file: %s", err)
+					return &foundResources, fmt.Errorf(
+						"error trying to fetch file: %s", err,
+					)
 				}
 
 				//create shard file
 				var rsrcFilePtr *os.File
 				rsrcFilePtr, err = os.Create(targetPath)
-				rsrcFile = *rsrcFilePtr
 				if err != nil {
-					return &foundResources, fmt.Errorf("error trying to create file: %s", err)
+					return &foundResources, fmt.Errorf(
+						"error trying to create file: %s", err,
+					)
 				}
+				rsrcFile = *rsrcFilePtr
 
 				//copy shard to file
 				counter := &WriteCounter{
@@ -586,44 +717,62 @@ func ResolveResources(
 					Path: fmt.Sprintf("%s/%s", uri, shardPath),
 					Size: uint64(rsrcSize),
 				}
-				bytesDownloaded, ioErr := io.Copy(&rsrcFile,
-					io.TeeReader(rsrcReader, counter))
+				bytesDownloaded, ioErr := io.Copy(
+					&rsrcFile,
+					io.TeeReader(rsrcReader, counter),
+				)
 				//close shard reader
 				err = rsrcReader.Close()
 
 				if err != nil {
-					return &foundResources, fmt.Errorf("error trying to close reader: %s", err)
+					return &foundResources, fmt.Errorf(
+						"error trying to close reader: %s", err,
+					)
 				}
 				if ioErr != nil {
-					return &foundResources, fmt.Errorf("error downloading '%s': %s", shardPath, ioErr)
+					return &foundResources, fmt.Errorf(
+						"error downloading '%s': %s", shardPath, ioErr,
+					)
 				} else {
-					log.Printf("Downloaded %s/%s... "+
-						"%s completed.", uri, shardPath,
-						humanize.Bytes(uint64(bytesDownloaded)))
+					log.Printf(
+						"Downloaded %s/%s... "+
+							"%s completed.", uri, shardPath,
+						humanize.Bytes(uint64(bytesDownloaded)),
+					)
 				}
 
 				//close shard file
 				err = rsrcFile.Close()
 
 				if err != nil {
-					return &foundResources, fmt.Errorf("error trying to close reader: %s", err)
+					return &foundResources, fmt.Errorf(
+						"error trying to close reader: %s", err,
+					)
 				} else {
-					log.Printf("Downloaded %s/%s... "+
-						"%s completed.", uri, shardPath,
-						humanize.Bytes(uint64(bytesDownloaded)))
+					log.Printf(
+						"Downloaded %s/%s... "+
+							"%s completed.", uri, shardPath,
+						humanize.Bytes(uint64(bytesDownloaded)),
+					)
 				}
 
 				//check if shard local size is correct compared to remote size
 				var localShardInfo os.FileInfo
 				localShardInfo, err = os.Stat(targetPath)
 				if err != nil {
-					fmt.Printf("Could not get size of local shard %s: %s\n", shardPath, err)
+					fmt.Printf(
+						"Could not get size of local shard %s: %s\n",
+						shardPath, err,
+					)
 					return &foundResources, errors.New("could not get size of local shard")
 				}
 				if (rsrcSize > 0) && (rsrcSize != uint(localShardInfo.Size())) {
 					return &foundResources, errors.New("shard was not downloaded correctly")
 				}
-				log.Printf("Shard %s downloaded correctly, size is %s\n", shardPath, humanize.Bytes(uint64(localShardInfo.Size())))
+				log.Printf(
+					"Shard %s downloaded correctly, size is %s\n", shardPath,
+					humanize.Bytes(uint64(localShardInfo.Size())),
+				)
 
 			}
 			log.Printf("Downloaded %d shards\n", numShards)
@@ -658,7 +807,8 @@ func (rsrcs *Resources) ResolveSplitRegex() *string {
 							splitRegexVal = strings.ReplaceAll(
 								splitRegexVal,
 								"(?!\\S)",
-								"(\\S){0}")
+								"(\\S){0}",
+							)
 							splitRegex = &splitRegexVal
 						}
 					}
@@ -698,7 +848,8 @@ type HFConfig struct {
 	IgnoreMerges        *bool              `json:"ignore_merges,omitempty"`
 }
 
-// Additional special tokenizer configuration.
+// SpecialConfig contains the special tokens and special token configuration
+// that gpt_bpe uses.
 type SpecialConfig struct {
 	PuncRunes     []*string          `json:"punc_runes"`
 	Normalizer    *map[string]string `json:"normalizer"`
@@ -725,7 +876,7 @@ func NewHFConfig() *HFConfig {
 	defaultTokenizerClass := "GPT2BPETokenizer"
 	defaultAddBosToken := false
 	defaultAddEosToken := false
-	defaultAddedSpecialsTokens := make(map[string]uint32, 0)
+	defaultAddedSpecialsTokens := make(map[string]uint32)
 	HFConfig := &HFConfig{
 		ModelId:             &defaultModelId,
 		ModelType:           &defaultModelType,
@@ -764,18 +915,24 @@ func (p *Processor) Process(input interface{}) (interface{}, error) {
 // LoadExternalResources
 // Resolves a given vocabulary id, and returns the corresponding HuggingFace
 // configuration, and the resources for the tokenizer.
-func LoadExternalResources(vocabId string, token string) (resources *Resources, err error) {
+func LoadExternalResources(
+	vocabId string,
+	token string,
+) (resources *Resources, err error) {
 	dir, dirErr := ioutil.TempDir("", "resources")
 	if dirErr != nil {
 		return nil, dirErr
 	}
-	defer os.RemoveAll(dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(dir)
 	rslvdResources, rsrcErr := ResolveResources(
 		vocabId,
 		&dir,
 		RESOURCE_DERIVED,
 		RESOURCETYPE_TRANSFORMERS,
-		token)
+		token,
+	)
 	if rsrcErr != nil {
 		return nil, rsrcErr
 	} else {
@@ -786,7 +943,7 @@ func LoadExternalResources(vocabId string, token string) (resources *Resources, 
 
 }
 
-// ResolveHFFromResources
+// ResolveHF
 // Given a set of resources, resolve the HuggingFace configuration.
 // Used to be able to resolve both embedded and local resources.
 func (rsrcs *Resources) ResolveHF(hfConfig *HFConfig) (err error) {
@@ -815,6 +972,8 @@ func (rsrcs *Resources) ResolveHF(hfConfig *HFConfig) (err error) {
 				return err
 			}
 		}
+	} else {
+		return errors.New("could not resolve HFConfig")
 	}
 
 	// Llama 3 and other larger models will enclose eos and bos by default
@@ -841,10 +1000,10 @@ func GetMergesAsBpeRank(resources *Resources) (map[GPTPair]float64, error) {
 				firstLine = false
 				continue
 			}
-			left_right := strings.SplitN(scanner.Text(), " ", 2)
+			leftRight := strings.SplitN(scanner.Text(), " ", 2)
 			bpeRanks[GPTPair{
-				Left:  left_right[0],
-				Right: left_right[1],
+				Left:  leftRight[0],
+				Right: leftRight[1],
 			}] = float64(idx)
 			idx += 1
 		}
@@ -918,7 +1077,8 @@ func (rsrcs *Resources) UnmarshalUntilData(
 			return name, data, nil
 		} else if err != nil {
 			return name, nil, fmt.Errorf(
-				"error unmarshalling %s: %s", name, err)
+				"error unmarshalling %s: %s", name, err,
+			)
 		}
 	}
 	return "", nil, nil
@@ -992,17 +1152,17 @@ func (rsrcs *Resources) resolveTokenIds(hfConfig *HFConfig) error {
 	var eosTokenId, bosTokenId, padTokenId *uint32
 	if eosToken, ok := vocab[*hfConfig.EosTokenStr]; ok {
 		eosTokenId = new(uint32)
-		*eosTokenId = uint32(eosToken)
+		*eosTokenId = eosToken
 		hfConfig.EosTokenId = eosTokenId
 	}
 	if bosToken, ok := vocab[*hfConfig.BosTokenStr]; ok {
 		bosTokenId = new(uint32)
-		*bosTokenId = uint32(bosToken)
+		*bosTokenId = bosToken
 		hfConfig.BosTokenId = bosTokenId
 	}
 	if padToken, ok := vocab[*hfConfig.PadTokenStr]; ok {
 		padTokenId = new(uint32)
-		*padTokenId = uint32(padToken)
+		*padTokenId = padToken
 		hfConfig.PadTokenId = padTokenId
 	}
 
@@ -1186,9 +1346,11 @@ func (rsrcs *Resources) resolveSpecials(hfConfig *HFConfig) error {
 	// We can only generate specials.json if we have special_tokens_map
 	specialsJson, ok := (*rsrcs)["special_tokens_map.json"]
 	if ok {
-		specialTokens := make(map[string]interface{}, 0)
-		if specialErr := json.Unmarshal(*specialsJson.Data,
-			&specialTokens); specialErr != nil {
+		specialTokens := make(map[string]interface{})
+		if specialErr := json.Unmarshal(
+			*specialsJson.Data,
+			&specialTokens,
+		); specialErr != nil {
 			return specialErr
 		}
 
@@ -1223,14 +1385,18 @@ func (rsrcs *Resources) resolveSpecials(hfConfig *HFConfig) error {
 func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
 	// Resolve the vocab id - Embedded resources
 	if _, vocabErr := EmbeddedDirExists(vocabId); vocabErr == nil {
-		resources := make(Resources, 0)
+		resources := make(Resources)
 
-		if vocab := GetEmbeddedResource(vocabId + "/encoder." +
-			"json"); vocab != nil {
+		if vocab := GetEmbeddedResource(
+			vocabId + "/encoder." +
+				"json",
+		); vocab != nil {
 			resources["vocab.json"] = *vocab
 		}
-		if config := GetEmbeddedResource(vocabId + "/config." +
-			"json"); config != nil {
+		if config := GetEmbeddedResource(
+			vocabId + "/config." +
+				"json",
+		); config != nil {
 			resources["config.json"] = *config
 		}
 		if vocab := GetEmbeddedResource(vocabId + "/vocab.bpe"); vocab != nil {
@@ -1239,24 +1405,26 @@ func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
 		if mergesJson := GetEmbeddedResource(vocabId + "/merges.json"); mergesJson != nil {
 			resources["merges.json"] = *mergesJson
 		}
-		if specials_t := GetEmbeddedResource(vocabId + "/specials.txt"); specials_t != nil {
-			resources["specials.txt"] = *specials_t
+		if specialsT := GetEmbeddedResource(vocabId + "/specials.txt"); specialsT != nil {
+			resources["specials.txt"] = *specialsT
 		}
-		if specials := GetEmbeddedResource(vocabId + "/special_tokens_map." +
-			"json"); specials != nil {
+		if specials := GetEmbeddedResource(
+			vocabId + "/special_tokens_map." +
+				"json",
+		); specials != nil {
 			resources["special_tokens_map.json"] = *specials
 		}
-		special_config := GetEmbeddedResource(vocabId + "/special_config.json")
-		if special_config != nil {
-			resources["special_config.json"] = *special_config
+		specialConfig := GetEmbeddedResource(vocabId + "/special_config.json")
+		if specialConfig != nil {
+			resources["special_config.json"] = *specialConfig
 		}
 		tokenizerJson := GetEmbeddedResource(vocabId + "/tokenizer.json")
 		if tokenizerJson != nil {
 			resources["tokenizer.json"] = *tokenizerJson
 		}
-		tokenizer_specials_config := GetEmbeddedResource(vocabId + "/tokenizer_config.json")
-		if tokenizer_specials_config != nil {
-			resources["tokenizer_config.json"] = *tokenizer_specials_config
+		tokenizerSpecialsConfig := GetEmbeddedResource(vocabId + "/tokenizer_config.json")
+		if tokenizerSpecialsConfig != nil {
+			resources["tokenizer_config.json"] = *tokenizerSpecialsConfig
 		}
 		return &resources, nil
 
@@ -1273,7 +1441,11 @@ func ResolveResourcesList(vocabId string, token string) (*Resources, error) {
 // ResolveVocabId
 // Resolves a vocabulary id to a set of resources, from embedded,
 // local filesystem, or remote, and applies processing to the resources.
-func ResolveVocabId(vocabId string, token string) (*HFConfig, *Resources, error) {
+func ResolveVocabId(vocabId string, token string) (
+	*HFConfig,
+	*Resources,
+	error,
+) {
 	rsrcs, err := ResolveResourcesList(vocabId, token)
 	if err != nil {
 		return nil, nil, err
@@ -1296,7 +1468,9 @@ func ExtractModelFromTokenizer(dir *string) (map[string]interface{}, error) {
 		// return an empty map and the error
 		return nil, err
 	}
-	defer tokenizerFile.Close()
+	defer func(tokenizerFile *os.File) {
+		_ = tokenizerFile.Close()
+	}(tokenizerFile)
 
 	// Decode the JSON data into a map
 	var data map[string]interface{}
@@ -1316,7 +1490,11 @@ func ExtractModelFromTokenizer(dir *string) (map[string]interface{}, error) {
 	}
 }
 
-func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string, resources *Resources) error {
+func ExtractVocabFromTokenizer(
+	model map[string]interface{},
+	dir *string,
+	resources *Resources,
+) error {
 	vocab, ok := model["vocab"].(map[string]interface{})
 	if !ok {
 		log.Println("Error: Could not convert vocab in model to map")
@@ -1331,7 +1509,9 @@ func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string, resour
 		log.Println("Error creating vocab.json:", err)
 		return err
 	}
-	defer vocabFile.Close()
+	defer func(vocabFile *os.File) {
+		_ = vocabFile.Close()
+	}(vocabFile)
 
 	// Marshal the vocab map into a JSON string with indentation
 	vocabJsonString, err := json.MarshalIndent(vocab, "", " ")
@@ -1349,7 +1529,9 @@ func ExtractVocabFromTokenizer(model map[string]interface{}, dir *string, resour
 
 	log.Println("Vocab written to vocab.json from tokenizer.json")
 
-	if mmapErr := resources.AddEntry("vocab.json", vocabFile); mmapErr != nil {
+	if mmapErr := resources.AddEntry(
+		"vocab.json", vocabFile,
+	); mmapErr != nil {
 		return fmt.Errorf("error trying to mmap file: %s", mmapErr)
 	}
 
@@ -1381,7 +1563,9 @@ func ExtractMergesFromTokenizer(
 		log.Println("Error creating file:", err)
 		return err
 	}
-	defer mergesFile.Close()
+	defer func(mergesFile *os.File) {
+		_ = mergesFile.Close()
+	}(mergesFile)
 
 	// Write each merge string to a new line in the file
 	for _, v := range merges {
@@ -1394,7 +1578,9 @@ func ExtractMergesFromTokenizer(
 
 	log.Println("Merges written to merges.txt from tokenizer.json")
 
-	if mmapErr := resources.AddEntry("merges.txt", mergesFile); mmapErr != nil {
+	if mmapErr := resources.AddEntry(
+		"merges.txt", mergesFile,
+	); mmapErr != nil {
 		return fmt.Errorf("error trying to mmap file: %s", mmapErr)
 	}
 
@@ -1408,7 +1594,9 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 		log.Println("Error opening config:", err)
 		return -1, err
 	}
-	defer configFile.Close()
+	defer func(configFile *os.File) {
+		_ = configFile.Close()
+	}(configFile)
 
 	// Decode the JSON data into a map
 	var data map[string]interface{}
@@ -1437,7 +1625,8 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	r, _ := regexp.Compile(`\D*\d+\D+(\d+)`)
 	// convert to interface -> string -> int
 	nameOfLastInt, err := strconv.Atoi(
-		r.FindStringSubmatch(fmt.Sprintf("%v", nameOfLast))[1])
+		r.FindStringSubmatch(fmt.Sprintf("%v", nameOfLast))[1],
+	)
 
 	if err != nil {
 		fmt.Println("Error: Could not convert embed_out to int")
@@ -1447,7 +1636,10 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	return nameOfLastInt, nil
 }
 
-func FindProcessingStepsFromTokenizer(model ResourceEntry) ([]Processor, error) {
+func FindProcessingStepsFromTokenizer(model ResourceEntry) (
+	[]Processor,
+	error,
+) {
 	// convert the data to a map
 	var data map[string]interface{}
 	err := json.Unmarshal(*model.Data, &data)
@@ -1468,12 +1660,12 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) ([]Processor, error) 
 		processors = append(processors, processor)
 	}
 	// check if pre_tokenizer is present
-	pre_tokenizer, ok := data["pre_tokenizer"].(map[string]interface{})
-	if pre_tokenizer != nil && ok {
+	preTokenizer, ok := data["pre_tokenizer"].(map[string]interface{})
+	if preTokenizer != nil && ok {
 		// add pre_tokenizer to processors
 		processor := Processor{
 			ProcessorType: "pre_tokenizer",
-			ProcessorArgs: pre_tokenizer,
+			ProcessorArgs: preTokenizer,
 		}
 		processors = append(processors, processor)
 	}
