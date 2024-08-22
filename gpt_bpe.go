@@ -27,6 +27,7 @@ const defaultPadTokenString = "[PAD]"
 
 type Token uint32
 type Tokens []Token
+type TokenMap map[string]Token
 
 type GPTEncoder struct {
 	Encoder         map[string]Token
@@ -758,7 +759,7 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 	rankedPairs := encoder.getRankedPairs(word)
 
 	if len(rankedPairs) == 0 {
-		// If the word is a single character, we can just encode it directly.
+		// If the word is a single rune, we can just encode it directly.
 		var tokens Tokens
 		if token, ok := encoder.Encoder[word[0]]; ok {
 			tokens = Tokens{token}
@@ -1224,7 +1225,7 @@ func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) *[]byte {
 		if tokens == nil {
 			break
 		}
-		binary.Write(buf, binary.LittleEndian, tokens)
+		_ = binary.Write(buf, binary.LittleEndian, tokens)
 	}
 	bufBytes := buf.Bytes()
 	return &bufBytes
@@ -1308,9 +1309,9 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 					unicode.IsNumber(runes[0]) {
 					runes = append(runes, ' ')
 				}
-				// If we have a punctuation character, and the previous
-				// character is a space, then we remove the space.
-				// This is to handle cases like " ,".
+				// If we have a punctuation rune, and the previous rune is a
+				// space, then we remove the space. This is to handle cases
+				// like " ,".
 				if len(runesAcc) > 1 && runeIsIn(
 					runes[0],
 					encoder.PuncRunes,
