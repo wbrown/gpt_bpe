@@ -607,9 +607,6 @@ func ResolveResources(
 
 				if err != nil {
 					return &foundResources, fmt.Errorf("error trying to close reader: %s", err)
-				}
-				if ioErr != nil {
-					return &foundResources, fmt.Errorf("error downloading '%s': %s", shardPath, ioErr)
 				} else {
 					log.Printf("Downloaded %s/%s... "+
 						"%s completed.", uri, shardPath,
@@ -840,7 +837,7 @@ func GetMergesAsBpeRank(resources *Resources) (map[GPTPair]float64, error) {
 		idx := uint32(0)
 		firstLine := true
 		for scanner.Scan() {
-			if firstLine == true {
+			if firstLine {
 				firstLine = false
 				continue
 			}
