@@ -95,6 +95,30 @@ func Chunks(s string, chunkSize int) []string {
 	return chunks
 }
 
+func getStringBounds(
+	i int,
+	output string,
+	decoded string,
+) (
+	left int,
+	right int,
+) {
+	if i < 20 {
+		left = 0
+	} else {
+		left = i - 20
+	}
+	if len(output) < len(decoded) {
+		right = len(output)
+	} else {
+		right = len(decoded)
+	}
+	if i+20 < right {
+		right = i + 20
+	}
+	return left, right
+}
+
 func init() {
 	gpt2Encoder = NewGPT2Encoder()
 	pileEncoder = NewPileEncoder()
@@ -1118,9 +1142,10 @@ func TestLlama3EncodeDecode_LargeCorpus(t *testing.T) {
 	// Check that the decoded string is the same as the reference string
 	for i := 0; i < len(output); i++ {
 		if output[i] != refDecoded[i] {
+			left, right := getStringBounds(i, output, refDecoded)
 			fmt.Printf("Mismatch at around index %d\n", i)
-			fmt.Printf("Expected: %s\n", refDecoded[i-20:i+20])
-			fmt.Printf("Actual: %s\n", output[i-20:i+20])
+			fmt.Printf("Expected: %s\n", refDecoded[left:right])
+			fmt.Printf("Actual: %s\n", output[left:right])
 			break
 		}
 	}
@@ -1139,9 +1164,10 @@ func TestLlama3EncodeDecodeFrankenstein(t *testing.T) {
 	frankensteinString = "<|begin_of_text|>" + frankensteinString + "<|end_of_text|>"
 	for i := 0; i < len(output); i++ {
 		if output[i] != frankensteinString[i] {
+			left, right := getStringBounds(i, output, frankensteinString)
 			fmt.Printf("Mismatch at around index %d\n", i)
-			fmt.Printf("Expected: %s\n", frankensteinString[i-20:i+20])
-			fmt.Printf("Actual: %s\n", output[i-20:i+20])
+			fmt.Printf("Expected: %s\n", frankensteinString[left:right])
+			fmt.Printf("Actual: %s\n", output[left:right])
 			break
 		}
 	}
