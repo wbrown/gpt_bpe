@@ -379,7 +379,7 @@ func WriteSpecials(
 		if idx != 0 {
 			specialsFile.WriteString("\n")
 		}
-		specialsFile.WriteString(fmt.Sprintf("%s", special))
+		specialsFile.WriteString(special)
 	}
 	specialsFile.Close()
 }
