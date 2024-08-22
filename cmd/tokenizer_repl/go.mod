@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe/cmd/tokenizer_repl
 
-go 1.22
+go 1.19.3
 
 replace github.com/wbrown/gpt_bpe => ../../
 
@@ -11,7 +11,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/gopherjs/gopherjs v1.17.2 // indirect
+	github.com/gopherjs/gopherjs v1.19.0-beta1 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/jdkato/prose/v2 v2.0.0 // indirect
 	github.com/mingrammer/commonregex v1.0.1 // indirect

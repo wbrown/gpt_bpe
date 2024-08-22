@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe/cmd/dataset_tokenizer
 
-go 1.22
+go 1.19.3
 
 replace github.com/wbrown/gpt_bpe => ../../
 

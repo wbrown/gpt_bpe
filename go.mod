@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe
 
-go 1.22
+go 1.19.13
 
 require (
 	github.com/edsrzf/mmap-go v1.1.0
@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.0.1
-	github.com/gopherjs/gopherjs v1.17.2
+	github.com/gopherjs/gopherjs v1.19.0-beta1
 	github.com/jdkato/prose/v2 v2.0.0
 )
 

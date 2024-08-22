@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wbrown/gpt_bpe/types"
 	"io"
 	"io/ioutil"
 	"log"
@@ -61,8 +62,10 @@ func loadUnicodeTrimTests(path string) []*Tokens {
 			continue
 		}
 		unicodeTrimTest := make(Tokens, 0)
-		if err := json.Unmarshal([]byte(line),
-			&unicodeTrimTest); err != nil {
+		if err := json.Unmarshal(
+			[]byte(line),
+			&unicodeTrimTest,
+		); err != nil {
 			log.Fatalf("Error unmarshaling `%s`: %v", path, err)
 		}
 		tests = append(tests, &unicodeTrimTest)
@@ -185,7 +188,9 @@ func TestFairSeqTokenizer(t *testing.T) {
 	assert.Equal(t, *fsTokens, tokens)
 }
 
-var TrimNewLinesTests = append(TrimSentencesTests[3:5], TrimSentencesTests[9:11]...)
+var TrimNewLinesTests = append(
+	TrimSentencesTests[3:5], TrimSentencesTests[9:11]...,
+)
 
 func TestGPTEncoder_TrimIncompleteSentence(t *testing.T) {
 	testStr := "This is a test. He says, \"This is an unterminated quote. She says, this is actually terminated.\" This is awesome! This is incomplete "
@@ -199,24 +204,33 @@ func TestGPTEncoder_TrimIncompleteSentence(t *testing.T) {
 
 func TestGPTEncoder_TrimTokens(t *testing.T) {
 	for testIdx := range unicodeTrimTests {
-		assert.NotEqual(t, len(*gpt2Encoder.TrimTokens(
-			unicodeTrimTests[testIdx])),
-			len(*unicodeTrimTests[testIdx]))
+		assert.NotEqual(
+			t, len(
+				*gpt2Encoder.TrimTokens(
+					unicodeTrimTests[testIdx],
+				),
+			),
+			len(*unicodeTrimTests[testIdx]),
+		)
 	}
 }
 
 func TestGPTEncoder_TrimNewlines(t *testing.T) {
 	for testIdx := range TrimNewLinesTests {
 		test := TrimNewLinesTests[testIdx]
-		res, err := gpt2Encoder.TrimNewlines(gpt2Encoder.Encode(&test.Input),
-			test.Direction, test.Limit)
+		res, err := gpt2Encoder.TrimNewlines(
+			gpt2Encoder.Encode(&test.Input),
+			test.Direction, test.Limit,
+		)
 		if err != nil {
 			t.Error("TrimNewlines: error:", err)
 		}
 		decodeRes := gpt2Encoder.Decode(res)
 		if decodeRes != test.Expected {
-			t.Error("TrimNewlines: expected '" + test.Expected + "' got '" +
-				decodeRes + "'")
+			t.Error(
+				"TrimNewlines: expected '" + test.Expected + "' got '" +
+					decodeRes + "'",
+			)
 		}
 	}
 }
@@ -224,15 +238,19 @@ func TestGPTEncoder_TrimNewlines(t *testing.T) {
 func TestGPTEncoder_TrimSentences(t *testing.T) {
 	for testIdx := range TrimSentencesTests {
 		test := TrimSentencesTests[testIdx]
-		res, err := gpt2Encoder.TrimSentences(gpt2Encoder.Encode(&test.Input),
-			test.Direction, test.Limit)
+		res, err := gpt2Encoder.TrimSentences(
+			gpt2Encoder.Encode(&test.Input),
+			test.Direction, test.Limit,
+		)
 		if err != nil {
 			t.Error("TrimSentences: error:", err)
 		}
 		decodeRes := gpt2Encoder.Decode(res)
 		if decodeRes != test.Expected {
-			t.Error("TrimSentences: expected '" + test.Expected + "' got '" +
-				decodeRes + "'")
+			t.Error(
+				"TrimSentences: expected '" + test.Expected + "' got '" +
+					decodeRes + "'",
+			)
 		}
 	}
 }
@@ -281,8 +299,12 @@ func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
 	}
 	defer corpusHandle.Close()
 	gpt2Encoder.SplitterThreads = 8
-	nextWord := gpt2Encoder.WordSplitter(bufio.NewReaderSize(corpusHandle,
-		8*1024*1024))
+	nextWord := gpt2Encoder.WordSplitter(
+		bufio.NewReaderSize(
+			corpusHandle,
+			8*1024*1024,
+		),
+	)
 
 	start := time.Now()
 	b.StartTimer()
@@ -416,8 +438,10 @@ func BenchmarkGPTEncoder_Decode(b *testing.B) {
 	start := time.Now()
 	tokenNumBytes := len(gpt2Encoder.Decode(gpt2Encoded))
 	duration := time.Since(start)
-	b.Logf("%v tokens into %v bytes over %v",
-		len(*gpt2Encoded), tokenNumBytes, duration)
+	b.Logf(
+		"%v tokens into %v bytes over %v",
+		len(*gpt2Encoded), tokenNumBytes, duration,
+	)
 }
 
 type EncoderTest struct {
@@ -456,8 +480,10 @@ func BenchmarkGPTEncoder_Encode(b *testing.B) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	b.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	b.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 }
 
 func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
@@ -465,8 +491,10 @@ func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.EncodeBuffer(&corpusBytes)) / 2
 	duration := time.Since(start)
-	b.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	b.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 }
 
 func TestGPTEncoder_Encode(t *testing.T) {
@@ -474,11 +502,14 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *gpt2Encoder.Encode(
-			&(GPTEncoderTests[testIdx].Input))
+			&(GPTEncoderTests[testIdx].Input),
+		)
 		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].GPT2Expected)
 	}
 }
@@ -497,8 +528,10 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 		tokenCt += len(*tokens)
 	}
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 }
 
 func TestCLIPEncoder_Encode(t *testing.T) {
@@ -506,8 +539,10 @@ func TestCLIPEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*clipEncoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 	for testIdx := range GPTEncoderTests {
 		testStr := GPTEncoderTests[testIdx].Input
 		tokensPtr := *clipEncoder.Encode(&testStr)
@@ -520,11 +555,14 @@ func TestPileEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*pileEncoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *pileEncoder.Encode(
-			&(GPTEncoderTests[testIdx].Input))
+			&(GPTEncoderTests[testIdx].Input),
+		)
 		assert.Equal(t, GPTEncoderTests[testIdx].PileExpected, tokensPtr)
 	}
 }
@@ -534,11 +572,14 @@ func TestNerdstashEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*nerdstashV2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *nerdstashV2Encoder.Encode(
-			&(GPTEncoderTests[testIdx].Input))
+			&(GPTEncoderTests[testIdx].Input),
+		)
 		assert.Equal(t, GPTEncoderTests[testIdx].NerdstashExpected, tokensPtr)
 	}
 }
@@ -594,13 +635,17 @@ func TestNerdstashEncoder_Encode2(t *testing.T) {
 			t.Logf("failure on input: `%v`", inputStr)
 			expectedRepr := []string{}
 			for _, token := range expected {
-				expectedRepr = append(expectedRepr,
-					string(nerdstashV2Encoder.Decoder[token]))
+				expectedRepr = append(
+					expectedRepr,
+					string(nerdstashV2Encoder.Decoder[token]),
+				)
 			}
 			actualRepr := []string{}
 			for _, token := range *encoded {
-				actualRepr = append(actualRepr,
-					string(nerdstashV2Encoder.Decoder[token]))
+				actualRepr = append(
+					actualRepr,
+					string(nerdstashV2Encoder.Decoder[token]),
+				)
 			}
 			t.Logf("expected: |%s", strings.Join(expectedRepr, "|"))
 			t.Logf("actual:   |%s", strings.Join(actualRepr, "|"))
@@ -616,7 +661,8 @@ func TestNerdstashEncoder_Decode(t *testing.T) {
 	// This test is to check if the NerdstashEncoder is able to decode the tokens correctly
 	for testIdx := range GPTEncoderTests {
 		decodedStr := nerdstashV2Encoder.Decode(
-			&(GPTEncoderTests[testIdx].NerdstashExpected))
+			&(GPTEncoderTests[testIdx].NerdstashExpected),
+		)
 		assert.Equal(t, GPTEncoderTests[testIdx].Input, decodedStr)
 	}
 }
@@ -628,7 +674,7 @@ func TestGPTEncoder_Decode2(t *testing.T) {
 	if binTokens, err := base64.StdEncoding.DecodeString(gpt2EncodedCorpus); err != nil {
 		log.Println("ERROR:", err)
 	} else {
-		tokens := TokensFromBin(&binTokens)
+		tokens := types.TokensFromBin(&binTokens)
 		tokens, err = gpt2Encoder.TrimIncompleteSentence(tokens)
 		if err != nil {
 			t.Error(err)
@@ -647,8 +693,10 @@ func TestGPTEncoder_Decode(t *testing.T) {
 	decoded := gpt2Encoder.Decode(gpt2Encoded)
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
-	t.Logf("%v tokens into %v bytes over %v\n",
-		len(*gpt2Encoded), tokenNumBytes, duration)
+	t.Logf(
+		"%v tokens into %v bytes over %v\n",
+		len(*gpt2Encoded), tokenNumBytes, duration,
+	)
 	assert.Equal(t, corpus, decoded)
 }
 
@@ -668,14 +716,20 @@ func TestCLIPEncoder_Decode(t *testing.T) {
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
 	idxToStop := 229550
-	t.Logf("%v tokens into %v bytes over %v\n", len(*clipEncoded), tokenNumBytes, duration)
+	t.Logf(
+		"%v tokens into %v bytes over %v\n", len(*clipEncoded), tokenNumBytes,
+		duration,
+	)
 	for idx := range clipCorpus {
 		if idx > idxToStop {
 			break
 		}
 
 		if clipCorpus[idx] != decoded[idx] {
-			t.Errorf("idx: %d, clipCorpus: %v, decoded: %v\n", idx, clipCorpus[idx], decoded[idx])
+			t.Errorf(
+				"idx: %d, clipCorpus: %v, decoded: %v\n", idx,
+				clipCorpus[idx], decoded[idx],
+			)
 			break
 		}
 	}
@@ -692,8 +746,10 @@ func TestPileEncoder_Decode(t *testing.T) {
 	decoded := pileEncoder.Decode(pileEncoded)
 	duration := time.Since(start)
 	tokenNumBytes := len(decoded)
-	t.Logf("%v tokens into %v bytes over %v\n",
-		len(*pileEncoded), tokenNumBytes, duration)
+	t.Logf(
+		"%v tokens into %v bytes over %v\n",
+		len(*pileEncoded), tokenNumBytes, duration,
+	)
 	range_data := corpus
 	if len(corpus) > len(decoded) {
 		range_data = decoded
@@ -703,8 +759,10 @@ func TestPileEncoder_Decode(t *testing.T) {
 	}
 	for idx := range range_data {
 		if corpus[idx] != decoded[idx] {
-			t.Errorf("%v != %v", clipCorpus[idx-20:idx+20],
-				decoded[idx-20:idx+20])
+			t.Errorf(
+				"%v != %v", clipCorpus[idx-20:idx+20],
+				decoded[idx-20:idx+20],
+			)
 			return
 		}
 	}
@@ -724,8 +782,10 @@ func TestGPTEncoder_TokensReady(t *testing.T) {
 		}
 	}
 	if idx < len(*tokens)-1 {
-		t.Errorf("Expected TokensReady on idx: %d for `%s`", idx,
-			multiTokenAsterism)
+		t.Errorf(
+			"Expected TokensReady on idx: %d for `%s`", idx,
+			multiTokenAsterism,
+		)
 	}
 }
 
@@ -748,8 +808,12 @@ func TestGPTEncoder_TokensReadyContext(t *testing.T) {
 func TestUnitrimFunctionality(t *testing.T) {
 	// This test is to check if the makeUnitrimArr function is able to generate the unitrim array correctly
 	for _, tokenizer := range []string{"clip-tokenizer", "gpt2-tokenizer", "pile-tokenizer"} {
-		encoderFile := fmt.Sprintf("resources/data/%s/encoder.json", tokenizer)
-		unitrimFile := fmt.Sprintf("resources/data/%s/unitrim.json", tokenizer)
+		encoderFile := fmt.Sprintf(
+			"resources/data/%s/encoder.json", tokenizer,
+		)
+		unitrimFile := fmt.Sprintf(
+			"resources/data/%s/unitrim.json", tokenizer,
+		)
 
 		// make sure the files exist
 		if _, err := os.Stat(encoderFile); os.IsNotExist(err) {
@@ -787,15 +851,23 @@ func TestUnitrimFunctionality(t *testing.T) {
 		generatedArray := makeUnitrimArr(encoder)
 
 		// check that the generated array is the same as the unitrim array
-		fmt.Printf("Generated array length: %d, unitrim array length: %d\n", len(generatedArray), len(unitrim))
+		fmt.Printf(
+			"Generated array length: %d, unitrim array length: %d\n",
+			len(generatedArray), len(unitrim),
+		)
 		if len(generatedArray) != len(unitrim) {
 			t.Errorf("Generated array and unitrim array are not the same length\n")
 		}
 
 		for i := range generatedArray {
 			if generatedArray[i] != unitrim[i] {
-				fmt.Printf("Generated array: %v and unitrim array: %v at index %d are not the same\n", generatedArray[i], unitrim[i], i)
-				fmt.Printf("mismatched unicode is: %c\n", rune(generatedArray[i]))
+				fmt.Printf(
+					"Generated array: %v and unitrim array: %v at index %d are not the same\n",
+					generatedArray[i], unitrim[i], i,
+				)
+				fmt.Printf(
+					"mismatched unicode is: %c\n", rune(generatedArray[i]),
+				)
 				t.Errorf("Generated array and unitrim array are not the same\n")
 			}
 		}
@@ -809,11 +881,14 @@ func TestLlamaEncoder_Encode(t *testing.T) {
 	start := time.Now()
 	tokenCt := len(*gpt2Encoder.Encode(&corpus))
 	duration := time.Since(start)
-	t.Logf("%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration)
+	t.Logf(
+		"%v bytes into %v tokens over %v",
+		len(corpus), tokenCt, duration,
+	)
 	for testIdx := range GPTEncoderTests {
 		tokensPtr := *gpt2Encoder.Encode(
-			&(GPTEncoderTests[testIdx].Input))
+			&(GPTEncoderTests[testIdx].Input),
+		)
 		assert.Equal(t, tokensPtr, GPTEncoderTests[testIdx].GPT2Expected)
 	}
 }
@@ -822,7 +897,10 @@ func TestLlamaTwoEncoder_Encode(t *testing.T) {
 	// This test is to check if the encoder is able to encode a basic string
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := llama2Encoder.Encode(&testString)
-	assert.Equal(t, llamaTokens, &Tokens{1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889})
+	assert.Equal(
+		t, llamaTokens,
+		&Tokens{1576, 1701, 29916, 12500, 287, 975, 278, 447, 276, 29889, 13, 1576, 260, 4227, 280, 338, 8473, 1135, 278, 447, 276, 29889},
+	)
 }
 
 func TestLlamaTwoTokenizerDecode(t *testing.T) {
@@ -847,7 +925,10 @@ func TestMistralEncoder_Encode(t *testing.T) {
 	// This test is to check if the encoder is able to encode a basic string
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	mistralTokens := mistralEncoder.Encode(&testString)
-	assert.Equal(t, mistralTokens, &Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723})
+	assert.Equal(
+		t, mistralTokens,
+		&Tokens{1, 415, 285, 1142, 14949, 754, 272, 295, 492, 28723, 13, 1014, 261, 3525, 291, 349, 9556, 821, 272, 295, 492, 28723},
+	)
 }
 
 func TestMistralTokenizerDecode(t *testing.T) {
@@ -880,7 +961,10 @@ func TestMistralEncodeDecodeFrankenstein(t *testing.T) {
 	output := mistralEncoder.Decode(mistralTokens)
 	for i := 0; i < len(output); i++ {
 		if output[i] != frankensteinString[i] {
-			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, string(frankensteinString[i]), string(output[i]))
+			t.Errorf(
+				"Mismatch at around index %d Expected: %v, Actual: %v", i,
+				string(frankensteinString[i]), string(output[i]),
+			)
 			break
 		}
 	}
@@ -910,12 +994,15 @@ func TestMistralEncodeDecode_LargeCorpus(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error reading reference bin file: %v", err)
 	}
-	referenceTokens := TokensFromBin32(&referenceBinData)
+	referenceTokens := types.TokensFromBin32(&referenceBinData)
 	// Encode the reference string
 	mistralTokens := mistralEncoder.Encode(&referenceString)
 	for i := 0; i < len(*mistralTokens); i++ {
 		if (*mistralTokens)[i] != (*referenceTokens)[i] {
-			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, (*referenceTokens)[i], (*mistralTokens)[i])
+			t.Errorf(
+				"Mismatch at around index %d Expected: %v, Actual: %v", i,
+				(*referenceTokens)[i], (*mistralTokens)[i],
+			)
 		}
 	}
 	assert.Equal(t, mistralTokens, referenceTokens)
@@ -927,7 +1014,10 @@ func TestMistralEncodeDecode_LargeCorpus(t *testing.T) {
 			fmt.Printf("Mismatch at around index %d\n", i)
 			fmt.Printf("Expected: %s\n", referenceString[i-20:i+20])
 			fmt.Printf("Actual: %s\n", output[i-20:i+20])
-			t.Errorf("Mismatch at around index %d Expected: %s, Actual: %s", i, string(referenceString[i]), string(output[i]))
+			t.Errorf(
+				"Mismatch at around index %d Expected: %s, Actual: %s", i,
+				string(referenceString[i]), string(output[i]),
+			)
 			break
 		}
 	}
@@ -939,7 +1029,10 @@ func TestLlama3Encoder_Encode(t *testing.T) {
 	testString := "The fox jumped over the hare.\nThe turtle is faster than the hare."
 	llamaTokens := llama3Encoder.Encode(&testString)
 	fmt.Printf("Llama3 tokens: %v\n", llamaTokens)
-	assert.Equal(t, llamaTokens, &Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001})
+	assert.Equal(
+		t, llamaTokens,
+		&Tokens{128000, 791, 39935, 27096, 927, 279, 96018, 627, 791, 37189, 374, 10819, 1109, 279, 96018, 13, 128001},
+	)
 }
 
 func TestLlama3TokenizerDecode(t *testing.T) {
@@ -985,8 +1078,10 @@ func TestLlama3Merge(t *testing.T) {
 	}
 
 	if decodedTokens[1] != "123" && decodedTokens[2] != "4" {
-		t.Errorf("Expected 123|4, got %s|%s",
-			decodedTokens[1], decodedTokens[2])
+		t.Errorf(
+			"Expected 123|4, got %s|%s",
+			decodedTokens[1], decodedTokens[2],
+		)
 	}
 }
 
@@ -1004,12 +1099,15 @@ func TestLlama3EncodeDecode_LargeCorpus(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error reading reference bin file: %v", err)
 	}
-	referenceTokens := TokensFromBin32(&referenceBinData)
+	referenceTokens := types.TokensFromBin32(&referenceBinData)
 	// Encode the reference string
 	llamaTokens := llama3Encoder.Encode(&referenceString)
 	for i := 0; i < len(*llamaTokens); i++ {
 		if (*llamaTokens)[i] != (*referenceTokens)[i] {
-			t.Errorf("Mismatch at around index %d Expected: %v, Actual: %v", i, (*referenceTokens)[i], (*llamaTokens)[i])
+			t.Errorf(
+				"Mismatch at around index %d Expected: %v, Actual: %v", i,
+				(*referenceTokens)[i], (*llamaTokens)[i],
+			)
 		}
 	}
 	// Check that the encoded tokens are the same as the reference tokens
@@ -1062,8 +1160,10 @@ func TestReadTokenizerConfig(t *testing.T) {
 	defer os.RemoveAll(destPath)
 	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
-	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
-		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	_, rsrcErr := resources.ResolveResources(
+		modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken,
+	)
 	if rsrcErr != nil {
 		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
@@ -1152,8 +1252,10 @@ func downloadModel(modelId string, destPath string) error {
 	destPathPTR := &destPath
 	rsrcType, hfApiToken := resources.RESOURCETYPE_TRANSFORMERS, os.Getenv("HF_API_TOKEN")
 	os.MkdirAll(destPath, 0755)
-	_, rsrcErr := resources.ResolveResources(modelId, destPathPTR,
-		resources.RESOURCE_MODEL, rsrcType, hfApiToken)
+	_, rsrcErr := resources.ResolveResources(
+		modelId, destPathPTR,
+		resources.RESOURCE_MODEL, rsrcType, hfApiToken,
+	)
 	if rsrcErr != nil {
 		return rsrcErr
 	}
