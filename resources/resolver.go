@@ -840,14 +840,14 @@ func (rsrcs *Resources) ResolveSplitRegex() *string {
 			}
 		}
 		if preTok, ok := tokenizerMap["pre_tokenizer"]; ok && preTok != nil {
-			preTokMap := preTok.(JsonMap)
+			preTokMap := preTok.(map[string]interface{})
 			if pretokenizers, ok := preTokMap["pretokenizers"]; ok &&
 				pretokenizers != nil {
 				pretokenizersList := pretokenizers.([]interface{})
 				for _, v := range pretokenizersList {
-					vIntf := v.(JsonMap)
+					vIntf := v.(map[string]interface{})
 					if vIntf["type"] == "Split" {
-						pattern := vIntf["pattern"].(JsonMap)
+						pattern := vIntf["pattern"].(map[string]interface{})
 						if pattern["Regex"] != nil {
 							splitRegexVal := pattern["Regex"].(string)
 							// Fix lookbacks
@@ -1078,7 +1078,7 @@ func GetMergesAsBpeRank(resources *Resources) (map[GPTPair]float64, error) {
 		if !ok {
 			return nil, errors.New("could not get model from tokenizer.json")
 		}
-		merges, ok := model.(JsonMap)["merges"]
+		merges, ok := model.(map[string]interface{})["merges"]
 		if !ok {
 			return nil, errors.New("could not get merges from tokenizer.json")
 		}
@@ -1145,37 +1145,38 @@ func (rsrcs *Resources) GetVocab(
 	filesToAttempt := []string{"vocab.json", "encoder.json", "tokenizer.json"}
 
 	// Get the vocab from the resources
-	name, vocab, err := rsrcs.UnmarshalUntilData(filesToAttempt)
+	name, vocabData, err := rsrcs.UnmarshalUntilData(filesToAttempt)
 	if err != nil {
 		return nil, err
+	} else if vocabData == nil {
+		return nil, errors.New("vocab file not found")
 	}
+
+	tokens := make(TokenMap)
 	if name == "tokenizer.json" {
 		// We get the vocab stored in the /model/vocab key
-		if model, ok := (*vocab)["model"].(JsonMap); ok {
-			if vocabValue, ok := model["vocab"].(JsonMap); ok {
-				vocab = &vocabValue
+		if modelInterface, ok := (*vocabData)["model"]; ok {
+			model := modelInterface.(map[string]interface{})
+			if vocabInterface, ok := model["vocab"]; ok {
+				vocabMap := vocabInterface.(map[string]interface{})
+				for k, v := range vocabMap {
+					tokens[k] = types.Token(v.(float64))
+				}
 			}
 			// Check for "ignore_merges", and set it
 			if ignoreMerges, ok := model["ignore_merges"].(bool); ok {
 				hfConfig.IgnoreMerges = &ignoreMerges
 			}
 		}
+	} else {
+		for k, v := range *vocabData {
+			tokens[k] = types.Token(v.(float64))
+		}
 	}
 
 	if hfConfig.IgnoreMerges == nil {
 		disableIgnoreMerges := false
 		hfConfig.IgnoreMerges = &disableIgnoreMerges
-	}
-
-	// If vocab is nil, return an error
-	if vocab == nil {
-		return nil, errors.New("vocab file not found")
-	}
-
-	// Convert the vocab to a map of tokens
-	tokens := make(TokenMap)
-	for k, v := range *vocab {
-		tokens[k] = types.Token(Token(v.(float64)))
 	}
 
 	// Add the special tokens to the vocab
@@ -1364,13 +1365,13 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 			// Read for added_specials_tokens
 			// Will later be used to readd into vocab if needed
 			if addedTokensDecoder, ok :=
-				configMap["added_tokens_decoder"].(JsonMap); ok {
+				configMap["added_tokens_decoder"].(map[string]interface{}); ok {
 				addedSpecialsTokens := make(TokenMap)
 				for k, v := range addedTokensDecoder {
 					// Get under content key, key is float64
 					keyToken, _ := strconv.ParseFloat(k, 64)
-					valStr := v.(JsonMap)["content"].(string)
-					addedSpecialsTokens[valStr] = types.Token(Token(keyToken))
+					valStr := v.(map[string]interface{})["content"].(string)
+					addedSpecialsTokens[valStr] = types.Token(keyToken)
 				}
 				hfConfig.AddedSpecialsTokens = &addedSpecialsTokens
 			}
