@@ -305,7 +305,7 @@ func TestSampling40(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "test")
+			texts, "./test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -348,7 +348,7 @@ func TestSampling40(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "")
+			texts2, "./test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -401,7 +401,7 @@ func TestShuffle(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "test")
+			texts, "./test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -442,7 +442,7 @@ func TestShuffle(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts2, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "test")
+			texts2, "./test")
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
