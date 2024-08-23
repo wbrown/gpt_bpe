@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/wbrown/gpt_bpe/types"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -19,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wbrown/gpt_bpe/types"
 
 	"github.com/dustin/go-humanize"
 )
@@ -1325,13 +1326,13 @@ func (rsrcs *Resources) resolveConfigAndTokenizer(
 			// If not, assume llama2 format and try to unmarshal
 			if !hasReadForEosBos {
 				if bosToken, ok :=
-					configMap["bos_token"].(JsonMap); ok {
+					configMap["bos_token"].(map[string]interface{}); ok {
 					if content, ok := bosToken["content"].(string); ok {
 						hfConfig.BosTokenStr = &content
 					}
 				}
 				if eosToken, ok :=
-					configMap["eos_token"].(JsonMap); ok {
+					configMap["eos_token"].(map[string]interface{}); ok {
 					if content, ok := eosToken["content"].(string); ok {
 						hfConfig.EosTokenStr = &content
 					}
@@ -1519,7 +1520,8 @@ func ExtractModelFromTokenizer(dir *string) (JsonMap, error) {
 	}
 
 	// Access the data at the specified path
-	model, ok := data["model"].(JsonMap)
+	model, ok := (data["model"]).(map[string]interface{})
+	model = ToJsonMap(model)
 	if ok {
 		return model, nil
 	} else {
@@ -1533,7 +1535,8 @@ func ExtractVocabFromTokenizer(
 	dir *string,
 	resources *Resources,
 ) error {
-	vocab, ok := model["vocab"].(JsonMap)
+	vocab, ok := model["vocab"].(map[string]interface{})
+	vocab = ToJsonMap(vocab)
 	if !ok {
 		log.Println("Error: Could not convert vocab in model to map")
 		return errors.New("could not convert vocab in model to map")
@@ -1645,7 +1648,8 @@ func FindNumberOfShardsFromConfig(configPath string) (int, error) {
 	}
 
 	// Access the data at the specified path
-	weightMap, ok := data["weight_map"].(JsonMap)
+	weightMap, ok := data["weight_map"].(map[string]interface{})
+	weightMap = ToJsonMap(weightMap)
 	if !ok {
 		fmt.Println("Error: Could not convert data to weight_map")
 		return -1, errors.New("could not convert data to weight_map")
@@ -1688,7 +1692,8 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) (
 	// create array of processors
 	var processors []Processor
 	// check if normalizer is present
-	normalizer, ok := data["normalizer"].(JsonMap)
+	normalizer, ok := data["normalizer"].(map[string]interface{})
+	normalizer = ToJsonMap(normalizer)
 	if normalizer != nil && ok {
 		// add normalizer to processors
 		processor := Processor{
@@ -1698,7 +1703,8 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) (
 		processors = append(processors, processor)
 	}
 	// check if pre_tokenizer is present
-	preTokenizer, ok := data["pre_tokenizer"].(JsonMap)
+	preTokenizer, ok := data["pre_tokenizer"].(map[string]interface{})
+	preTokenizer = ToJsonMap(preTokenizer)
 	if preTokenizer != nil && ok {
 		// add pre_tokenizer to processors
 		processor := Processor{
@@ -1708,7 +1714,8 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) (
 		processors = append(processors, processor)
 	}
 	// check if post_processor is present
-	post_processor, ok := data["post_processor"].(JsonMap)
+	post_processor, ok := data["post_processor"].(map[string]interface{})
+	post_processor = ToJsonMap(post_processor)
 	if post_processor != nil && ok {
 		// add post_processor to processors
 		processor := Processor{
@@ -1718,7 +1725,8 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) (
 		processors = append(processors, processor)
 	}
 	// check if decoder is present
-	decoder, ok := data["decoder"].(JsonMap)
+	decoder, ok := data["decoder"].(map[string]interface{})
+	decoder = ToJsonMap(decoder)
 	if decoder != nil && ok {
 		// add decoder to processors
 		processor := Processor{
@@ -1729,4 +1737,20 @@ func FindProcessingStepsFromTokenizer(model ResourceEntry) (
 	}
 
 	return processors, nil
+}
+
+func ToJsonMap(sim map[string]interface{}) JsonMap {
+	jm := make(JsonMap)
+	for k, v := range sim {
+		jm[k] = v
+	}
+	return jm
+}
+
+func (jm JsonMap) ToMapInterface() map[string]interface{} {
+	m := make(map[string]interface{})
+	for k, v := range jm {
+		m[k] = v
+	}
+	return m
 }
