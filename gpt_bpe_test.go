@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/wbrown/gpt_bpe/types"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wbrown/gpt_bpe/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/wbrown/gpt_bpe/resources"
@@ -1191,7 +1192,6 @@ func TestReadTokenizerConfig(t *testing.T) {
 		resources.RESOURCE_MODEL, rsrcType, hfApiToken,
 	)
 	if rsrcErr != nil {
-		os.RemoveAll(destPath)
 		t.Errorf("Error downloading model resources: %s", rsrcErr)
 	}
 
