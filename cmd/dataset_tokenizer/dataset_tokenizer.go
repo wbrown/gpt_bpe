@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -1006,7 +1007,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	go func() {
 		for {
 			context := nextContext()
-			if context == nil {
+			if context == nil || len(*context) == 0 {
 				break
 			} else {
 				contexts <- *context
@@ -1016,6 +1017,16 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	}()
 
 	return contexts, nil
+}
+
+// Greatest common divisor (GCD) via Euclidean algorithm
+func GCD(a, b int) int {
+	for b != 0 {
+		t := b
+		b = a % b
+		a = t
+	}
+	return a
 }
 
 // WriteContexts
@@ -1053,7 +1064,14 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 				break
 			} else {
 				// Ignore every `sampling` percent context (rounded to int)
-				if sampling == 100 || (samplingIdx%20) < int(sampling/5) {
+				// If sampling is 80, GCD is 20, LCD is 5, 80% of 5 is 4
+				// So we keep 4 and skip 5th
+				gcdOfSampling := GCD(sampling, 100)
+				lcd := 100 / gcdOfSampling
+				samplingFloat := float64(sampling) / 100.0
+				skipEveryX := int(math.Round(samplingFloat * float64(lcd)))
+				doKeepSampling := sampling == 100 || (samplingIdx%lcd < skipEveryX)
+				if doKeepSampling {
 					sampledContexts <- context
 				}
 				samplingIdx += 1
@@ -1065,9 +1083,20 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 	var buf []byte
 	var contextSize int
 	var target int64
+	var prevTarget int64
 
 	// Sometimes it is requested that we shuffle all contexts as they are
-	// written
+	// written to the file. This is useful for training data, as it can help
+	// the model learn better.
+
+	// We keep track of the idxes of the padding we add to the contexts
+	type paddingTuple struct {
+		contextStart int
+		contextEnd   int
+		start        int
+		end          int
+	}
+	idxes := make([]paddingTuple, 0)
 	for {
 		context, ok := <-sampledContexts
 		if !ok {
@@ -1095,9 +1124,11 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 		// the buffer and write it to the end of the file, writing the new
 		// context to the target position
 		if endpos != 0 && shuffle {
-			if _, err := outFile.ReadAt(buf, target); err != nil {
+			_, err := outFile.ReadAt(buf, target)
+			if err != nil {
 				return totalTokens, err
 			}
+
 		} else if shuffle {
 			//write the buffer to the end of the file
 			if _, err := outFile.Write(*binContext); err != nil {
@@ -1106,8 +1137,26 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 		}
 
 		if endpos > 0 && shuffle {
+			// Pad to context size if necessary
+			if len(*binContext) < contextSize {
+				lenBeforePad := len(*binContext)
+				for i := len(*binContext); i < contextSize; i++ {
+					(*binContext) = append(*binContext, byte(0))
+				}
+				// Move the paddingTuple to new position if necessary
+				for i, idx := range idxes {
+					if idx.contextStart == int(prevTarget) && idx.contextEnd == int(prevTarget)+contextSize {
+						// Move to end of file
+						idxes[i].contextStart = endpos
+						idxes[i].contextEnd = endpos + contextSize
+					}
+				}
+
+				idxes = append(idxes, paddingTuple{start: lenBeforePad, end: contextSize, contextStart: int(target), contextEnd: int(target) + contextSize})
+			}
 			// Overwrite binContext to the location of the context we just read
-			if _, err := outFile.WriteAt(*binContext, target); err != nil {
+			_, err := outFile.WriteAt(*binContext, target)
+			if err != nil {
 				return totalTokens, err
 			}
 
@@ -1129,6 +1178,57 @@ func WriteContexts(outPath string, contexts chan gpt_bpe.Tokens,
 		// Break if EOF
 		if len(context) <= 1 {
 			break
+		}
+	}
+
+	// Write new file with padding removed
+	if shuffle {
+		newFilePath := strings.Replace(outPath, ".chunk", ".shuf.chunk", 1)
+		newFile, err := os.OpenFile(newFilePath, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
+		defer newFile.Close()
+		if err != nil {
+			return totalTokens, err
+		}
+		// Get contexts from original file, skipping idxes
+		buf := make([]byte, contextSize)
+		outFile.Seek(0, 0)
+		currentStartPos := 0
+		currentEndPos := currentStartPos + contextSize
+		for {
+			num, err := outFile.ReadAt(buf, int64(currentStartPos))
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return totalTokens, err
+			}
+			if num == 0 {
+				break
+			}
+			thisContext := paddingTuple{contextStart: currentStartPos, contextEnd: currentEndPos, start: 0, end: len(buf)}
+			// Check if the context is in the idxes
+			for _, idx := range idxes {
+				if idx.contextStart == thisContext.contextStart && idx.contextEnd == thisContext.contextEnd {
+					if idx.start < thisContext.start || thisContext.start == 0 {
+						thisContext.start = idx.start
+					}
+					if idx.end > thisContext.end || thisContext.end == 0 {
+						thisContext.end = idx.end
+					}
+				}
+			}
+			if thisContext.start != 0 && thisContext.end != 0 {
+				newFile.Write(buf[:thisContext.start])
+
+			} else {
+				newFile.Write(buf)
+			}
+			currentStartPos = currentEndPos
+			currentEndPos = currentStartPos + contextSize
+		}
+		// Replace the original file with the new file
+		if err := os.Rename(newFilePath, outPath); err != nil {
+			return totalTokens, err
 		}
 	}
 
