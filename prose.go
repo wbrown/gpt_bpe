@@ -8,12 +8,17 @@ import (
 	"unicode"
 )
 
-func (encoder GPTEncoder) TrimIncompleteSentence(tokens *Tokens) (*Tokens, error) {
+func (encoder *GPTEncoder) TrimIncompleteSentence(tokens *Tokens) (
+	*Tokens,
+	error,
+) {
 	trimmed := make(Tokens, 0)
-	doc, err := prose.NewDocument(encoder.Decode(tokens),
+	doc, err := prose.NewDocument(
+		encoder.Decode(tokens),
 		prose.WithTagging(false),
 		prose.WithExtraction(false),
-		prose.WithTokenization(false))
+		prose.WithTokenization(false),
+	)
 	if err != nil {
 		return &trimmed, err
 	}
@@ -46,8 +51,11 @@ func (encoder GPTEncoder) TrimIncompleteSentence(tokens *Tokens) (*Tokens, error
 	return encoded, nil
 }
 
-func (encoder GPTEncoder) TrimSentences(tokens *Tokens, direction TrimDirection,
-	limit uint) (*Tokens, error) {
+func (encoder *GPTEncoder) TrimSentences(
+	tokens *Tokens,
+	direction TrimDirection,
+	limit uint,
+) (*Tokens, error) {
 	var err error
 	trimmed := make(Tokens, 0)
 	if uint(len(*tokens)) <= limit {
@@ -55,10 +63,12 @@ func (encoder GPTEncoder) TrimSentences(tokens *Tokens, direction TrimDirection,
 	} else if direction == TrimNone {
 		return &trimmed, err
 	}
-	doc, err := prose.NewDocument(encoder.Decode(tokens),
+	doc, err := prose.NewDocument(
+		encoder.Decode(tokens),
 		prose.WithTagging(false),
 		prose.WithExtraction(false),
-		prose.WithTokenization(false))
+		prose.WithTokenization(false),
+	)
 	if err != nil {
 		return &trimmed, err
 	}
@@ -86,8 +96,10 @@ func (encoder GPTEncoder) TrimSentences(tokens *Tokens, direction TrimDirection,
 		sentence := sentences[idx].Text
 		switch direction {
 		case TrimTop:
-			sentenceIdx = strings.LastIndex(doc.Text[textBegin:],
-				sentence) + textBegin
+			sentenceIdx = strings.LastIndex(
+				doc.Text[textBegin:],
+				sentence,
+			) + textBegin
 			if sentenceIdx > 0 && sentenceIdx < len(doc.Text) &&
 				unicode.IsSpace(rune(doc.Text[sentenceIdx])) {
 				sentenceIdx -= 1
@@ -100,8 +112,10 @@ func (encoder GPTEncoder) TrimSentences(tokens *Tokens, direction TrimDirection,
 			}
 			textEnd = sentenceIdx - 1
 		case TrimBottom:
-			sentenceIdx = strings.Index(doc.Text[textBegin:textEnd],
-				sentence) + textBegin
+			sentenceIdx = strings.Index(
+				doc.Text[textBegin:textEnd],
+				sentence,
+			) + textBegin
 			sentenceEnd := sentenceIdx + len(sentence)
 			if sentenceEnd < textEnd &&
 				doc.Text[sentenceEnd:sentenceEnd+1] == "\n" {
