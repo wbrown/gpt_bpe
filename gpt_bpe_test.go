@@ -1420,21 +1420,12 @@ func TestModelDownloadPythia(t *testing.T) {
 	// config.json, pytorch_model.bin,
 	// tokenizer.json, vocab.json
 
-	// Check for config.json
-	configPath := destPath + "/config.json"
-	assertFileExists(t, configPath)
-
-	// Check for pytorch_model.bin
-	modelPath := destPath + "/pytorch_model.bin"
-	assertFileExists(t, modelPath)
-
-	// Check for tokenizer.json
-	tokenizerConfigPath := destPath + "/tokenizer.json"
-	assertFileExists(t, tokenizerConfigPath)
-
-	// Check for vocab.json
-	vocabPath := destPath + "/vocab.json"
-	assertFileExists(t, vocabPath)
+	// Check for additional metadata files
+	metaFiles := []string{"tokenizer.json", "vocab.json", "config.json", "pytorch_model.bin"}
+	for _, metaFile := range metaFiles {
+		metaPath := destPath + "/" + metaFile
+		assertFileExists(t, metaPath)
+	}
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
@@ -1494,10 +1485,6 @@ func TestModelDownloadLlama(t *testing.T) {
 	// config.json, pytorch_model.bin,
 	// tokenizer.json, vocab.json
 
-	// Check for config.json
-	configPath := destPath + "/config.json"
-	assertFileExists(t, configPath)
-
 	// Check for pytorch_model.bin
 	singleModelPattern := regexp.MustCompile(`pytorch_model\.bin$`)
 	re, err := regexp.Compile(`-(\d+)-of-(\d+)\.bin$`)
@@ -1530,13 +1517,12 @@ func TestModelDownloadLlama(t *testing.T) {
 		t.Errorf("pytorch_model.bin does not exist or was not found")
 	}
 
-	// Check for tokenizer.model
-	tokenizerConfigPath := destPath + "/tokenizer.model"
-	assertFileExists(t, tokenizerConfigPath)
-
-	// Check for vocab.json
-	vocabPath := destPath + "/vocab.json"
-	assertFileExists(t, vocabPath)
+	// Check for additional metadata files
+	metaFiles := []string{"tokenizer.json", "vocab.json", "config.json"}
+	for _, metaFile := range metaFiles {
+		metaPath := destPath + "/" + metaFile
+		assertFileExists(t, metaPath)
+	}
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
@@ -1558,21 +1544,12 @@ func TestModelDownloadMistral(t *testing.T) {
 	// config.json, pytorch_model.bin,
 	// tokenizer.json, vocab.json
 
-	// Check for config.json
-	configPath := destPath + "/config.json"
-	assertFileExists(t, configPath)
-
-	// Check for pytorch_model-00001-of-00002.bin
-	modelPath := destPath + "/pytorch_model-00001-of-00002.bin"
-	assertFileExists(t, modelPath)
-
-	// Check for tokenizer.model
-	tokenizerConfigPath := destPath + "/tokenizer.model"
-	assertFileExists(t, tokenizerConfigPath)
-
-	// Check for vocab.json
-	vocabPath := destPath + "/vocab.json"
-	assertFileExists(t, vocabPath)
+	// Check for additional metadata files
+	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model-00001-of-00002.bin"}
+	for _, metaFile := range metaFiles {
+		metaPath := destPath + "/" + metaFile
+		assertFileExists(t, metaPath)
+	}
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good.")
@@ -1596,21 +1573,12 @@ func TestModelDownloadFairseq(t *testing.T) {
 	// We want to check for the presence of the following files:
 	// vocab, config. merges, pytorch_model
 
-	// Check for config.json
-	configPath := destPath + "/config.json"
-	assertFileExists(t, configPath)
-
-	// Check for pytorch_model.bin
-	modelPath := destPath + "/pytorch_model.bin"
-	assertFileExists(t, modelPath)
-
-	// Check for vocab.json
-	vocabPath := destPath + "/vocab.json"
-	assertFileExists(t, vocabPath)
-
-	// Check for merges.txt
-	mergesPath := destPath + "/merges.txt"
-	assertFileExists(t, mergesPath)
+	// Check for additional metadata files
+	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model.bin", "merges.txt"}
+	for _, metaFile := range metaFiles {
+		metaPath := destPath + "/" + metaFile
+		assertFileExists(t, metaPath)
+	}
 
 	// Finish the test, allow defered cleanup
 	fmt.Println("All Exists - Looks good (Fairseq Download).")
