@@ -138,16 +138,23 @@ func BenchmarkStreamingEncode(b *testing.B) {
 			b.StopTimer()
 			duration := time.Since(start)
 			tokensPerSecond := float64(tokensCt) / duration.Seconds()
-			lruStats := fmt.Sprintf(" (LRU: Hits: %d, Misses: %d, "+
-				"Evictions: %d, %0.2f%% Hit Rate, Size: %d)",
+			lruStats := fmt.Sprintf(
+				" (LRU: Hits: %d, Misses: %d, "+
+					"Evictions: %d, %0.2f%% Hit Rate, Size: %d)",
 				tokenizer.LruHits, tokenizer.LruMisses,
 				tokenizer.LruEvictions, 100.0*float64(
-					tokenizer.LruHits)/float64(tokenizer.LruHits+
-					tokenizer.LruMisses), tokenizer.LruSize)
-			b.Logf("%d tokens generated at %0.2f per second over %vms%s",
+					tokenizer.LruHits,
+				)/float64(
+					tokenizer.LruHits+
+						tokenizer.LruMisses,
+				), tokenizer.LruSize,
+			)
+			b.Logf(
+				"%d tokens generated at %0.2f per second over %vms%s",
 				tokensCt,
 				tokensPerSecond, duration.Milliseconds(),
-				lruStats)
+				lruStats,
+			)
 		}
 	}
 }
@@ -177,8 +184,10 @@ func BenchmarkStreamingEncodeSanitize(b *testing.B) {
 		}
 		b.StopTimer()
 		tokensPerSecond := float64(tokensCt) / time.Since(start).Seconds()
-		b.Logf("%d tokens generated at %0.2f per second", tokensCt,
-			tokensPerSecond)
+		b.Logf(
+			"%d tokens generated at %0.2f per second", tokensCt,
+			tokensPerSecond,
+		)
 	}
 }
 
@@ -248,18 +257,26 @@ func TestEncodeText1(t *testing.T) {
 		log.Fatal("Error tokenizing texts: ", tokErr)
 	}
 
-	total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", enforceUint32)
+	total, writeErr := WriteContexts(
+		outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
+		enforceUint32,
+	)
 	if writeErr != nil {
 		log.Fatal("Error writing contexts: ", writeErr)
 	}
 
 	duration := time.Since(begin).Seconds()
-	log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total, duration, float64(total)/duration)
+	log.Printf(
+		"%d tokens in %0.2fs, %0.2f tokens/s", total, duration,
+		float64(total)/duration,
+	)
 
 	fileSize := getFileSize(outputFile)
 	log.Printf("File size: %d bytes", fileSize)
 	assert.True(t, fileSize > 0)
-	assert.True(t, int(fileSize)/total == 2) //gpt2 tokens are 2 bytes, ie uint16
+	assert.True(
+		t, int(fileSize)/total == 2,
+	) //gpt2 tokens are 2 bytes, ie uint16
 }
 
 func getFileSize(path string) int64 {
@@ -297,14 +314,17 @@ func TestSampling50(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if texts, err := ReadTexts(inputDir, false,
+	if texts, err := ReadTexts(
+		inputDir, false,
 		reorderPaths,
-		1); err != nil {
+		1,
+	); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "./test")
+			texts, "./test",
+		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
@@ -312,14 +332,19 @@ func TestSampling50(t *testing.T) {
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
+		total, writeErr := WriteContexts(
+			outputFile, contexts, enc, sampling,
+			reorderPaths == "shuffle", false,
+		)
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
 		duration := time.Since(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
-			duration, float64(total)/duration)
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration,
+		)
 	}
 
 	textsTokenizer2 := NewTextsTokenizer()
@@ -340,36 +365,49 @@ func TestSampling50(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if texts2, err := ReadTexts(inputDir, false,
+	if texts2, err := ReadTexts(
+		inputDir, false,
 		reorderPaths,
-		1); err != nil {
+		1,
+	); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "./test")
+			texts2, "./test",
+		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
+		total2, writeErr := WriteContexts(
+			outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
+			false,
+		)
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
 		duration := time.Since(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total2,
-			duration, float64(total2)/duration)
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total2,
+			duration, float64(total2)/duration,
+		)
 	}
 	percent := (float64(all2) / float64(all1)) * 100
 	// We keep a wide range as the sampling is done per-context,
 	// so the actual percentage can vary quite a bit. Especially at small sample sizes.
-	log.Printf("Sampling 100 produced %d Tokens, Sampling 50 produced %d tokens\n", all1, all2)
+	log.Printf(
+		"Sampling 100 produced %d Tokens, Sampling 50 produced %d tokens\n",
+		all1, all2,
+	)
 	log.Printf("Roughly %f %%\n", percent)
 	if percent > 75 || percent < 35 {
-		log.Printf("Percent does not match ~50%% (35-75), found to be %f", percent)
+		log.Printf(
+			"Percent does not match ~50%% (35-75), found to be %f", percent,
+		)
 		t.Fail()
 	}
 }
@@ -396,27 +434,35 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if texts, err := ReadTexts(inputDir, true,
-		reorderPaths, 1); err != nil {
+	if texts, err := ReadTexts(
+		inputDir, true,
+		reorderPaths, 1,
+	); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "./test")
+			texts, "./test",
+		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
 		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total, writeErr := WriteContexts(outputFile, contexts, enc, sampling, reorderPaths == "shuffle", false)
+		total, writeErr := WriteContexts(
+			outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
+			false,
+		)
 		all1 += total
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
 		duration := time.Since(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total,
-			duration, float64(total)/duration)
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration,
+		)
 	}
 
 	textsTokenizer2 := NewTextsTokenizer()
@@ -437,30 +483,41 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(tokErr)
 	}
 
-	if texts2, err := ReadTexts(inputDir, true,
-		reorderPaths, 1); err != nil {
+	if texts2, err := ReadTexts(
+		inputDir, true,
+		reorderPaths, 1,
+	); err != nil {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
 		contexts2, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "./test")
+			texts2, "./test",
+		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
 		var enc2 *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
-		total2, writeErr := WriteContexts(outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle", false)
+		total2, writeErr := WriteContexts(
+			outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle",
+			false,
+		)
 		all2 += total2
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
 		duration := time.Since(begin).Seconds()
-		log.Printf("%d tokens in %0.2fs, %0.2f tokens/s", total2,
-			duration, float64(total2)/duration)
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total2,
+			duration, float64(total2)/duration,
+		)
 	}
 	percent := (float64(all2) / float64(all1)) * 100
-	log.Printf("NoShuffle produced %d Tokens, Shuffle produced %d tokens, this is roughly %f %%", all1, all2, percent)
+	log.Printf(
+		"NoShuffle produced %d Tokens, Shuffle produced %d tokens, this is roughly %f %%",
+		all1, all2, percent,
+	)
 	if percent != 100 {
 		log.Printf("Percent does not match ~100%%, found to be %f", percent)
 		t.Fail()
@@ -488,32 +545,47 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(err2)
 	}
 	if stat1.Size() != stat2.Size() {
-		log.Printf("File sizes do not match: %d vs %d", stat1.Size(), stat2.Size())
+		log.Printf(
+			"File sizes do not match: %d vs %d", stat1.Size(), stat2.Size(),
+		)
 		t.Fail()
 	}
 }
 
-func (m *S3MockClient) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (m *S3MockClient) ListObjectsV2(input *s3.ListObjectsV2Input) (
+	*s3.ListObjectsV2Output,
+	error,
+) {
 	return m.ListObjectsV2Output, m.ListObjectsV2Error
 }
 
-func (m *S3MockClient) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (m *S3MockClient) GetObject(input *s3.GetObjectInput) (
+	*s3.GetObjectOutput,
+	error,
+) {
 	return m.GetObjectOutput, m.GetObjectError
 }
 
-func (m *S3MockClient) GetObjects(bucketName, prefix string) ([]*s3.Object, error) {
+func (m *S3MockClient) GetObjects(bucketName, prefix string) (
+	[]*s3.Object,
+	error,
+) {
 	// Simulate listing objects with the specified prefix
 	var matchingObjects []*s3.Object
 
 	for key := range m.GetObjectOutputs {
 		if strings.HasPrefix(key, prefix) {
-			matchingObjects = append(matchingObjects, &s3.Object{Key: aws.String(key)})
+			matchingObjects = append(
+				matchingObjects, &s3.Object{Key: aws.String(key)},
+			)
 		}
 	}
 
 	if len(matchingObjects) == 0 {
 		// Simulate the case where no objects match the prefix
-		return nil, awserr.New("NoSuchKey", "The specified key does not exist", nil)
+		return nil, awserr.New(
+			"NoSuchKey", "The specified key does not exist", nil,
+		)
 	}
 
 	return matchingObjects, nil
