@@ -1,8 +1,6 @@
 package gpt_bpe
 
 import (
-	"bytes"
-	"encoding/binary"
 	"strings"
 )
 
@@ -14,35 +12,11 @@ const (
 	TrimNone   TrimDirection = iota
 )
 
-const (
-	TokenSize = 2
-)
-
-func (tokens *Tokens) ToBin() *[]byte {
-	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*TokenSize))
-	for idx := range *tokens {
-		bs := (*tokens)[idx]
-		binary.Write(buf, binary.LittleEndian, bs)
-	}
-	byt := buf.Bytes()
-	return &byt
-}
-
-func TokensFromBin(bin *[]byte) *Tokens {
-	tokens := make(Tokens, 0)
-	buf := bytes.NewReader(*bin)
-	for {
-		var token Token
-		if err := binary.Read(buf, binary.LittleEndian, &token); err != nil {
-			break
-		}
-		tokens = append(tokens, token)
-	}
-	return &tokens
-}
-
-func (encoder GPTEncoder) TrimNewlines(tokens *Tokens, direction TrimDirection,
-	limit uint) (*Tokens, error) {
+func (encoder *GPTEncoder) TrimNewlines(
+	tokens *Tokens,
+	direction TrimDirection,
+	limit uint,
+) (*Tokens, error) {
 	var err error
 	trimmed := make(Tokens, 0)
 	if uint(len(*tokens)) <= limit {
@@ -86,8 +60,13 @@ func (encoder GPTEncoder) TrimNewlines(tokens *Tokens, direction TrimDirection,
 	return &accTokens, err
 }
 
-func (encoder GPTEncoder) AlignAndSizeTokens(tokens *Tokens,
-	desiredLength int) (alignedTokens Tokens, endAt int) {
+func (encoder *GPTEncoder) AlignAndSizeTokens(
+	tokens *Tokens,
+	desiredLength int,
+) (
+	alignedTokens Tokens,
+	endAt int,
+) {
 	chunk := (*tokens)[0:desiredLength]
 	// We trim to valid tokens, as we don't want partials
 	// that are truncated multi-tokens.
