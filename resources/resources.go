@@ -65,6 +65,14 @@ func GetEmbeddedResource(path string) *ResourceEntry {
 	return &ResourceEntry{&resourceFile, &resourceBytes}
 }
 
+func GetEmbeddedFile(path string) []byte {
+	resourceBytes, err := f.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return resourceBytes
+}
+
 // EmbeddedDirExists
 // Returns true if the given directory is embedded in the binary, otherwise
 // false and an error.
@@ -74,6 +82,17 @@ func EmbeddedDirExists(path string) (bool, error) {
 	} else {
 		return true, nil
 	}
+}
+func PrintAllDirs() (string, error) {
+	dirs, err := f.ReadDir("data")
+	if err != nil {
+		return "", err
+	}
+	var dirNames string
+	for _, dir := range dirs {
+		dirNames += dir.Name() + "\n"
+	}
+	return dirNames, nil
 }
 
 // FetchHTTP

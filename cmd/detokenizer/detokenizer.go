@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"github.com/wbrown/gpt_bpe"
 	"log"
 	"os"
+
+	"github.com/wbrown/gpt_bpe"
 )
 
 func main() {

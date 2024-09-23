@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	err := goef.GenerateGoPackage("resources", "../data",
+	err := goef.GenerateGoPackage("resources", "../embedded",
 		"../resource_data_js.go")
 	if err != nil {
 		panic(err)
