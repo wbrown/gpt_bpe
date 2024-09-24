@@ -23,3 +23,13 @@ gopherjs: go embeds
 	$(eval GOROOT := $(shell ${GO} env GOROOT))
 	#${GO} install github.com/gopherjs/gopherjs@v${GOPHERJS_VERSION}+${GO}
 	${GO} install github.com/gopherjs/gopherjs@${GOPHERJS_VERSION}
+
+
+# This is a hack to get around the fact that GopherJS doesn't support nextjs's window object
+gopherBuild:
+	echo "Starting GopherJS build (Requires Go 1.19)";
+	# Build embedder and run in order to generate the embeds
+	cd resources/embedder; go run generate.go;
+	cd js; gopherjs build --verbose -o gpt_bpe.js;
+
+	echo "GopherJS build complete";

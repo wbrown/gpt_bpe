@@ -3,9 +3,10 @@ package gpt_bpe
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/json"
-	"github.com/pkg/errors"
 	"io"
 	"log"
 	"math"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/pkg/errors"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
@@ -67,17 +70,12 @@ type GPTEncoder struct {
 	SplitterThreads int
 	VocabId         string
 	tokenizerClass  string
+	normalizerArr   []string
+	decodeExtraArr  []string
 }
 
-type GPTPair struct {
-	Left  string
-	Right string
-}
-
-type TokenPair struct {
-	Left  Token
-	Right Token
-}
+type GPTPair = types.GPTPair
+type TokenPair = types.TokenPair
 
 type BGERank struct {
 	rank   float64
@@ -157,7 +155,7 @@ func NewMistralEncoder() GPTEncoder {
 // Returns a GPTEncoder with the tokenizer data loaded for that vocabulary
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
-	log.Printf("Loading encoder for vocab id: %s\n", vocabId)
+	//log.Printf("Loading encoder for vocab id: %s\n", vocabId)
 	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId, "")
 
 	if vocabErr != nil {
@@ -220,8 +218,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Create a replacer for normalizing text.
 	normalizer := strings.NewReplacer()
+	norms := make([]string, 0)
 	if specialConfig.Normalizer != nil {
-		norms := make([]string, 0)
 		for k, v := range *specialConfig.Normalizer {
 			norms = append(norms, k, v)
 		}
@@ -230,9 +228,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Create a replacer for extra decoding. This is used to decode
 	// special tokens that are not in the encoder.
+	decode := make([]string, 0)
 	decodeExtra := strings.NewReplacer()
 	if specialConfig.DecodeExtra != nil {
-		decode := make([]string, 0)
 		for k, v := range *specialConfig.DecodeExtra {
 			decode = append(decode, k, v)
 		}
@@ -287,7 +285,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	}
 	// Convert rscBpeRanks to bpeRanks (map[GPTPair]float64)
 	for k, v := range rscBpeRanks {
-		bpeRanks[GPTPair{k.Left, k.Right}] = v
+		bpeRanks[GPTPair{Left: k.Left, Right: k.Right}] = v
 	}
 
 	// Build our TokenMerges. These are used to merge tokens together
@@ -295,8 +293,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	tokenMerges := make(map[TokenPair]Token)
 	for pair := range bpeRanks {
 		tokenMerges[TokenPair{
-			encoderTokens[pair.Left],
-			encoderTokens[pair.Right]}] =
+			Left:  encoderTokens[pair.Left],
+			Right: encoderTokens[pair.Right]}] =
 			encoderTokens[pair.Left+pair.Right]
 	}
 
@@ -445,6 +443,8 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		SplitterThreads: 4,
 		VocabId:         vocabId,
 		tokenizerClass:  *hfConfig.TokenizerClass,
+		normalizerArr:   norms,
+		decodeExtraArr:  decode,
 	}
 	encoder.UpdateSpecialsTree()
 	return encoder, nil
@@ -458,6 +458,8 @@ func (encoder *GPTEncoder) UpdateSpecialsTree() {
 		specialsArr[idx] = k
 		idx++
 	}
+	// Sort array to allow for deterministic tree creation
+	sort.Strings(specialsArr)
 	encoder.SpecialsTree = CreateRuneTree(specialsArr)
 }
 
@@ -637,7 +639,7 @@ func getPairs(word []string) []GPTPair {
 	ct := 0
 	for idx := begin; idx < len(word); idx++ {
 		present := word[idx]
-		pair := GPTPair{prev, present}
+		pair := GPTPair{Left: prev, Right: present}
 		if _, ok := pairsSet[pair]; !ok {
 			pairs[len(pairsSet)] = pair
 			ct++
@@ -657,7 +659,7 @@ func (encoder *GPTEncoder) getRankedPairs(word []string) BGERanks {
 	prev := word[0]
 	for idx := begin; idx < len(word); idx++ {
 		present := word[idx]
-		pair := GPTPair{prev, present}
+		pair := GPTPair{Left: prev, Right: present}
 		bpe, ok := encoder.BpeRanks[pair]
 		if !ok {
 			bpe = math.Inf(1)
@@ -1176,8 +1178,8 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			if len(accumulator)-len(encodedTokens) > 0 {
 				idx := len(accumulator) - len(encodedTokens) - 1
 				for {
-					pair := TokenPair{accumulator[idx],
-						accumulator[idx+1]}
+					pair := TokenPair{Left: accumulator[idx],
+						Right: accumulator[idx+1]}
 					if merged, ok := encoder.TokenMerges[pair]; ok && merged != 0 {
 						before := accumulator[:idx]
 						var after Tokens
@@ -1407,4 +1409,243 @@ func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
 			trimmed = &newTrimmed
 		}
 	}
+}
+
+// EncoderSerializable data struct
+// This struct converts some of the fields
+// in the GPTEncoder struct into a serializable
+// format for encoding and decoding.
+// We need to assume that the associated serialize/deserialize code
+// will be transpiled into javascript, so we need to ensure that we
+// don't use any Go-specific types, even if they would be compatible.
+type EncoderSerializable struct {
+	VocabId         string
+	Encoder         map[string]Token
+	Decoder         map[Token][]byte
+	TokenMerges     map[string]uint32
+	BpeRanks        map[GPTPair]float64
+	BytesEncoder    map[byte]Token
+	Unitrim         []int
+	Pattern         string
+	PuncPat         string
+	SpecialsPat     string
+	ByteToRune      [256]rune
+	RuneToByte      map[rune]byte
+	Specials        map[string][]int
+	PuncRunes       []rune
+	NormalizerArr   []string
+	DecodeExtraArr  []string
+	BosToken        Token
+	EosToken        Token
+	PadToken        Token
+	IgnoreMerges    bool
+	EncloseEosBos   bool
+	EncloseBos      bool
+	EncloseEos      bool
+	PrefixSpace     bool
+	LowerCase       bool
+	EndOfWord       string
+	Replacement     map[string]string
+	RuneBufferSize  int
+	WordChannelSize int
+	LruHits         int
+	LruMisses       int
+	LruEvictions    int
+	LruSize         int
+	SplitterThreads int
+	TokenizerClass  string
+}
+
+// EncoderToGobBytes
+// Marshal the encoder into a gob byte array.
+func (encoder *GPTEncoder) EncoderToGobBytes(doZip bool) ([]byte, error) {
+	// For BpeRanks, we convert from a map[GPTPair]float64 to a map[string]float64.
+	bpeRanks := make(map[string]float32, len(encoder.BpeRanks))
+	for k, v := range encoder.BpeRanks {
+		bpeRanks[k.Left+"+"+k.Right] = float32(v)
+	}
+
+	// For bytesEncoder, convert from a map[byte]Token to a [byte]int
+	bytesEncoder := map[byte]Token{}
+	if encoder.BytesEncoder != nil {
+		bytesEncoder = *encoder.BytesEncoder
+	}
+	// For Specials, convert from a map[string]Tokens to a map[string][]int
+	specials := make(map[string][]int, len(encoder.Specials))
+	for k, v := range encoder.Specials {
+		specials[k] = make([]int, len(v))
+		for idx := range v {
+			specials[k][idx] = int(v[idx])
+		}
+	}
+
+	// For TokensMerge we convert from a map[TokenPair]Token to a map[string]Token
+	tokMerges := make(map[string]uint32, len(encoder.TokenMerges))
+	for k, v := range encoder.TokenMerges {
+		leftUint := int(k.Left)
+		rightUint := int(k.Right)
+		key := strconv.Itoa((leftUint)) + "<gob>" + strconv.Itoa((rightUint))
+		tokMerges[key] = uint32(v)
+	}
+
+	//Marshal the struct into gob
+	var buf bytes.Buffer
+	gzp := gzip.NewWriter(&buf)
+	var enc *gob.Encoder
+	if doZip {
+		enc = gob.NewEncoder(gzp)
+	} else {
+		enc = gob.NewEncoder(&buf)
+	}
+	err := enc.Encode(&EncoderSerializable{
+		VocabId:         encoder.VocabId,
+		Encoder:         encoder.Encoder,
+		Decoder:         encoder.Decoder,
+		TokenMerges:     tokMerges,
+		BpeRanks:        encoder.BpeRanks,
+		BytesEncoder:    bytesEncoder,
+		Unitrim:         encoder.unitrim,
+		Pattern:         encoder.pattern.String(),
+		PuncPat:         encoder.puncPat.String(),
+		SpecialsPat:     encoder.specialsPat.String(),
+		ByteToRune:      encoder.byteToRune,
+		RuneToByte:      encoder.runeToByte,
+		Specials:        specials,
+		PuncRunes:       encoder.PuncRunes,
+		NormalizerArr:   encoder.normalizerArr,
+		DecodeExtraArr:  encoder.decodeExtraArr,
+		BosToken:        encoder.BosToken,
+		EosToken:        encoder.EosToken,
+		PadToken:        encoder.PadToken,
+		IgnoreMerges:    encoder.ignoreMerges,
+		EncloseEosBos:   encoder.encloseEosBos,
+		EncloseBos:      encoder.encloseBos,
+		EncloseEos:      encoder.encloseEos,
+		PrefixSpace:     encoder.prefixSpace,
+		LowerCase:       encoder.lowerCase,
+		EndOfWord:       encoder.endOfWord,
+		Replacement:     encoder.replacements,
+		RuneBufferSize:  encoder.runeBufSz,
+		WordChannelSize: encoder.wordChanSz,
+		LruHits:         encoder.LruHits,
+		LruMisses:       encoder.LruMisses,
+		LruEvictions:    encoder.LruEvictions,
+		LruSize:         encoder.LruSize,
+		SplitterThreads: encoder.SplitterThreads,
+		TokenizerClass:  encoder.tokenizerClass,
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = gzp.Close()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), err
+}
+
+// GobBytesToEncoder
+// Unmarshal the gob bytes into an encoder and set the encoder's fields.
+func (encoder *GPTEncoder) GobBytesToEncoder(data []byte, doZip bool) error {
+	var aux EncoderSerializable
+	var dec *gob.Decoder
+	// If the gob is zipped, then we need to unzip it.
+	if doZip {
+		var gzr *gzip.Reader
+		gzr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+		dec = gob.NewDecoder(gzr)
+		defer gzr.Close()
+	} else {
+		dec = gob.NewDecoder(bytes.NewReader(data))
+	}
+
+	// Decode the gob into the struct.
+	if err := dec.Decode(&aux); err != nil {
+		return err
+	}
+	// Convert bytesEncoder from a map[byte]int to a map[byte]Token
+	bytesEncoder := make(map[byte]Token, len(aux.BytesEncoder))
+	for k, v := range aux.BytesEncoder {
+		bytesEncoder[k] = Token(v)
+	}
+	// Convert Specials from a map[string][]string to a map[string]Tokens
+	specials := make(map[string]Tokens, len(aux.Specials))
+	for k, v := range aux.Specials {
+		specials[k] = make(Tokens, len(v))
+		for idx := range v {
+			specials[k][idx] = Token(v[idx])
+		}
+	}
+
+	// Convert TokenMerges from a map[string]Token to a map[TokenPair]Token
+	tokenMerges := make(map[TokenPair]Token, len(aux.TokenMerges))
+	for k, v := range aux.TokenMerges {
+		parts := strings.Split(k, "<gob>")
+		left, err := strconv.ParseInt(parts[0], 10, 32)
+		if err != nil {
+			return err
+		}
+		right, err := strconv.ParseInt(parts[1], 10, 32)
+		if err != nil {
+			return err
+		}
+		tokenMerges[TokenPair{Left: Token(left), Right: Token(right)}] = Token(v)
+	}
+	normalizer := strings.NewReplacer(aux.NormalizerArr...)
+	decodeExtra := strings.NewReplacer(aux.DecodeExtraArr...)
+
+	// Copy the data over.
+	encoder.VocabId = aux.VocabId
+	encoder.Encoder = aux.Encoder
+	encoder.Decoder = aux.Decoder
+	encoder.TokenMerges = tokenMerges
+	encoder.BpeRanks = aux.BpeRanks
+	encoder.BytesEncoder = &aux.BytesEncoder
+	encoder.unitrim = aux.Unitrim
+	encoder.pattern = regexp.MustCompile(aux.Pattern)
+	encoder.puncPat = regexp.MustCompile(aux.PuncPat)
+	encoder.specialsPat = regexp.MustCompile(aux.SpecialsPat)
+	encoder.byteToRune = aux.ByteToRune
+	encoder.runeToByte = aux.RuneToByte
+	encoder.Specials = specials
+	cache, _ := lru.NewARC(BPE_LRU_SZ)
+	encoder.Cache = cache
+	encoder.PuncRunes = aux.PuncRunes
+	encoder.Normalizer = normalizer
+	encoder.DecodeExtra = decodeExtra
+	encoder.BosToken = Token(aux.BosToken)
+	encoder.EosToken = Token(aux.EosToken)
+	encoder.PadToken = Token(aux.PadToken)
+	encoder.ignoreMerges = aux.IgnoreMerges
+	encoder.encloseEosBos = aux.EncloseEosBos
+	encoder.encloseBos = aux.EncloseBos
+	encoder.encloseEos = aux.EncloseEos
+	encoder.prefixSpace = aux.PrefixSpace
+	encoder.lowerCase = aux.LowerCase
+	encoder.endOfWord = aux.EndOfWord
+	encoder.replacements = aux.Replacement
+	encoder.runeBufSz = aux.RuneBufferSize
+	encoder.wordChanSz = aux.WordChannelSize
+	encoder.LruHits = aux.LruHits
+	encoder.LruMisses = aux.LruMisses
+	encoder.LruEvictions = aux.LruEvictions
+	encoder.LruSize = aux.LruSize
+	encoder.SplitterThreads = aux.SplitterThreads
+	encoder.tokenizerClass = aux.TokenizerClass
+	encoder.UpdateSpecialsTree()
+
+	// In gpt encoders, a 0 len BytesEncoder is equivalent to nil.
+	if len(*encoder.BytesEncoder) == 0 {
+		encoder.BytesEncoder = nil
+	}
+
+	// In gpt encoders, a 0 len PuncRunes is equivalent to a non-nil empty slice.
+	if len(encoder.PuncRunes) == 0 {
+		encoder.PuncRunes = []rune{}
+	}
+
+	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -1271,6 +1272,30 @@ func TestGPTDecoder_Decode(t *testing.T) {
 }
 
 func TestRankPairs(t *testing.T) {
+}
+
+func TestGobUngobEncoder(t *testing.T) {
+	// This test is to check if the encoder is able to be serialized and deserialized
+	// Serialize the encoder
+	gobEncoder, err := gpt2Encoder.EncoderToGobBytes(false)
+	if err != nil {
+		t.Errorf("Error marshalling encoder: %v", err)
+	}
+	// Deserialize the encoder
+	newEncoder := GPTEncoder{}
+	err = newEncoder.GobBytesToEncoder(gobEncoder, false)
+	if err != nil {
+		t.Errorf("Error unmarshalling encoder: %v", err)
+	}
+
+	// Only used for gobbing, so shouldn't be filled when ungobbed.
+	// Populate with the original encoder's values to pass the deep compare
+	newEncoder.decodeExtraArr = gpt2Encoder.decodeExtraArr
+	newEncoder.normalizerArr = gpt2Encoder.normalizerArr
+
+	// Recursive deep compare of every field in the encoder
+	assert.True(t, reflect.DeepEqual(gpt2Encoder, newEncoder))
+
 }
 
 func downloadModel(modelId string, destPath string) error {

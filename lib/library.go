@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
@@ -102,7 +103,7 @@ func decode(vocabIdStr *C.char, tokens C.Tokens) *C.char {
 		encoder = tokenizers[tokenizerId]
 	}
 	tokensArr := C.GoBytes(unsafe.Pointer(tokens.tokens), C.int(tokens.len)*2)
-	goTokens := gpt_bpe.TokensFromBin(&tokensArr)
+	goTokens := types.TokensFromBin(&tokensArr)
 	fmt.Printf("goTokens: %v\n", goTokens)
 	decoded := encoder.Decode(goTokens)
 	fmt.Printf("Decoded: %s\n", decoded)

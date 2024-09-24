@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/wbrown/gpt_bpe/types"
-
-	"github.com/dustin/go-humanize"
 )
 
 type Token types.Token
@@ -43,6 +41,22 @@ type WriteCounter struct {
 	Size     uint64
 }
 
+// humanizeBytes - Avoids transpiler error by not using math.Pow
+func humanizeBytes(bytes uint64) string {
+	if bytes == 0 {
+		return "0 B"
+	}
+
+	sizes := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	i := 0
+	for bytes >= 1024 && i < len(sizes)-1 {
+		bytes /= 1024
+		i++
+	}
+
+	return fmt.Sprintf("%.2f %s", float64(bytes), sizes[i])
+}
+
 // Write writes p to the WriteCounter and updates the total number of bytes
 // written.
 func (wc *WriteCounter) Write(p []byte) (int, error) {
@@ -53,7 +67,7 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 		wc.Last = time.Now()
 		log.Printf(
 			"Downloading %s... %s / %s completed.",
-			wc.Path, humanize.Bytes(wc.Total), humanize.Bytes(wc.Size),
+			wc.Path, humanizeBytes(wc.Total), humanizeBytes(wc.Size),
 		)
 	}
 	return n, nil
@@ -476,7 +490,7 @@ func ResolveResources(
 					log.Printf(
 						"Downloaded %s/%s... "+
 							"%s completed.", uri, alias,
-						humanize.Bytes(uint64(bytesDownloaded)),
+						humanizeBytes(uint64(bytesDownloaded)),
 					)
 				}
 			}
@@ -706,7 +720,7 @@ func ResolveResources(
 				// Print size of shard
 				log.Printf(
 					"Remote size of shard %s is %s\n", shardPath,
-					humanize.Bytes(uint64(rsrcSize)),
+					humanizeBytes(uint64(rsrcSize)),
 				)
 
 				// Check if shard exists locally
@@ -779,7 +793,7 @@ func ResolveResources(
 					log.Printf(
 						"Downloaded %s/%s... "+
 							"%s completed.", uri, shardPath,
-						humanize.Bytes(uint64(bytesDownloaded)),
+						humanizeBytes(uint64(bytesDownloaded)),
 					)
 				}
 
@@ -794,7 +808,7 @@ func ResolveResources(
 					log.Printf(
 						"Downloaded %s/%s... "+
 							"%s completed.", uri, shardPath,
-						humanize.Bytes(uint64(bytesDownloaded)),
+						humanizeBytes(uint64(bytesDownloaded)),
 					)
 				}
 
@@ -817,7 +831,7 @@ func ResolveResources(
 				log.Printf(
 					"Shard %s downloaded correctly, size is %s\n",
 					shardPath,
-					humanize.Bytes(uint64(localShardInfo.Size())),
+					humanizeBytes(uint64(localShardInfo.Size())),
 				)
 
 			}

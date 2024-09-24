@@ -20,6 +20,14 @@ func GetEmbeddedResource(path string) *ResourceEntry {
 	return &ResourceEntry{resourceWrapper, &resourceBytes}
 }
 
+func GetEmbeddedFile(path string) []byte {
+	resourceBytes, err := ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return resourceBytes
+}
+
 // EmbeddedDirExists
 // Returns true if the given directory is embedded in the binary, otherwise
 // false and an error.
