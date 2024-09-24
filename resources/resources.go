@@ -83,17 +83,6 @@ func EmbeddedDirExists(path string) (bool, error) {
 		return true, nil
 	}
 }
-func PrintAllDirs() (string, error) {
-	dirs, err := f.ReadDir("data")
-	if err != nil {
-		return "", err
-	}
-	var dirNames string
-	for _, dir := range dirs {
-		dirNames += dir.Name() + "\n"
-	}
-	return dirNames, nil
-}
 
 // FetchHTTP
 // Fetch a resource from a remote HTTP server with bearer token auth.
