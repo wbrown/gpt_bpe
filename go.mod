@@ -12,6 +12,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/gopherjs/gopherjs v1.19.0-beta1
 	github.com/jdkato/prose/v2 v2.0.0
+	github.com/pkg/errors v0.9.1
 )
 
 require (
@@ -29,7 +30,7 @@ require (
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1
 	golang.org/x/sys v0.14.0 // indirect
-	gonum.org/v1/gonum v0.11.0
+	gonum.org/v1/gonum v0.11.0 // indirect
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 )
