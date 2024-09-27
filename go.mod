@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe
 
-go 1.19.13
+go 1.19
 
 require (
 	github.com/edsrzf/mmap-go v1.1.0
@@ -29,7 +29,7 @@ require (
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1
 	golang.org/x/sys v0.14.0 // indirect
-	gonum.org/v1/gonum v0.15.0 // indirect
+	gonum.org/v1/gonum v0.11.0
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 )
