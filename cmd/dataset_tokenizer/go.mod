@@ -12,6 +12,11 @@ require (
 )
 
 require (
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rogpeppe/go-internal v1.13.1 // indirect
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -24,9 +29,9 @@ require (
 	github.com/mingrammer/commonregex v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1 // indirect
-	golang.org/x/sys v0.14.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
-	gonum.org/v1/gonum v0.11.0
+	gonum.org/v1/gonum v0.11.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
