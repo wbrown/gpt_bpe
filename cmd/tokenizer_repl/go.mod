@@ -1,6 +1,6 @@
 module github.com/wbrown/gpt_bpe/cmd/tokenizer_repl
 
-go 1.19.3
+go 1.19
 
 replace github.com/wbrown/gpt_bpe => ../../
 
@@ -18,7 +18,7 @@ require (
 	github.com/vikesh-raj/go-sentencepiece-encoder v1.1.1 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
-	gonum.org/v1/gonum v0.15.0 // indirect
+	gonum.org/v1/gonum v0.11.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 )
