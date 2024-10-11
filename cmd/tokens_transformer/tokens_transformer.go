@@ -115,7 +115,7 @@ func main() {
 			encoded = &padded
 		}
 		// write encoded context to output file
-		bytesToWrite := encoded.ToBin(false)
+		bytesToWrite, _ := encoded.ToBin(false)
 		bytesWritten, writeErr := outputFileHandle.Write(*bytesToWrite)
 
 		if writeErr != nil {
