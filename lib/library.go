@@ -55,11 +55,11 @@ func tokenizeBuffer(vocabIdStr *C.char, buf *C.char, sz C.size_t) C.Tokens {
 		encoder = tokenizers[tokenizerId]
 	}
 	goBuf := createBuffer(unsafe.Pointer(buf), int(sz))
-	encoded := *encoder.EncodeBuffer(goBuf)
-	tokensArr := C.CBytes(encoded)
+	encoded, tokenCount := encoder.EncodeBuffer(goBuf)
+	tokensArr := C.CBytes(*encoded)
 	tokens := C.Tokens{
 		tokens: (*C.uint32_t)(tokensArr),
-		len:    (C.size_t)(len(encoded) / 2),
+		len:    (C.size_t)(tokenCount),
 	}
 	return tokens
 }

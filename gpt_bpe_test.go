@@ -514,7 +514,7 @@ func BenchmarkGPTEncoder_Encode(b *testing.B) {
 func BenchmarkGPTEncoder_EncodeBuffer(b *testing.B) {
 	corpusBytes := []byte(corpus)
 	start := time.Now()
-	tokenCt := len(*gpt2Encoder.EncodeBuffer(&corpusBytes)) / 2
+	_, tokenCt := gpt2Encoder.EncodeBuffer(&corpusBytes)
 	duration := time.Since(start)
 	b.Logf(
 		"%v bytes into %v tokens over %v",
