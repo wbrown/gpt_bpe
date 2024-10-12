@@ -758,11 +758,14 @@ func (tt TextsTokenizer) handleExclusions(
 func (tt TextsTokenizer) TokenizeTexts(
 	texts chan namedRuneReader,
 	indexPath string,
+	tokenizerPtr *gpt_bpe.GPTEncoder,
 ) (chan gpt_bpe.Tokens, error) {
-	tokenizerPtr, tokErr := tt.InitTokenizer()
-
-	if tokErr != nil {
-		return nil, tokErr
+	var tokErr error
+	if tokenizerPtr == nil {
+		tokenizerPtr, tokErr = tt.InitTokenizer()
+		if tokErr != nil {
+			return nil, tokErr
+		}
 	}
 	tokenizer := *tokenizerPtr
 	var endOfText gpt_bpe.Token
@@ -853,11 +856,14 @@ func (tt TextsTokenizer) TokenizeTexts(
 // that returns tokenized contexts that are fixed and padded out to
 // `contextSize`.
 func (tt TextsTokenizer) TokenizeTextsToContexts(
-	texts chan namedRuneReader,
+	texts chan namedRuneReader, tokenizerPtr *gpt_bpe.GPTEncoder,
 ) (chan gpt_bpe.Tokens, error) {
-	tokenizerPtr, tokErr := tt.InitTokenizer()
-	if tokErr != nil {
-		return nil, tokErr
+	var tokErr error
+	if tokenizerPtr == nil {
+		tokenizerPtr, tokErr = tt.InitTokenizer()
+		if tokErr != nil {
+			return nil, tokErr
+		}
 	}
 	tokenizer := *tokenizerPtr
 	var padToken, endOfText gpt_bpe.Token
@@ -1116,15 +1122,22 @@ func WriteContexts(
 	sampling int,
 	shuffle bool,
 	enforceUint32 bool,
+	showContexts bool,
 ) (int, error) {
 	totalTokens := 0
-	var useUint32 bool
-	// We only use uint32 if we're enforcing it and vocab size is greater than
-	// 65536.
-	if encoder != nil {
-		if enforceUint32 && len(encoder.Encoder) > 65536 {
+	useUint32 := enforceUint32
+	// Use uint32 if explicitly requested or if the vocab size is greater than 65536.
+	if !useUint32 {
+		if encoder == nil {
+			return 0, fmt.Errorf("WriteContexts called with unknown encoder; cannot determine output byte width")
+		} else if len(encoder.Encoder) > 65536 {
 			useUint32 = true
+			log.Println("warning: tokenizer vocab too large for 16-bit, outputting as 32-bit")
 		}
+	}
+	if showContexts && encoder == nil {
+		showContexts = false
+		log.Println("warning: no encoder info, cannot show contexts")
 	}
 
 	// create file AND filepath if not exists
@@ -1158,6 +1171,11 @@ func WriteContexts(
 				doKeepSampling := sampling == 100 || (samplingIdx%lcd < skipEveryX)
 				if doKeepSampling {
 					sampledContexts <- context
+					if showContexts {
+						fmt.Println(len(context))
+						fmt.Println("======================================")
+						fmt.Println(encoder.Decode(&context))
+					}
 				}
 				samplingIdx += 1
 			}
@@ -1187,7 +1205,10 @@ func WriteContexts(
 		if !ok {
 			break
 		}
-		binContext := context.ToBin(useUint32)
+		binContext, err := context.ToBin(useUint32)
+		if err != nil {
+			return totalTokens, err
+		}
 		// We keep track of the final file position
 		if endpos == 0 {
 			// On the first context, we discern the context size and make the
@@ -1421,7 +1442,7 @@ func main() {
 	)
 	enforceUint32 := flag.Bool(
 		"uint32_enforce", false,
-		"enforce uint32 tokenization if needed (vocab size > 65535)",
+		"output tokens as uint32 instead of uint16 (required for vocabs with over 2^16 tokens)",
 	)
 
 	flag.Parse()
@@ -1513,7 +1534,9 @@ func main() {
 			)
 		}
 	}
-	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+
+	encoder, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
 		log.Fatal(tokErr)
 	}
 
@@ -1591,13 +1614,19 @@ func main() {
 				contexts, tokErr = textsTokenizer.TokenizeTexts(
 					textReaders,
 					indexFilePath,
+					encoder,
 				)
 				if tokErr != nil {
 					log.Fatal(tokErr)
 				}
 				total, writeErr := WriteContexts(
-					outputFilePath, contexts,
-					nil, sampling, false, *enforceUint32,
+					outputFilePath,
+					contexts,
+					encoder,
+					sampling,
+					false,
+					*enforceUint32,
+					*showContexts,
 				)
 				if writeErr != nil {
 					log.Fatal(writeErr)
@@ -1611,20 +1640,20 @@ func main() {
 		var contexts chan gpt_bpe.Tokens
 		var tokErr error
 		contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
-			textReaders,
+			textReaders, encoder,
 		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		var enc *gpt_bpe.GPTEncoder
-		if *showContexts {
-			enc, _ = textsTokenizer.InitTokenizer()
-		}
 		var writeErr error
 		numTokens, writeErr = WriteContexts(
-			*outputFile, contexts, enc,
+			*outputFile,
+			contexts,
+			encoder,
 			sampling,
-			*reorderPaths == "shuffle", *enforceUint32,
+			*reorderPaths == "shuffle",
+			*enforceUint32,
+			*showContexts,
 		)
 		if writeErr != nil {
 			log.Fatal(writeErr)
