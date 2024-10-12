@@ -553,7 +553,7 @@ func ResolveResources(
 					)
 				}
 				log.Printf(
-					"Added %s to resources via sentancepiece conversion\n",
+					"Added %s to resources via sentencepiece conversion\n",
 					f.Name(),
 				)
 			}
