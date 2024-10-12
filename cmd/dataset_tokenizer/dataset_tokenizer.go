@@ -631,11 +631,17 @@ func getAndCheckToken(
 	s = strings.ReplaceAll(s, "\\n", "\n")
 	token := t.Get(s)
 	if token == nil {
-		tokens := t.Encode(&s)
-		if len(*tokens) != 1 {
-			return 0, fmt.Errorf("'%s' is not a valid token for %s", s, id)
+		tokens := *t.Encode(&s)
+		// Also allow a single "real" token surrounded by an EosToken and/or a BosToken
+		if len(tokens) == 1 ||
+			len(tokens) == 2 && tokens[1] == t.EosToken && tokens[0] != t.BosToken {
+			return tokens[0], nil
+		} else if len(tokens) == 3 &&
+			tokens[0] == t.BosToken && tokens[2] == t.EosToken ||
+			len(tokens) == 2 && tokens[0] == t.BosToken && tokens[1] != t.EosToken {
+			return tokens[1], nil
 		} else {
-			return (*tokens)[0], nil
+			return 0, fmt.Errorf("'%s' is not a valid token for %s", s, id)
 		}
 	} else {
 		return *token, nil
