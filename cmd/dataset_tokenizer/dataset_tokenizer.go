@@ -900,7 +900,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 
 	var boundary gpt_bpe.Token
 	if tt.Boundary == "" {
-		boundary = 65535
+		boundary = 0xFFFFFFFF
 	} else {
 		var boundaryErr error
 		boundary, boundaryErr = getAndCheckToken(
@@ -1058,7 +1058,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					// We were given a hard index to use as the chunk boundary,
 					// and it may not be a complete unicode character, so we
 					// need to align it to a valid unicode character.
-					if boundary == 65535 && doUnitrim {
+					if boundary == 0xFFFFFFFF && doUnitrim {
 						// Ensure that our next chunk is aligned to valid
 						// unicode.
 						_, offset := tokenizer.AlignAndSizeTokens(
