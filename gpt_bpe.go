@@ -1335,9 +1335,14 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
-func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
+func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte, useUint32 bool) (text string) {
 	// First convert our bytearray into uint32 `Token` array.
-	tokens := types.TokensFromBin(encoded)
+	var tokens *Tokens
+	if useUint32 {
+		tokens = types.TokensFromBin32(encoded)
+	} else {
+		tokens = types.TokensFromBin(encoded)
+	}
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)
 }
