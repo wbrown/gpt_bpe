@@ -228,9 +228,7 @@ func TestEncodeText1(t *testing.T) {
 	textsTokenizer.BoundaryBegin = false
 	var enc *gpt_bpe.GPTEncoder
 
-	reorderPaths := ""
 	sampling := 100
-	enforceUint32 := true // Only if needed
 	outputFile := "base.chunk"
 
 	enc, tokErr := textsTokenizer.InitTokenizer()
@@ -252,14 +250,19 @@ func TestEncodeText1(t *testing.T) {
 	}()
 
 	begin := time.Now()
-	contexts, tokErr := textsTokenizer.TokenizeTexts(reader, "./test")
+	contexts, tokErr := textsTokenizer.TokenizeTexts(reader, "./test", enc)
 	if tokErr != nil {
 		log.Fatal("Error tokenizing texts: ", tokErr)
 	}
 
 	total, writeErr := WriteContexts(
-		outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
-		enforceUint32,
+		outputFile,
+		contexts,
+		enc,
+		sampling,
+		false,
+		false,
+		false,
 	)
 	if writeErr != nil {
 		log.Fatal("Error writing contexts: ", writeErr)
@@ -310,7 +313,8 @@ func TestSampling50(t *testing.T) {
 	sampling := 100
 	outputFile := "base.chunk"
 
-	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+	enc, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
 		log.Fatal(tokErr)
 	}
 
@@ -323,18 +327,22 @@ func TestSampling50(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "./test",
+			texts, "./test", enc,
 		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
 
-		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
 		total, writeErr := WriteContexts(
-			outputFile, contexts, enc, sampling,
-			reorderPaths == "shuffle", false,
+			outputFile,
+			contexts,
+			enc,
+			sampling,
+			false,
+			false,
+			false,
 		)
 		all1 += total
 		if writeErr != nil {
@@ -361,7 +369,8 @@ func TestSampling50(t *testing.T) {
 	sampling = 50
 	outputFile = "samp50.chunk"
 
-	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+	enc, tokErr = textsTokenizer.InitTokenizer()
+	if tokErr != nil {
 		log.Fatal(tokErr)
 	}
 
@@ -374,16 +383,20 @@ func TestSampling50(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "./test",
+			texts2, "./test", enc,
 		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
 		total2, writeErr := WriteContexts(
-			outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
+			outputFile,
+			contexts,
+			enc,
+			sampling,
+			reorderPaths == "shuffle",
+			false,
 			false,
 		)
 		all2 += total2
@@ -430,7 +443,8 @@ func TestShuffle(t *testing.T) {
 	sampling := 100
 	outputFile := "noshuffle.chunk"
 
-	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+	enc, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
 		log.Fatal(tokErr)
 	}
 
@@ -442,16 +456,20 @@ func TestShuffle(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts, tokErr := textsTokenizer.TokenizeTexts(
-			texts, "./test",
+			texts, "./test", enc,
 		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		var enc *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
 		total, writeErr := WriteContexts(
-			outputFile, contexts, enc, sampling, reorderPaths == "shuffle",
+			outputFile,
+			contexts,
+			enc,
+			sampling,
+			false,
+			false,
 			false,
 		)
 		all1 += total
@@ -479,7 +497,8 @@ func TestShuffle(t *testing.T) {
 	sampling = 100
 	outputFile = "shuffle.chunk"
 
-	if _, tokErr := textsTokenizer.InitTokenizer(); tokErr != nil {
+	enc2, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
 		log.Fatal(tokErr)
 	}
 
@@ -491,16 +510,20 @@ func TestShuffle(t *testing.T) {
 	} else {
 		begin := time.Now()
 		contexts2, tokErr := textsTokenizer.TokenizeTexts(
-			texts2, "./test",
+			texts2, "./test", enc2,
 		)
 		if tokErr != nil {
 			log.Fatal(tokErr)
 		}
-		var enc2 *gpt_bpe.GPTEncoder
 		// *showContexts = true
 
 		total2, writeErr := WriteContexts(
-			outputFile, contexts2, enc2, sampling, reorderPaths == "shuffle",
+			outputFile,
+			contexts2,
+			enc2,
+			sampling,
+			true,
+			false,
 			false,
 		)
 		all2 += total2
