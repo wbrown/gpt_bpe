@@ -6,11 +6,13 @@ package main
 import "C"
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"time"
 	"unsafe"
 
 	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 var tokenizers map[string]*gpt_bpe.GPTEncoder
@@ -53,18 +55,18 @@ func tokenizeBuffer(vocabIdStr *C.char, buf *C.char, sz C.size_t) C.Tokens {
 		encoder = tokenizers[tokenizerId]
 	}
 	goBuf := createBuffer(unsafe.Pointer(buf), int(sz))
-	encoded := *encoder.EncodeBuffer(goBuf)
-	tokensArr := C.CBytes(encoded)
+	encoded, tokenCount := encoder.EncodeBuffer(goBuf)
+	tokensArr := C.CBytes(*encoded)
 	tokens := C.Tokens{
 		tokens: (*C.uint32_t)(tokensArr),
-		len:    (C.size_t)(len(encoded) / 2),
+		len:    (C.size_t)(tokenCount),
 	}
 	return tokens
 }
 
 // tokenize accepts a vocabulary and text as a C string, and returns a C.Tokens
-// that contains a malloc'ed array of uint32_t tokens along with the number of
-// tokens.
+// that contains a malloc'ed array of little-endian uint32_t tokens along with
+// the number of tokens.
 //
 //export tokenize
 func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
@@ -78,7 +80,12 @@ func tokenize(vocabIdStr *C.char, str *C.char) C.Tokens {
 	fmt.Printf("input: %s\n", s)
 	encoded := *encoder.Encode(&s)
 	fmt.Printf("Tokens: %v\n", encoded)
-	tokensArr := C.CBytes(*encoded.ToBin(false))
+	encodedBinary, err := encoded.ToBin(true)
+	if err == nil || encodedBinary == nil {
+		_, _ = fmt.Fprintf(os.Stderr, "tokenize: failed to write tokens as uint32_t")
+		return C.Tokens{tokens: nil, len: 0}
+	}
+	tokensArr := C.CBytes(*encodedBinary)
 	tokens := C.Tokens{
 		tokens: (*C.uint32_t)(tokensArr),
 		len:    C.size_t(len(encoded)),
@@ -101,8 +108,8 @@ func decode(vocabIdStr *C.char, tokens C.Tokens) *C.char {
 		initTokenizer(vocabIdStr)
 		encoder = tokenizers[tokenizerId]
 	}
-	tokensArr := C.GoBytes(unsafe.Pointer(tokens.tokens), C.int(tokens.len)*2)
-	goTokens := gpt_bpe.TokensFromBin(&tokensArr)
+	tokensArr := C.GoBytes(unsafe.Pointer(tokens.tokens), C.int(tokens.len)*4)
+	goTokens := types.TokensFromBin32(&tokensArr)
 	fmt.Printf("goTokens: %v\n", goTokens)
 	decoded := encoder.Decode(goTokens)
 	fmt.Printf("Decoded: %s\n", decoded)

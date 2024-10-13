@@ -3,9 +3,10 @@ package types
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
-func (tokens *Tokens) ToBin(useUint32 bool) *[]byte {
+func (tokens *Tokens) ToBin(useUint32 bool) (*[]byte, error) {
 	if useUint32 {
 		return tokens.ToBinUint32()
 	} else {
@@ -13,43 +14,50 @@ func (tokens *Tokens) ToBin(useUint32 bool) *[]byte {
 	}
 }
 
-func (tokens *Tokens) ToBinUint16() *[]byte {
-	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*TokenSize))
+func (tokens *Tokens) ToBinUint16() (*[]byte, error) {
+	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*2))
 	for idx := range *tokens {
 		bs := (*tokens)[idx]
-		binary.Write(buf, binary.LittleEndian, uint16(bs))
+		if bs > 65535 {
+			return nil, fmt.Errorf("integer overflow: tried to write token ID %d as unsigned 16-bit", bs)
+		}
+		err := binary.Write(buf, binary.LittleEndian, uint16(bs))
+		if err != nil {
+			return nil, err
+		}
 	}
 	byt := buf.Bytes()
-	return &byt
+	return &byt, nil
 }
 
-func (tokens *Tokens) ToBinUint32() *[]byte {
-	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*TokenSize))
+func (tokens *Tokens) ToBinUint32() (*[]byte, error) {
+	buf := bytes.NewBuffer(make([]byte, 0, len(*tokens)*4))
 	for idx := range *tokens {
 		bs := (*tokens)[idx]
-		binary.Write(buf, binary.LittleEndian, uint32(bs))
+		err := binary.Write(buf, binary.LittleEndian, uint32(bs))
+		if err != nil {
+			return nil, err
+		}
 	}
 	byt := buf.Bytes()
-	return &byt
+	return &byt, nil
 }
 
 func TokensFromBin(bin *[]byte) *Tokens {
-	type tokenuint16 uint16
-	tokens := make(Tokens, 0)
+	tokens := make(Tokens, 0, len(*bin)/2)
 	buf := bytes.NewReader(*bin)
 	for {
-		var token tokenuint16
+		var token uint16
 		if err := binary.Read(buf, binary.LittleEndian, &token); err != nil {
 			break
 		}
-		tu32 := Token(uint16(token))
-		tokens = append(tokens, tu32)
+		tokens = append(tokens, Token(token))
 	}
 	return &tokens
 }
 
 func TokensFromBin32(bin *[]byte) *Tokens {
-	tokens := make(Tokens, 0)
+	tokens := make(Tokens, 0, len(*bin)/4)
 	buf := bytes.NewReader(*bin)
 	for {
 		var token Token

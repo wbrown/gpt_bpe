@@ -20,6 +20,10 @@ func main() {
 		"show contexts as they are retokenized")
 	unitrimBool := flag.Bool("no_unitrim", false,
 		"do not trim to valid unicode retokenized contexts")
+	in32 := flag.Bool("in32", false,
+		"force input tokens to be read as 32-bit")
+	out32 := flag.Bool("out32", false,
+		"force output tokens to be written as 32-bit")
 	inputFile := flag.String("input", "",
 		"input file to retokenize")
 	outputFile := flag.String("output", "retokenized.tokens",
@@ -53,14 +57,30 @@ func main() {
 	if _, err := os.Stat(*inputFile); os.IsNotExist(err) {
 		log.Fatal("Input file does not exist")
 	}
-	inputTokenizer, inputErr := gpt_bpe.NewEncoder(*inputTokenizerId)
+
+	// Check if it's an internal reference. If not, it's a file path.
+	inputTokenizer, inputErr := gpt_bpe.NewEncoder(
+		*inputTokenizerId + "-tokenizer")
 	if inputErr != nil {
-		log.Fatal(inputErr)
+		// Fall back to path-like.
+		inputTokenizer, inputErr = gpt_bpe.NewEncoder(*inputTokenizerId)
+		if inputErr != nil {
+			log.Fatal(inputErr)
+		}
 	}
-	outputTokenizer, outputErr := gpt_bpe.NewEncoder(*outputTokenizerId)
+	input32Bit := *in32 || len(inputTokenizer.Encoder) > 65536
+
+	outputTokenizer, outputErr := gpt_bpe.NewEncoder(
+		*outputTokenizerId + "-tokenizer")
 	if outputErr != nil {
-		log.Fatal(outputErr)
+		// Fall back to path-like.
+		outputTokenizer, outputErr = gpt_bpe.NewEncoder(*outputTokenizerId)
+		if outputErr != nil {
+			log.Fatal(outputErr)
+		}
 	}
+	output32Bit := *out32 || len(outputTokenizer.Encoder) > 65536
+
 	// open input file
 	inputFileHandle, inputOpenErr := os.Open(*inputFile)
 	if inputOpenErr != nil {
@@ -94,8 +114,13 @@ func main() {
 			break
 		}
 
+		if input32Bit {
+			log.Println("Reading as 32-bit")
+		} else {
+			log.Println("Reading as 16-bit")
+		}
 		context := contextBuffer[:bytesRead]
-		decoded := inputTokenizer.DecodeBuffer(&context)
+		decoded := inputTokenizer.DecodeBuffer(&context, input32Bit)
 		encoded := outputTokenizer.Encode(&decoded)
 		// trim encoded tokens to context size
 		if len(*encoded) > *contextSize {
@@ -115,7 +140,12 @@ func main() {
 			encoded = &padded
 		}
 		// write encoded context to output file
-		bytesToWrite := encoded.ToBin(false)
+		if output32Bit {
+			log.Println("Writing as 32-bit")
+		} else {
+			log.Println("Writing as 16-bit")
+		}
+		bytesToWrite, _ := encoded.ToBin(output32Bit)
 		bytesWritten, writeErr := outputFileHandle.Write(*bytesToWrite)
 
 		if writeErr != nil {

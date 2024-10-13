@@ -1216,19 +1216,21 @@ func (encoder *GPTEncoder) EncodeReader(reader io.RuneReader) *Tokens {
 
 // EncodeBuffer takes a byte array and encodes it into Tokens in another
 // byte array.
-func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) *[]byte {
+func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) (*[]byte, uint64) {
 	runeReader := bytes.NewReader(*buffer)
 	nextTokens := encoder.StreamingEncode(runeReader)
 	buf := bytes.NewBuffer(make([]byte, 0, 4096))
+	var count uint64 = 0
 	for {
 		tokens := nextTokens(2048)
 		if tokens == nil {
 			break
 		}
 		_ = binary.Write(buf, binary.LittleEndian, tokens)
+		count += uint64(len(*tokens))
 	}
 	bufBytes := buf.Bytes()
-	return &bufBytes
+	return &bufBytes, count
 }
 
 // Encode encodes a string into a sequence of tokens.
@@ -1333,9 +1335,14 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
-func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte) (text string) {
+func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte, useUint32 bool) (text string) {
 	// First convert our bytearray into uint32 `Token` array.
-	tokens := types.TokensFromBin(encoded)
+	var tokens *Tokens
+	if useUint32 {
+		tokens = types.TokensFromBin32(encoded)
+	} else {
+		tokens = types.TokensFromBin(encoded)
+	}
 	// Decode our tokens into a string.
 	return encoder.Decode(tokens)
 }
