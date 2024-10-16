@@ -1,0 +1,43 @@
+name: Test gpt_bpe_test.go
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Go 1.19
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.19
+
+      - name: Install dependencies
+        run: go get github.com/wbrown/gpt_bpe/resources
+
+      - name: Build
+        run: go build
+
+      - name: Test
+        run: go test -json -race -shuffle=on -count=1 -v github.com/wbrown/gpt_bpe >> test_results.json
+
+      - name: Output to Markdown
+        run: |
+          jq -r ' \
+          . as $line | \
+          [$line.Time, $line.Action, $line.Package, ($line.Test // "N/A"), ($line.Output // "N/A")] | \
+          @csv' test_results.json | \
+          sed 's/,/|/g; s/^/|/; s/$/|/'| \
+          sed 's/|\|"|/|/' | \
+          sed 's/^|"|$//g' | \
+          sed '/^[[:space:]]*$/d' | \
+          awk 'BEGIN {print "| Time | Action | Package | Test | Output |"; print "|------|--------|---------|------|--------|"} {print $0}' > output.md
+
+      - name: Output to Job Summary
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          cat output.md >> $GITHUB_STEP_SUMMARY
