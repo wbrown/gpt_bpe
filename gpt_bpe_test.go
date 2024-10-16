@@ -360,7 +360,7 @@ func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
 	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compressed bytes/sec",
+		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
 	)
 	b.ReportMetric(float64(numBytes), "bytes")
 }
@@ -396,7 +396,7 @@ func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
 	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compressed bytes/sec",
+		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
 	)
 	b.ReportMetric(float64(numBytes), "bytes")
 }
@@ -436,7 +436,7 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
 	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compressed bytes/sec",
+		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
 	)
 	b.ReportMetric(float64(numBytes), "bytes")
 	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
