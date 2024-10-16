@@ -13,6 +13,7 @@ require (
 	github.com/gopherjs/gopherjs v1.19.0-beta1
 	github.com/jdkato/prose/v2 v2.0.0
 	github.com/pkg/errors v0.9.1
+	github.com/ulikunitz/xz v0.5.12
 )
 
 require (
