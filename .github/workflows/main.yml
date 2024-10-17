@@ -2,7 +2,7 @@ name: Publish
 
 on:
   workflow_run:
-    workflows: ["TestGPT_BPE.yml"]
+    workflows: ["Test gpt_bpe_test.go"]
     types:
       - completed
 
