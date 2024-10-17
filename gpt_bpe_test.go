@@ -1574,7 +1574,7 @@ func TestModelDownloadFairseq(t *testing.T) {
 	// vocab, config. merges, pytorch_model
 
 	// Check for additional metadata files
-	metaFiles := []string{"vocab.json, config.json", "pytorch_model.bin", "merges.txt"}
+	metaFiles := []string{"vocab.json", "config.json", "pytorch_model.bin", "merges.txt"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
