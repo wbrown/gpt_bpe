@@ -1471,7 +1471,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	// the vocab.json and merges.txt files are stored in the
 	// tokenizer.json file. We want to check if we are able to
 	// download the model and extract the vocab.json and merges.txt
-	modelId := "georgesung/llama2_7b_chat_uncensored"
+	modelId := "Maykeye/TinyLLama-v0"
 	destPath := "./TestModelDownloadLlama"
 	err := downloadModel(modelId, destPath)
 	if err != nil {
