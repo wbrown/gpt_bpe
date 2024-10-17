@@ -1,13 +1,16 @@
 name: Publish
 
 on:
-  push:
-    branches: ["main"]
+  workflow_run:
+    workflows: ["TestGPT_BPE.yml"]
+    types:
+      - completed
 
 jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success'  && github.event.workflow_run.head_branch == 'main' }}
     steps:
       - uses: actions/setup-go@v2
         with:
