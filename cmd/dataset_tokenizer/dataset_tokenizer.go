@@ -538,12 +538,15 @@ func ReadTexts(
 						idx := 0
 						for {
 							jsonObjectMap, jErr := GetJsonObject(jsonlReader)
-							if jErr != nil {
+							if jErr == io.EOF {
+								break
+							} else if jErr != nil {
 								log.Printf(
 									"JSONL object %d in %s is not"+
 										" valid JSON: %s",
 									idx, path.Path, jErr,
 								)
+								idx++
 								continue
 							}
 							// Extract the text field.
