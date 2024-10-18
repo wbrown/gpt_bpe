@@ -1697,9 +1697,11 @@ func main() {
 				}
 				duration := time.Since(begin).Seconds()
 				log.Printf(
-					"%d tokens in %0.2fs, %0.2f tokens/s, %d docs",
+					"%d tokens in %0.2fs, %0.2f tokens/s, %d docs, avg %0.2f tokens/doc",
 					totalTokens, duration,
-					float64(totalTokens)/duration, totalFiles,
+					float64(totalTokens)/duration,
+					totalFiles,
+					float64(totalTokens)/float64(totalFiles),
 				)
 				for i, status := range tokenizerStatuses {
 					if status != nil {

@@ -1123,7 +1123,7 @@ func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
 
-	accumulator := make(Tokens, 0, 16384)
+	accumulator := make(Tokens, 0, 131072)
 	eosReturned := false
 	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
