@@ -2,6 +2,9 @@ name: Test gpt_bpe_test.go
 
 on:
   push:
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
 
 jobs:
@@ -19,7 +22,30 @@ jobs:
       - name: Build
         run: go build -v ./
 
-      - name: Test
+      - name: Check for changes to code
+        id: check_changes_repo
+        run: |
+          changed_files=$(git diff --name-only ${{ github.event.before }})
+          if echo "$changed_files" | grep -q '^cmd/dataset_tokenizer/'; then
+            echo "Dataset Tokenizer files have changed"
+            echo "run_dataset_tests=true" >> $GITHUB_ENV
+          fi
+
+          # Other changes
+          if  echo "$changed_files" | grep -qv '^cmd/'; then
+            echo "Other files have changed"
+            echo "run_other_tests=true" >> $GITHUB_ENV
+          fi
+
+      - name: Test gpt_bpe
+        if: env.run_other_tests == 'true'
         uses: robherley/go-test-action@v0
         with:
           testArguments: ./
+
+      - name: Test dataset_tokenizer
+        if: env.run_dataset_tests == 'true'
+        uses: robherley/go-test-action@v0
+        with:
+          testArguments: ./
+          moduleDirectory: ./cmd/dataset_tokenizer
