@@ -831,7 +831,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 32)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 256)
 
 	// Our index handle.
 	indexFile, iErr := os.Create(indexPath)
@@ -852,15 +852,15 @@ func (tt TextsTokenizer) TokenizeTexts(
 				beginTokenize := time.Now()
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
-					tokenized := encodeChunk(16384)
+					tokenized := encodeChunk(131072)
 					if tokenized == nil {
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
 						tokenizerStatus.NumTokens += 1
+						tokenizerStatus.TimeTokenizing += time.Since(beginTokenize)
 						break
 					} else {
 						numTokens := len(*tokenized)
 						tokenizerStatus.NumTokens += numTokens
-						tokenizerStatus.TimeTokenizing += time.Since(beginTokenize)
 					}
 					sendBegin := time.Now()
 					tokenizedTexts <- *tokenized
