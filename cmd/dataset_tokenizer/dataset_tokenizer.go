@@ -43,8 +43,8 @@ type S3Client interface {
 }
 
 // GlobTexts
-// Given a directory path, recursively finds all `.txt` and `.jsonl` files,
-// returning a slice of PathInfo.
+// Given a directory path, recursively finds all `.txt`, `.md`, and `.jsonl`
+// files, returning a slice of PathInfo.
 func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
 	// If the path is a file, return it.
 	if stat, _ := os.Stat(dirPath); stat != nil && !stat.IsDir() {
@@ -56,20 +56,25 @@ func GlobTexts(dirPath string) (pathInfos []PathInfo, err error) {
 		}}, nil
 	}
 
-	textPaths, err := filepathx.Glob(dirPath + "/**/*.txt")
+	unfilteredPaths, err := filepathx.Glob(dirPath + "/**/")
 	if err != nil {
 		return nil, err
 	}
-	jsonlPaths, err := filepathx.Glob(dirPath + "/**/*.jsonl")
-	if err != nil {
-		return nil, err
+	filePaths := make([]string, 0)
+	// Filter out non-text files.
+	for _, filePath := range unfilteredPaths {
+		if strings.HasSuffix(filePath, ".txt") ||
+			strings.HasSuffix(filePath, ".md") ||
+			strings.HasSuffix(filePath, ".jsonl") {
+			filePaths = append(filePaths, filePath)
+		}
 	}
-	filePaths := append(textPaths, jsonlPaths...)
 
 	numMatches := len(filePaths)
 	if numMatches == 0 {
 		return nil, fmt.Errorf(
-			"%s does not contain any .txt or .jsonl files", dirPath,
+			"%s does not contain any .txt, .md, or .jsonl files",
+			dirPath,
 		)
 	}
 	pathInfos = make([]PathInfo, numMatches)
@@ -166,8 +171,8 @@ func FindNewestPath(paths []PathInfo) (
 }
 
 // FindNewestText
-// Given a directory, recursively scans and returns the path and modified time
-// for the newest `.txt` file.
+// Given a directory, recursively scans and returns the path and modified
+// time for the newest file.
 func FindNewestText(dirPath string) (
 	path *string, newest *time.Time,
 	err error,
@@ -180,8 +185,8 @@ func FindNewestText(dirPath string) (
 }
 
 // FindNewestDir
-// Given a directory, recursively scans and returns the path and modified time
-// for the directory that contains the most recent `.txt` modification.
+// Given a directory, recursively scans and returns the path and modified
+// time for the directory that contains the most recent file modification.
 func FindNewestDir(dirPath string) (
 	path *string, newest *time.Time,
 	err error,
@@ -223,7 +228,8 @@ func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
 	return nil
 }
 
-// getObjectsS3Recursively retrieves objects recursively from an S3 bucket and sends them to the objects channel.
+// getObjectsS3Recursively retrieves objects recursively from an S3 bucket
+// and sends them to the objects channel.
 func getObjectsS3Recursively(
 	svc S3Client,
 	bucketName, prefix string,
@@ -260,7 +266,8 @@ func getObjectsS3Recursively(
 	}
 }
 
-// fetchJSONLFileS3 reads a JSONL file from S3, extracts the "text" key, and return it as a string with spaces.
+// fetchJSONLFileS3 reads a JSONL file from S3, extracts the "text" key,
+// and return it as a string with spaces.
 func fetchJSONLFileS3(svc S3Client, bucketName, objectKey string) (
 	string,
 	error,
@@ -298,14 +305,18 @@ func fetchJSONLFileS3(svc S3Client, bucketName, objectKey string) (
 		// Extract the "text" field
 		textValue, ok := jsonObjectMap["text"].(string)
 		if !ok {
-			return "", fmt.Errorf("JSONL object has no 'text' field or it's not a string")
+			return "",
+				fmt.Errorf(
+					"JSONL object has no 'text' field or " +
+						"it's not a string",
+				)
 		}
 
 		// Append the text to the result
 		if firstLine {
 			firstLine = false
 		} else {
-			text.WriteString(" ") // Append a space for all lines except the first
+			text.WriteString(" ") // Append space for lines except first
 		}
 		text.WriteString(textValue)
 	}
@@ -313,7 +324,7 @@ func fetchJSONLFileS3(svc S3Client, bucketName, objectKey string) (
 	return text.String(), nil
 }
 
-// fetchTextFileS3 reads a text file from S3 and return its content as a string.
+// fetchTextFileS3 reads a text file from S3 and return its content as string
 func fetchTextFileS3(svc S3Client, bucketName, objectKey string) (
 	string,
 	error,
@@ -346,7 +357,8 @@ func fetchTextFileS3(svc S3Client, bucketName, objectKey string) (
 	return text.String(), nil
 }
 
-// removeS3Prefix splits the input into the bucket and to ensure that s3:// is present
+// removeS3Prefix splits the input into the bucket and to ensure that
+// s3:// is present
 func removeS3Prefix(input string) (
 	hasS3Prefix bool,
 	remainder string,
@@ -383,7 +395,7 @@ func ReadTextsFromS3(
 	sanitize bool,
 	numReaderThreads int,
 ) (chan namedRuneReader, error) {
-	runeReaders := make(chan namedRuneReader, 64)
+	runeReaders := make(chan namedRuneReader, 512)
 	objects := make(chan *s3.Object, 64)
 	wg := sync.WaitGroup{}
 
@@ -476,6 +488,22 @@ func ReadTextsFromS3(
 	return runeReaders, nil
 }
 
+func GetJsonObject(jsonlReader *bufio.Reader) (
+	map[string]interface{}, error,
+) {
+	jsonObject, err := jsonlReader.ReadBytes('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	var jsonObjectMap map[string]interface{}
+	if err := json.Unmarshal(jsonObject, &jsonObjectMap); err != nil {
+		return nil, err
+	}
+
+	return jsonObjectMap, nil
+}
+
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
@@ -495,7 +523,7 @@ func ReadTexts(
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 64)
+	runeReaders := make(chan namedRuneReader, 512)
 	paths := make(chan PathInfo, 64)
 	wg := sync.WaitGroup{}
 	startReader := func() {
@@ -509,22 +537,11 @@ func ReadTexts(
 						jsonlReader := bufio.NewReader(fileReader)
 						idx := 0
 						for {
-							jsonObject, rErr := jsonlReader.ReadBytes('\n')
-							if rErr != nil {
-								if rErr == io.EOF {
-									break
-								} else {
-									log.Fatal(rErr)
-								}
-							}
-							// Decode the JSON object.
-							var jsonObjectMap map[string]interface{}
-							if jErr := json.Unmarshal(
-								jsonObject,
-								&jsonObjectMap,
-							); jErr != nil {
+							jsonObjectMap, jErr := GetJsonObject(jsonlReader)
+							if jErr != nil {
 								log.Printf(
-									"JSONL object %d in %s is not valid JSON: %s",
+									"JSONL object %d in %s is not"+
+										" valid JSON: %s",
 									idx, path.Path, jErr,
 								)
 								continue
@@ -538,7 +555,11 @@ func ReadTexts(
 							if !ok {
 								log.Fatal("JSONL object text field not string")
 							}
-							subPath := fmt.Sprintf("%s[%d]", path.Path, idx)
+							subPath := fmt.Sprintf(
+								"%s[%d]",
+								path.Path,
+								idx,
+							)
 							// Create our rune reader.
 							if sanitize {
 								runeReaders <- namedRuneReader{
@@ -632,7 +653,8 @@ func getAndCheckToken(
 	token := t.Get(s)
 	if token == nil {
 		tokens := *t.Encode(&s)
-		// Also allow a single "real" token surrounded by an EosToken and/or a BosToken
+		// Also allow a single "real" token surrounded by an EosToken and/or
+		// a BosToken
 		if len(tokens) == 1 ||
 			len(tokens) == 2 && tokens[1] == t.EosToken && tokens[0] != t.BosToken {
 			return tokens[0], nil
@@ -661,6 +683,15 @@ func (tt *TextsTokenizer) InitTokenizer() (*gpt_bpe.GPTEncoder, error) {
 	}
 	if tokErr != nil {
 		return nil, tokErr
+	}
+
+	if exclErr := tt.handleExclusions(encoderPtr); exclErr != nil {
+		return nil, exclErr
+	}
+
+	if tt.SanitizeEncoding {
+		// Table is found in sanitizer.go
+		encoderPtr.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
 	}
 
 	return encoderPtr, nil
@@ -787,14 +818,6 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 
-	if exclErr := tt.handleExclusions(&tokenizer); exclErr != nil {
-		return nil, exclErr
-	}
-
-	if tt.SanitizeEncoding {
-		tokenizer.SpecialsTree.InsertReplacementsIntoRuneTree(encodingTable)
-	}
-
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 32)
 
 	// Our index handle.
@@ -804,6 +827,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	}
 
 	currOffset := 0
+	idxFormat := "{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n"
 	nextTokenized := func() {
 		for {
 			waitBegin := time.Now()
@@ -841,8 +865,10 @@ func (tt TextsTokenizer) TokenizeTexts(
 				)
 				indexFile.WriteString(
 					fmt.Sprintf(
-						"{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
-						runeReader.path, currOffset, tokenCt,
+						idxFormat,
+						runeReader.path,
+						currOffset,
+						tokenCt,
 					),
 				)
 				currOffset += tokenCt
@@ -937,7 +963,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			runeReader, more := <-texts
 			beginTs := time.Now()
 			if more {
-				wait_duration := time.Since(waitBegin)
+				waitDuration := time.Since(waitBegin)
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
 					tokenized := encodeChunk(contextSize * 8)
@@ -956,7 +982,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 							"%s tokenized in %s (%d tokens/s, %s wait)",
 							runeReader.path, roundDuration,
 							int(float64(tokenCt)/duration.Seconds()),
-							wait_duration,
+							waitDuration,
 						)
 						tokenCt = 0
 						beginTs = time.Now()
@@ -1132,13 +1158,20 @@ func WriteContexts(
 ) (int, error) {
 	totalTokens := 0
 	useUint32 := enforceUint32
-	// Use uint32 if explicitly requested or if the vocab size is greater than 65536.
+	// Use uint32 if explicitly requested or if the vocab size is greater
+	// than 65536.
 	if !useUint32 {
 		if encoder == nil {
-			return 0, fmt.Errorf("WriteContexts called with unknown encoder; cannot determine output byte width")
+			return 0, fmt.Errorf(
+				"WriteContexts called with " +
+					"unknown encoder; cannot determine output byte width",
+			)
 		} else if len(encoder.Encoder) > 65536 {
 			useUint32 = true
-			log.Println("warning: tokenizer vocab too large for 16-bit, outputting as 32-bit")
+			log.Println(
+				"warning: tokenizer vocab too large for " +
+					"16-bit, outputting as 32-bit",
+			)
 		}
 	}
 	if showContexts && encoder == nil {
@@ -1157,16 +1190,16 @@ func WriteContexts(
 	if err != nil {
 		return 0, err
 	}
-	sampledContexts := make(chan gpt_bpe.Tokens, 16)
 
-	go func() {
-		samplingIdx := 0
-		for {
-			context, ok := <-contexts
-			if !ok {
-				close(sampledContexts)
-				break
-			} else {
+	var sampledContexts chan gpt_bpe.Tokens
+
+	if sampling == 100 {
+		sampledContexts = contexts
+	} else {
+		sampledContexts = make(chan gpt_bpe.Tokens, 16)
+		go func() {
+			samplingIdx := 0
+			for context := range contexts {
 				// Ignore every `sampling` percent context (rounded to int)
 				// If sampling is 80, GCD is 20, LCD is 5, 80% of 5 is 4
 				// So we keep 4 and skip 5th
@@ -1179,14 +1212,14 @@ func WriteContexts(
 					sampledContexts <- context
 					if showContexts {
 						fmt.Println(len(context))
-						fmt.Println("======================================")
+						fmt.Println("=================================")
 						fmt.Println(encoder.Decode(&context))
 					}
 				}
 				samplingIdx += 1
 			}
-		}
-	}()
+		}()
+	}
 
 	endpos := 0
 	var buf []byte
@@ -1206,11 +1239,7 @@ func WriteContexts(
 		end          int
 	}
 	idxes := make([]paddingTuple, 0)
-	for {
-		context, ok := <-sampledContexts
-		if !ok {
-			break
-		}
+	for context := range sampledContexts {
 		binContext, err := context.ToBin(useUint32)
 		if err != nil {
 			return totalTokens, err
@@ -1221,15 +1250,15 @@ func WriteContexts(
 			// appropriately sized buffer
 			contextSize = len(*binContext)
 			buf = make([]byte, contextSize)
-
 		}
 
-		// We select a random position in the buffer that is a multiple of the
-		// context size
+		// We select a random position in the buffer that is a multiple of
+		// the context size
 		if endpos == 0 {
 			target = 0
 		} else {
-			target = int64(rand.Intn((endpos)/contextSize)) * int64(contextSize)
+			contextEnd := endpos / contextSize
+			target = int64(rand.Intn(contextEnd)) * int64(contextSize)
 		}
 
 		// If shuffling, we store the context found at the target position in
@@ -1242,7 +1271,7 @@ func WriteContexts(
 			}
 
 		} else if shuffle {
-			//write the buffer to the end of the file
+			// Write the buffer to the end of the file
 			if _, err := outFile.Write(*binContext); err != nil {
 				return totalTokens, err
 			}
@@ -1271,7 +1300,7 @@ func WriteContexts(
 						contextEnd: int(target) + contextSize},
 				)
 			}
-			// Overwrite binContext to the location of the context we just read
+			// Overwrite binContext to location of the context we just read
 			_, err := outFile.WriteAt(*binContext, target)
 			if err != nil {
 				return totalTokens, err
@@ -1283,7 +1312,7 @@ func WriteContexts(
 				return totalTokens, err
 			}
 		} else if !shuffle {
-			// Else, we just write the context to the end of the file as usual
+			// Else, we just write the context to the end of the file
 			if _, err := outFile.Write(*binContext); err != nil {
 				return totalTokens, err
 			}
@@ -1291,16 +1320,17 @@ func WriteContexts(
 
 		totalTokens += len(context)
 		endpos += len(*binContext)
-
-		// Break if EOF
-		if len(context) <= 1 {
-			break
-		}
 	}
 
+	// TODO: This is unnecessary, as golang has a Truncate method
 	// Write new file with padding removed
 	if shuffle {
-		newFilePath := strings.Replace(outPath, ".chunk", ".shuf.chunk", 1)
+		newFilePath := strings.Replace(
+			outPath,
+			".chunk",
+			".shuf.chunk",
+			1,
+		)
 		newFile, err := os.OpenFile(
 			newFilePath, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755,
 		)
@@ -1330,10 +1360,12 @@ func WriteContexts(
 			for _, idx := range idxes {
 				if idx.contextStart == thisContext.contextStart &&
 					idx.contextEnd == thisContext.contextEnd {
-					if idx.start < thisContext.start || thisContext.start == 0 {
+					if idx.start < thisContext.start ||
+						thisContext.start == 0 {
 						thisContext.start = idx.start
 					}
-					if idx.end > thisContext.end || thisContext.end == 0 {
+					if idx.end > thisContext.end ||
+						thisContext.end == 0 {
 						thisContext.end = idx.end
 					}
 				}
@@ -1360,7 +1392,7 @@ func main() {
 	tokenizerId := flag.String(
 		"tokenizer", "gpt2",
 		"tokenizer to use [gpt2, pile, nerdstash_v1, "+
-			"nerdstash_v2, huggingface-id]",
+			"nerdstash_v2, llama, llama3, mistral, huggingface-id]",
 	)
 	contextSize := flag.Int("context", 2048, "context size")
 	showContexts := flag.Bool(
@@ -1415,11 +1447,13 @@ func main() {
 	reorderPaths := flag.String(
 		"reorder", "",
 		"reorder input files to specification [size_ascending, "+
-			"size_descending, name_ascending, name_descending, random, shuffle, none]",
+			"size_descending, name_ascending, name_descending, random, "+
+			"shuffle, none]",
 	)
 	sampling_str := flag.String(
-		"sampling", "100", "a integer value from 0-100 "+
-			"which tells the tokenizer how many chunks to discard in %, 60 keeps 60%% chunks",
+		"sampling", "100", "a integer value from "+
+			"0-100 which tells the tokenizer how many chunks to discard in"+
+			" %, 60 keeps 60%% chunks",
 	)
 	streaming_encode := flag.Bool(
 		"streaming_encode", false,
@@ -1443,12 +1477,14 @@ func main() {
 		false, "disable sanitizing of misencoding",
 	)
 	s3Endpoint := flag.String(
-		"object_storage_endpoint", "https://object.las1.coreweave.com",
+		"object_storage_endpoint",
+		"https://object.las1.coreweave.com",
 		"CW S3 Endpoint to use for fetching data",
 	)
 	enforceUint32 := flag.Bool(
 		"uint32_enforce", false,
-		"output tokens as uint32 instead of uint16 (required for vocabs with over 2^16 tokens)",
+		"output tokens as uint32 instead of uint16 (required for "+
+			"vocabs with over 2^16 tokens)",
 	)
 
 	flag.Parse()
@@ -1550,7 +1586,10 @@ func main() {
 
 	if hasS3Prefix && *s3Endpoint == "" {
 		flag.Usage()
-		log.Fatal("Must provide S3 Endpoint if fetching data from CW object storage")
+		log.Fatal(
+			"Must provide S3 Endpoint if fetching data from CW " +
+				"object storage",
+		)
 	}
 
 	// Declare textReaders
@@ -1571,13 +1610,15 @@ func main() {
 			return defaultResolver.EndpointFor(service, region, optFns...)
 		}
 
+		awsConfig := aws.Config{
+			EndpointResolver: endpoints.ResolverFunc(s3CustResolverFn),
+			Region:           aws.String("coreweave-object-storage"),
+		}
+
 		sess := session.Must(
 			session.NewSessionWithOptions(
 				session.Options{
-					Config: aws.Config{
-						EndpointResolver: endpoints.ResolverFunc(s3CustResolverFn),
-						Region:           aws.String("coreweave-object-storage"),
-					},
+					Config: awsConfig,
 				},
 			),
 		)
