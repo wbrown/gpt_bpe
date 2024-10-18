@@ -39,6 +39,7 @@ type S3MockClient struct {
 
 type SanitizerTests []SanitizerTest
 
+// Test data for sanitizing text.
 var sanitizerTests = SanitizerTests{
 	{"\\n handling",
 		"\nfoobar\\n\n",
