@@ -523,8 +523,8 @@ func ReadTexts(
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 16)
-	paths := make(chan PathInfo, 64)
+	runeReaders := make(chan namedRuneReader, 256)
+	paths := make(chan PathInfo, 256)
 	wg := sync.WaitGroup{}
 	startReader := func() {
 		for {
@@ -958,12 +958,12 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 8)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
 	var contexts chan gpt_bpe.Tokens
 	if providedContexts != nil {
 		contexts = providedContexts
 	} else {
-		contexts = make(chan gpt_bpe.Tokens, 16)
+		contexts = make(chan gpt_bpe.Tokens, 32)
 	}
 	nextTokenized := func() {
 		for {
