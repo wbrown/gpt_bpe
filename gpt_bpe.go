@@ -21,7 +21,7 @@ import (
 	"github.com/wbrown/gpt_bpe/types"
 )
 
-const BPE_LRU_SZ = 65536
+const BPE_LRU_SZ = 131072
 const RUNEBUF_SZ = 16384
 const WORDCHAN_SZ = 4096
 const defaultPadTokenString = "[PAD]"
@@ -151,6 +151,13 @@ func NewLlama3Encoder() GPTEncoder {
 func NewMistralEncoder() GPTEncoder {
 	encoder, _ := NewEncoder(VOCAB_ID_MISTRAL)
 	return *encoder
+}
+
+func (encoder *GPTEncoder) Clone() *GPTEncoder {
+	// Shallow copy everything but instantiate a new LRU
+	clone := *encoder
+	clone.Cache, _ = lru.NewARC(BPE_LRU_SZ)
+	return &clone
 }
 
 // NewEncoder
@@ -442,7 +449,7 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 		LruMisses:       0,
 		LruEvictions:    0,
 		LruSize:         BPE_LRU_SZ,
-		SplitterThreads: 4,
+		SplitterThreads: 8,
 		VocabId:         vocabId,
 		tokenizerClass:  *hfConfig.TokenizerClass,
 	}
@@ -1009,8 +1016,8 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				}
 			}
 
-			// If we have no runes, then we've hit an error, or reached the end
-			// of our IO stream.
+			// If we have no runes, then we've hit an error, or reached the
+			// end of our IO stream.
 			if len(runeAccumulator) == 0 {
 				wordCallback(nil)
 				break
@@ -1019,9 +1026,9 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			// If we've discovered a special token, then we need to split the
 			// runeAccumulator before the special token.
 			var line string
-			// Some tokenizers like Nerdstash will have a special token that consists
-			// of multiple smaller special tokens. We need to handle this case. so we don't split
-			// the line prematurely.
+			// Some tokenizers like Nerdstash will have a special token
+			// that consists of multiple smaller special tokens. We need to
+			// handle this case. so we don't split the line prematurely.
 			if specialToken {
 				line = string(
 					runeAccumulator[:len(runeAccumulator)-len(
@@ -1123,7 +1130,7 @@ func (encoder *GPTEncoder) encodeTokens(tokens *[]string) (encoded Tokens) {
 func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Tokens {
 	nextWord := encoder.WordSplitter(reader)
 
-	accumulator := make(Tokens, 0, 131072)
+	accumulator := make(Tokens, 0, 32768)
 	eosReturned := false
 	if encoder.encloseEosBos || encoder.encloseBos {
 		accumulator = append(accumulator, encoder.BosToken)
@@ -1173,26 +1180,30 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			if encoder.ignoreMerges {
 				continue
 			}
-			if len(accumulator)-len(encodedTokens) > 0 {
-				idx := len(accumulator) - len(encodedTokens) - 1
+			accumulatorLen := len(accumulator)
+			offsetIdx := accumulatorLen - len(encodedTokens) - 1
+			if offsetIdx >= 0 {
+				idx := offsetIdx
 				for {
 					pair := TokenPair{accumulator[idx],
 						accumulator[idx+1]}
 					if merged, ok := encoder.TokenMerges[pair]; ok && merged != 0 {
 						before := accumulator[:idx]
 						var after Tokens
-						if idx+2 < len(accumulator) {
-							after = accumulator[idx+2:]
+						skip := idx + 2
+						if skip < accumulatorLen {
+							after = accumulator[skip:]
 						}
-						accumulator = append(before, merged)
-						accumulator = append(accumulator, after...)
+						beforeMerged := append(before, merged)
+						accumulator = append(beforeMerged, after...)
 						if idx > 0 {
 							idx -= 1
 						}
 					} else {
 						idx += 1
 					}
-					if idx >= len(accumulator)-1 {
+					accumulatorLen = len(accumulator)
+					if idx >= accumulatorLen-1 {
 						break
 					}
 				}
@@ -1335,7 +1346,10 @@ func (encoder *GPTEncoder) Decode(encoded *Tokens) (text string) {
 
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
-func (encoder *GPTEncoder) DecodeBuffer(encoded *[]byte, useUint32 bool) (text string) {
+func (encoder *GPTEncoder) DecodeBuffer(
+	encoded *[]byte,
+	useUint32 bool,
+) (text string) {
 	// First convert our bytearray into uint32 `Token` array.
 	var tokens *Tokens
 	if useUint32 {

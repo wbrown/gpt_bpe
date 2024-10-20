@@ -395,7 +395,7 @@ func ReadTextsFromS3(
 	sanitize bool,
 	numReaderThreads int,
 ) (chan namedRuneReader, error) {
-	runeReaders := make(chan namedRuneReader, 512)
+	runeReaders := make(chan namedRuneReader, 32)
 	objects := make(chan *s3.Object, 64)
 	wg := sync.WaitGroup{}
 
@@ -523,7 +523,7 @@ func ReadTexts(
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 512)
+	runeReaders := make(chan namedRuneReader, 16)
 	paths := make(chan PathInfo, 64)
 	wg := sync.WaitGroup{}
 	startReader := func() {
@@ -796,12 +796,15 @@ func (tt TextsTokenizer) handleExclusions(
 }
 
 type TokenizerStatus struct {
-	NumTokens      int
-	NumFiles       int
-	CurrFile       string
-	TimeTokenizing time.Duration
-	WaitTime       time.Duration
-	SendWait       time.Duration
+	TokenizerState   string
+	PartitionerState string
+	NumTokens        int
+	PadTokens        int
+	NumFiles         int
+	CurrFile         string
+	TimeTokenizing   time.Duration
+	WaitTime         time.Duration
+	SendWait         time.Duration
 }
 
 func (tt TextsTokenizer) TokenizeTexts(
@@ -816,6 +819,8 @@ func (tt TextsTokenizer) TokenizeTexts(
 		if tokErr != nil {
 			return nil, nil, tokErr
 		}
+	} else {
+		tokenizerPtr = tokenizerPtr.Clone()
 	}
 	tokenizer := *tokenizerPtr
 	var endOfText gpt_bpe.Token
@@ -852,7 +857,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 				beginTokenize := time.Now()
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
-					tokenized := encodeChunk(131072)
+					tokenized := encodeChunk(tt.ContextSize * 4)
 					if tokenized == nil {
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
 						tokenizerStatus.NumTokens += 1
@@ -891,16 +896,20 @@ func (tt TextsTokenizer) TokenizeTexts(
 // that returns tokenized contexts that are fixed and padded out to
 // `contextSize`.
 func (tt TextsTokenizer) TokenizeTextsToContexts(
-	texts chan namedRuneReader, tokenizerPtr *gpt_bpe.GPTEncoder,
-) (chan gpt_bpe.Tokens, error) {
+	texts chan namedRuneReader,
+	tokenizerPtr *gpt_bpe.GPTEncoder,
+	providedContexts chan gpt_bpe.Tokens,
+	wg *sync.WaitGroup,
+) (chan gpt_bpe.Tokens, *TokenizerStatus, error) {
+	status := TokenizerStatus{}
 	var tokErr error
 	if tokenizerPtr == nil {
 		tokenizerPtr, tokErr = tt.InitTokenizer()
 		if tokErr != nil {
-			return nil, tokErr
+			return nil, nil, tokErr
 		}
 	}
-	tokenizer := *tokenizerPtr
+	tokenizer := *tokenizerPtr.Clone()
 	var padToken, endOfText gpt_bpe.Token
 	if tt.PadToken == "" {
 		padToken = tokenizer.PadToken
@@ -911,7 +920,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			"PadToken",
 		)
 		if padErr != nil {
-			return nil, padErr
+			return nil, nil, padErr
 		}
 	}
 	if tt.EndOfText == "" {
@@ -923,7 +932,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			"EndOfText",
 		)
 		if eotErr != nil {
-			return nil, eotErr
+			return nil, nil, eotErr
 		}
 	}
 
@@ -937,7 +946,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			"Boundary",
 		)
 		if boundaryErr != nil {
-			return nil, boundaryErr
+			return nil, nil, boundaryErr
 		}
 	}
 	contextSize := tt.ContextSize
@@ -945,46 +954,46 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 
 	var tokens gpt_bpe.Tokens
 	var done bool
-	var numTokens, idx, begin int
+	var idx, begin int
 	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
-	contexts := make(chan gpt_bpe.Tokens, 16)
+	tokenizedTexts := make(chan gpt_bpe.Tokens, 8)
+	var contexts chan gpt_bpe.Tokens
+	if providedContexts != nil {
+		contexts = providedContexts
+	} else {
+		contexts = make(chan gpt_bpe.Tokens, 16)
+	}
 	nextTokenized := func() {
-		tokenCt := 0
 		for {
+			status.TokenizerState = "waiting"
 			waitBegin := time.Now()
 			runeReader, more := <-texts
+			inDepth := len(texts)
+			outDepth := len(tokenizedTexts)
+			status.TokenizerState = fmt.Sprintf(
+				"tokenizing: inchsz=%d, outchsz=%d", inDepth, outDepth,
+			)
+			status.CurrFile = runeReader.path
+			status.NumFiles += 1
+			status.WaitTime += time.Since(waitBegin)
 			beginTs := time.Now()
 			if more {
-				waitDuration := time.Since(waitBegin)
+				status.WaitTime += time.Since(waitBegin)
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
-					tokenized := encodeChunk(contextSize * 8)
+					tokenized := encodeChunk(contextSize * 4)
 					if tokenized == nil {
 						duration := time.Since(beginTs)
-						// If we took longer than a millisecond, round to the
-						// nearest  millisecond.
-						var roundDuration time.Duration
-						if duration.Round(time.Millisecond) > 0 {
-							roundDuration = duration.Round(time.Millisecond)
-						} else {
-							roundDuration = duration
-						}
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
-						log.Printf(
-							"%s tokenized in %s (%d tokens/s, %s wait)",
-							runeReader.path, roundDuration,
-							int(float64(tokenCt)/duration.Seconds()),
-							waitDuration,
-						)
-						tokenCt = 0
-						beginTs = time.Now()
+						status.NumTokens += 1
+						status.TimeTokenizing += duration
 						break
 					}
+					status.TokenizerState = "sending"
 					tokenizedTexts <- *tokenized
-					tokenCt += len(*tokenized)
+					status.TokenizerState = "sent"
 				}
 			} else {
 				break
@@ -998,11 +1007,11 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	moreTokens := func() {
 		moreTokens, more := <-tokenizedTexts
 		tokens = append(tokens, moreTokens...)
-		numTokens = len(tokens)
 		if more {
 			done = false
 		} else {
 			done = true
+			status.TokenizerState = "done"
 		}
 	}
 
@@ -1013,11 +1022,18 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	// `contextSize` tokens.
 	nextContext := func() *gpt_bpe.Tokens {
 		if len(tokens)-idx < contextSize*4 {
+			status.PartitionerState = "waiting"
 			moreTokens()
+			status.PartitionerState = "got_tokens"
 		}
 		// Loop until we get a full token chunk.
 		for {
+			numTokens := len(tokens)
+			status.PartitionerState = fmt.Sprintf(
+				"looping: %d:%d", idx, numTokens,
+			)
 			if numTokens == 0 {
+				status.PartitionerState = "no_tokens"
 				return nil
 			} else if done && idx == numTokens {
 				// We're completely done and have no more token chunks to
@@ -1028,17 +1044,22 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					for padIdx := 0; padIdx < padSize; padIdx += 1 {
 						chunk = append(chunk, padToken)
 					}
+					status.PadTokens += padSize
 				}
 				tokens = tokens[:0]
 				idx = 0
-				numTokens = 0
 				begin = 0
+				status.PartitionerState = "done"
 				return &chunk
 			}
 			// Iterate until we reach the end of this text's tokens.
 			for idx < numTokens {
+				status.PartitionerState = fmt.Sprintf(
+					"iterating: %d:%d", idx, numTokens,
+				)
 				token := (tokens)[idx]
 				// If this is a 'boundary' token, add it to our list.
+				status.PartitionerState = "boundary"
 				if token == boundary {
 					boundaryIdxes = append(boundaryIdxes, idx)
 				}
@@ -1046,6 +1067,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 				// we do the finalization of this context.
 				currWindow := idx - begin
 				if currWindow >= contextSize {
+					status.PartitionerState = "chunking"
 					chunk := (tokens)[begin:]
 
 					if doUnitrim {
@@ -1068,6 +1090,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 						for padIdx := 0; padIdx < padSize; padIdx += 1 {
 							chunk = append(chunk, padToken)
 						}
+						status.PadTokens += padSize
 					}
 					// We had one or more boundary tokens in our last context,
 					// so depending on the BoundaryOverlap, use the last
@@ -1107,9 +1130,19 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					return &chunk
 				}
 				idx += 1
+				status.PartitionerState = fmt.Sprintf(
+					"checking: writechsz=%d", len(contexts),
+				)
 				if len(tokens)-idx < contextSize*2 {
+					status.PartitionerState = fmt.Sprintf(
+						"waiting: writechsz=%d", len(contexts),
+					)
 					moreTokens()
+					status.PartitionerState = "got_tokens"
 				}
+				status.PartitionerState = fmt.Sprintf(
+					"idx: %d/%d", idx, numTokens,
+				)
 			}
 		}
 	}
@@ -1118,15 +1151,24 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 		for {
 			context := nextContext()
 			if context == nil || len(*context) == 0 {
+				status.CurrFile = ""
 				break
 			} else {
+				status.PartitionerState = "sending"
 				contexts <- *context
+				status.NumTokens += len(*context)
+				status.PartitionerState = "sent"
 			}
 		}
-		close(contexts)
+		if providedContexts == nil {
+			close(contexts)
+		}
+		if wg != nil {
+			wg.Done()
+		}
 	}()
 
-	return contexts, nil
+	return contexts, &status, nil
 }
 
 // GCD, Greatest Common Divisor of two integers.
@@ -1381,6 +1423,76 @@ func WriteContexts(
 	}
 
 	return totalTokens, nil
+}
+
+func StatusWatcher(
+	tokenizerStatuses []*TokenizerStatus,
+	prefix string,
+) (chan bool, *sync.WaitGroup) {
+	done := make(chan bool)
+	statusWg := sync.WaitGroup{}
+	statusWg.Add(1)
+	begin := time.Now()
+	collectStatus := func() {
+		totalTokens := 0
+		totalFiles := 0
+		padTokens := 0
+		for _, status := range tokenizerStatuses {
+			if status != nil {
+				totalTokens += status.NumTokens
+				totalFiles += status.NumFiles
+				padTokens += status.PadTokens
+			}
+		}
+		duration := time.Since(begin).Seconds()
+		log.Printf(
+			"%d tokens in %0.2fs, %d pad tokens, %0.2f tokens/s, %d docs, avg %0.2f tokens/doc",
+			totalTokens, duration, padTokens,
+			float64(totalTokens)/duration,
+			totalFiles,
+			float64(totalTokens)/float64(totalFiles),
+		)
+		for i, status := range tokenizerStatuses {
+			if status != nil {
+				currFile := status.CurrFile
+				// Remove the path prefix
+				if strings.HasPrefix(currFile, prefix) {
+					currFile = currFile[len(prefix):]
+					if strings.HasPrefix(currFile, "/") {
+						currFile = currFile[1:]
+					}
+				}
+				timeTokenizing := status.TimeTokenizing.Round(time.Millisecond)
+				sendWait := status.SendWait.Round(time.Millisecond)
+				waitTime := status.WaitTime.Round(time.Millisecond)
+				log.Printf(
+					"  Thread %d: [%s, %s], %d tokens, %d pad tokens, %d docs, Times: %s tokenizing, %s recv, %s send, File: %s",
+					i, status.TokenizerState, status.PartitionerState,
+					status.NumTokens,
+					status.PadTokens,
+					status.NumFiles,
+					timeTokenizing,
+					waitTime,
+					sendWait,
+					currFile,
+				)
+
+			}
+		}
+	}
+	go func() {
+		for {
+			select {
+			case <-time.After(10 * time.Second):
+				collectStatus()
+			case <-done:
+				collectStatus()
+				statusWg.Done()
+				return
+			}
+		}
+	}()
+	return done, &statusWg
 }
 
 func main() {
@@ -1638,6 +1750,7 @@ func main() {
 
 	numTokens := 0
 	begin := time.Now()
+	var contextTokens int
 	if *streaming_encode {
 		tokenizerStatuses := make([]*TokenizerStatus, *numThreads)
 		wg := sync.WaitGroup{}
@@ -1676,91 +1789,57 @@ func main() {
 				if writeErr != nil {
 					log.Fatal(writeErr)
 				}
-				numTokens += total
+				contextTokens += total
 				wg.Done()
 			}(threadIdx)
 		}
-
-		doneChan := make(chan struct{})
-		statusWg := sync.WaitGroup{}
-		statusWg.Add(1)
-		go func() {
-			begin := time.Now()
-			collectStatus := func() {
-				totalTokens := 0
-				totalFiles := 0
-				for _, status := range tokenizerStatuses {
-					if status != nil {
-						totalTokens += status.NumTokens
-						totalFiles += status.NumFiles
-					}
-				}
-				duration := time.Since(begin).Seconds()
-				log.Printf(
-					"%d tokens in %0.2fs, %0.2f tokens/s, %d docs, avg %0.2f tokens/doc",
-					totalTokens, duration,
-					float64(totalTokens)/duration,
-					totalFiles,
-					float64(totalTokens)/float64(totalFiles),
-				)
-				for i, status := range tokenizerStatuses {
-					if status != nil {
-						currFile := status.CurrFile
-						// Remove the path prefix
-						if strings.HasPrefix(currFile, *inputDir) {
-							currFile = currFile[len(*inputDir):]
-							if strings.HasPrefix(currFile, "/") {
-								currFile = currFile[1:]
-							}
-						}
-						timeTokenizing := status.TimeTokenizing.Round(time.Millisecond)
-						sendWait := status.SendWait.Round(time.Millisecond)
-						waitTime := status.WaitTime.Round(time.Millisecond)
-						log.Printf(
-							"  Thread %d: %d tokens, %d docs, Times: %s tokenizing, %s recv, %s send, File: %s",
-							i, status.NumTokens, status.NumFiles,
-							timeTokenizing, waitTime,
-							sendWait,
-							currFile,
-						)
-					}
-				}
-			}
-			for {
-				select {
-				case <-time.After(10 * time.Second):
-					collectStatus()
-				case <-doneChan:
-					collectStatus()
-					statusWg.Done()
-					return
-				}
-			}
-		}()
+		done, statusWg := StatusWatcher(tokenizerStatuses, *inputDir)
+		// Wait for all threads to finish
 		wg.Wait()
-		statusWg.Done()
+		close(done)
+		statusWg.Wait()
 	} else {
-		var contexts chan gpt_bpe.Tokens
-		var tokErr error
-		contexts, tokErr = textsTokenizer.TokenizeTextsToContexts(
-			textReaders, encoder,
-		)
-		if tokErr != nil {
-			log.Fatal(tokErr)
+		wg := sync.WaitGroup{}
+		tokenizerStatuses := make([]*TokenizerStatus, *numThreads)
+		contexts := make(chan gpt_bpe.Tokens, 16)
+		for i := 0; i < *numThreads; i++ {
+			var status *TokenizerStatus
+			var tokErr error
+			wg.Add(1)
+			contexts, status, tokErr = textsTokenizer.TokenizeTextsToContexts(
+				textReaders, encoder, contexts, &wg,
+			)
+			if tokErr != nil {
+				log.Fatal(tokErr)
+			}
+			tokenizerStatuses[i] = status
 		}
+
+		done, statusWg := StatusWatcher(tokenizerStatuses, *inputDir)
 		var writeErr error
-		numTokens, writeErr = WriteContexts(
-			*outputFile,
-			contexts,
-			encoder,
-			sampling,
-			*reorderPaths == "shuffle",
-			*enforceUint32,
-			*showContexts,
-		)
+		contextWg := sync.WaitGroup{}
+		contextWg.Add(1)
+		go func() {
+			contextTokens, writeErr = WriteContexts(
+				*outputFile,
+				contexts,
+				encoder,
+				sampling,
+				*reorderPaths == "shuffle",
+				*enforceUint32,
+				*showContexts,
+			)
+			contextWg.Done()
+		}()
+
 		if writeErr != nil {
 			log.Fatal(writeErr)
 		}
+		wg.Wait()
+		close(contexts)
+		contextWg.Wait()
+		close(done)
+		statusWg.Wait()
 	}
 
 	duration := time.Since(begin).Seconds()
@@ -1769,4 +1848,5 @@ func main() {
 		"%d tokens in %0.2fs, %0.2f tokens/s", numTokens,
 		duration, float64(numTokens)/duration,
 	)
+	log.Printf("Total tokens written: %d", contextTokens)
 }
