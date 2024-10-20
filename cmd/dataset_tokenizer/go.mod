@@ -2,12 +2,12 @@ module github.com/wbrown/gpt_bpe/cmd/dataset_tokenizer
 
 go 1.19
 
-replace github.com/wbrown/gpt_bpe => ../../
+// replace github.com/wbrown/gpt_bpe => ../../
 
 require (
 	github.com/aws/aws-sdk-go v1.45.4
 	github.com/stretchr/testify v1.9.0
-	github.com/wbrown/gpt_bpe v0.0.0-20241016180219-0e8aee0bfa06
+	github.com/wbrown/gpt_bpe v0.0.0-20241020220938-bfd4dc776db5
 	github.com/yargevad/filepathx v1.0.0
 )
 
