@@ -1699,7 +1699,7 @@ func main() {
 					"Use -retokenize to force retokenization.", *newestPath,
 				*outputFile,
 			)
-			os.Exit(0)
+			os.Exit(1)
 		} else if newestDir, newestDirModTime, newestDirErr := FindNewestDir(
 			*inputDir,
 		); newestDirErr != nil {
@@ -1712,6 +1712,7 @@ func main() {
 					"was tokenized. Use -retokenize to force retokenization.",
 				*newestDir, *outputFile,
 			)
+			os.Exit(1)
 		}
 	}
 
