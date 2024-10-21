@@ -538,7 +538,7 @@ func ReadTexts(
 
 	// We pre-emptively do the work to set up the buffers for the next files,
 	// while the prior file is being consumed.
-	runeReaders := make(chan namedRuneReader, 256)
+	runeReaders := make(chan namedRuneReader, 128)
 	paths := make(chan PathInfo, 256)
 	wg := sync.WaitGroup{}
 	startReader := func() {
@@ -987,19 +987,24 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	} else {
 		contexts = make(chan gpt_bpe.Tokens, 32)
 	}
+	textsCap := cap(texts)
+	tokenizedCap := cap(tokenizedTexts)
+	contextsCap := cap(contexts)
+
 	nextTokenized := func() {
 		for {
 			status.TokenizerState = "waiting"
 			waitBegin := time.Now()
 			runeReader, more := <-texts
+			status.WaitTime += time.Since(waitBegin)
 			inDepth := len(texts)
 			outDepth := len(tokenizedTexts)
 			status.TokenizerState = fmt.Sprintf(
-				"tokenizing: inchsz=%d, outchsz=%d", inDepth, outDepth,
+				"tokenizing: texts=%d/%d, tokenized=%d/%d", inDepth,
+				textsCap, outDepth, tokenizedCap,
 			)
 			status.CurrFile = runeReader.path
 			status.NumFiles += 1
-			status.WaitTime += time.Since(waitBegin)
 			beginTs := time.Now()
 			if more {
 				status.WaitTime += time.Since(waitBegin)
@@ -1152,15 +1157,12 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					return &chunk
 				}
 				idx += 1
-				status.PartitionerState = fmt.Sprintf(
-					"checking: writechsz=%d", len(contexts),
-				)
 				if len(tokens)-idx < contextSize*2 {
 					status.PartitionerState = fmt.Sprintf(
-						"waiting: writechsz=%d", len(contexts),
+						"fetching: tokenized=%d/%d",
+						len(tokenizedTexts), tokenizedCap,
 					)
 					moreTokens()
-					status.PartitionerState = "got_tokens"
 				}
 				status.PartitionerState = fmt.Sprintf(
 					"idx: %d/%d", idx, numTokens,
@@ -1176,7 +1178,10 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 				status.CurrFile = ""
 				break
 			} else {
-				status.PartitionerState = "sending"
+				status.PartitionerState = fmt.Sprintf(
+					"sending: contexts=%d/%d",
+					len(contexts), contextsCap,
+				)
 				contexts <- *context
 				status.NumTokens += len(*context)
 				status.PartitionerState = "sent"
