@@ -212,7 +212,9 @@ type namedRuneReader struct {
 }
 
 func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
-	if sortSpec == "" || sortSpec == "none" || sortSpec == "shuffle" {
+	if sortSpec == "" || sortSpec == "none" {
+		return nil
+	} else if sortSpec == "shuffle" {
 		ShufflePathInfos(matches)
 	} else if sortSpec == "size_ascending" {
 		SortPathInfoBySize(matches, true)
