@@ -583,12 +583,13 @@ func ReadTexts(
 								path.Path,
 								CreateTextSanitizer(fileReader)}
 						} else {
+							bufferedReader := bufio.NewReaderSize(
+								fileReader, 8*1024*1024,
+							)
+							bufferedReader.Peek(1024 * 1024)
 							runeReaders <- namedRuneReader{
 								path.Path,
-								bufio.NewReaderSize(
-									fileReader,
-									8*1024*1024,
-								)}
+								bufferedReader}
 						}
 					}
 				}
