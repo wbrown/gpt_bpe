@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -32,6 +31,7 @@ var llama3Encoder GPTEncoder
 var mistralEncoder GPTEncoder
 var corpus string
 var clipCorpus string
+var largeCorpus *string
 
 // var corpus2 string
 var gpt2Encoded *Tokens
@@ -134,6 +134,22 @@ func init() {
 	corpus = string(textBytes)
 	clipCorpus = string(clipBytes)
 	unicodeTrimTests = loadUnicodeTrimTests("resources/trim_tests.jsonl")
+	var err error
+	_, err = GetLargeCorpus()
+	if err != nil {
+		log.Fatalf("Error opening `%s`: %v", largeCorpusPath, err)
+	}
+}
+
+func GetLargeCorpus() (*string, error) {
+	if largeCorpus == nil {
+		var err error
+		largeCorpus, err = DecompressXZ(largeCorpusPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return largeCorpus, nil
 }
 
 func TestMain(m *testing.M) {
@@ -317,6 +333,24 @@ func TestGPTEncoder_Split(t *testing.T) {
 	}
 }
 
+func DecompressXZ(path string) (*string, error) {
+	corpusHandle, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer corpusHandle.Close()
+	decompressorHandle, err := xz.NewReader(corpusHandle)
+	if err != nil {
+		return nil, err
+	}
+	decompressed, err := ioutil.ReadAll(decompressorHandle)
+	if err != nil {
+		return nil, err
+	}
+	decompressedStr := string(decompressed)
+	return &decompressedStr, nil
+}
+
 func OpenXZStream(path string) (*xz.Reader, *os.File, error) {
 	corpusHandle, err := os.Open(path)
 	if err != nil {
@@ -331,16 +365,11 @@ func OpenXZStream(path string) (*xz.Reader, *os.File, error) {
 
 func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
 	b.StopTimer()
-	corpusHandle, fileHandle, err := OpenXZStream(largeCorpusPath)
-	if err != nil {
-		b.Error(err)
-	}
-	defer fileHandle.Close()
 	gpt2Encoder.SplitterThreads = 8
+	corpusHandle := strings.NewReader(corpus)
 	nextWord := gpt2Encoder.WordSplitter(
 		bufio.NewReaderSize(
-			corpusHandle,
-			8*1024*1024,
+			corpusHandle, 8*1024*1024,
 		),
 	)
 
@@ -356,27 +385,14 @@ func BenchmarkGPTEncoder_WordSplitterChan(b *testing.B) {
 	}
 	b.StopTimer()
 	elapsed := time.Since(start)
-	numBytes, _ := fileHandle.Seek(0, io.SeekCurrent)
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
-	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
-	)
-	b.ReportMetric(float64(numBytes), "bytes")
 }
 
 func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	b.StopTimer()
-	corpusHandle, fileHandle, err := OpenXZStream(largeCorpusPath)
-	if err != nil {
-		b.Error(err)
-	}
-	defer fileHandle.Close()
+	corpusHandle := strings.NewReader(*largeCorpus)
 	gpt2Encoder.SplitterThreads = 8
-	//defer corpusHandle.Close()
-	if err != nil {
-		b.Error(err)
-	}
 	wordCount := 0
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
 	wordSplitter := gpt2Encoder.makeWordSplitter(
@@ -391,30 +407,18 @@ func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	wordSplitter()
 	b.StopTimer()
 	elapsed := time.Since(start)
-	//numBytes := int64(len(corpusText))
-	numBytes, _ := fileHandle.Seek(0, io.SeekCurrent)
+	numBytes := len(*largeCorpus)
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
-	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
-	)
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
 	b.ReportMetric(float64(numBytes), "bytes")
 }
 
 func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
-	corpusHandle, fileHandle, err := OpenXZStream(largeCorpusPath)
-	if err != nil {
-		b.Error(err)
-	}
-	defer fileHandle.Close()
-	nerdstashV2Encoder.SplitterThreads = 1
-	//defer corpusHandle.Close()
-	if err != nil {
-		b.Error(err)
-	}
 	wordCount := 0
 	tokensCount := 0
+	corpusHandle := strings.NewReader(corpus)
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
 	wordSplitter := nerdstashV2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
@@ -432,13 +436,8 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
 	elapsed := time.Since(start)
 	//numBytes := int64(len(corpusText))
-	numBytes, _ := fileHandle.Seek(0, io.SeekCurrent)
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
 	b.ReportMetric(float64(wordCount), "words")
-	b.ReportMetric(
-		float64(numBytes)/elapsed.Seconds(), "compbytes/sec",
-	)
-	b.ReportMetric(float64(numBytes), "bytes")
 	b.ReportMetric(float64(tokensCount)/elapsed.Seconds(), "tokens/sec")
 	b.ReportMetric(float64(tokensCount), "tokens")
 }
@@ -565,9 +564,10 @@ func TestGPTEncoder_Encode(t *testing.T) {
 }
 
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
-	// This test is to check if the GPTEncoder is able to encode the tokens correctly
+	// This test is to check if the GPTEncoder is able to encode the tokens
+	// correctly
 	start := time.Now()
-	corpusRunes := strings.NewReader(corpus)
+	corpusRunes := strings.NewReader(*largeCorpus)
 	nextTokens := gpt2Encoder.StreamingEncode(corpusRunes)
 	tokenCt := 0
 	for {
@@ -579,8 +579,8 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	}
 	duration := time.Since(start)
 	t.Logf(
-		"%v bytes into %v tokens over %v",
-		len(corpus), tokenCt, duration,
+		"streaming encode: %d tokens/sec",
+		int64(float64(tokenCt)/duration.Seconds()),
 	)
 }
 
