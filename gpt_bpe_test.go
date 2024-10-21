@@ -1496,7 +1496,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	// the vocab.json and merges.txt files are stored in the
 	// tokenizer.json file. We want to check if we are able to
 	// download the model and extract the vocab.json and merges.txt
-	modelId := "georgesung/llama2_7b_chat_uncensored"
+	modelId := "Maykeye/TinyLLama-v0"
 	destPath := "./TestModelDownloadLlama"
 	err := downloadModel(modelId, destPath)
 	if err != nil {
@@ -1508,7 +1508,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
 	// config.json, pytorch_model.bin,
-	// tokenizer.json, vocab.json
+	// tokenizer.model, vocab.json
 
 	// Check for pytorch_model.bin
 	singleModelPattern := regexp.MustCompile(`pytorch_model\.bin$`)
@@ -1543,7 +1543,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	}
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json", "config.json"}
+	metaFiles := []string{"tokenizer.model", "vocab.json", "config.json"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
@@ -1567,10 +1567,10 @@ func TestModelDownloadMistral(t *testing.T) {
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
 	// config.json, pytorch_model.bin,
-	// tokenizer.json, vocab.json
+	// tokenizer.model
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model-00001-of-00002.bin"}
+	metaFiles := []string{"tokenizer.model", "config.json", "pytorch_model-00001-of-00002.bin"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
@@ -1599,7 +1599,7 @@ func TestModelDownloadFairseq(t *testing.T) {
 	// vocab, config. merges, pytorch_model
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model.bin", "merges.txt"}
+	metaFiles := []string{"vocab.json", "config.json", "pytorch_model.bin", "merges.txt"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
