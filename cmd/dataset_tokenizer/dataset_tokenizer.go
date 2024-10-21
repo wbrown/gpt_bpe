@@ -514,11 +514,24 @@ func ReadTexts(
 	numReaderThreads int,
 ) (chan namedRuneReader, error) {
 	matches, err := GlobTexts(dirPath)
+	// If we have a single file and it's not a directory, then we want to
+	// adjust the dirPath to the file's directory.
+	if len(matches) == 1 && !matches[0].Dir {
+		dirPath = filepath.Dir(matches[0].Path)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if sortErr := resolveSortSpec(matches, sortSpec); sortErr != nil {
 		return nil, sortErr
+	}
+
+	removeDirPath := func(path string) string {
+		noDir := strings.TrimPrefix(path, dirPath)
+		if strings.HasPrefix(noDir, "/") {
+			return noDir[1:]
+		}
+		return noDir
 	}
 
 	// We pre-emptively do the work to set up the buffers for the next files,
@@ -535,6 +548,10 @@ func ReadTexts(
 					if strings.HasSuffix(path.Path, ".jsonl") {
 						// Split JSONL files into individual JSON objects.
 						jsonlReader := bufio.NewReader(fileReader)
+						jsonlReader = bufio.NewReaderSize(
+							jsonlReader, 32*1024*1024,
+						)
+						jsonlReader.Peek(1024 * 1024)
 						idx := 0
 						for {
 							jsonObjectMap, jErr := GetJsonObject(jsonlReader)
@@ -558,29 +575,31 @@ func ReadTexts(
 							if !ok {
 								log.Fatal("JSONL object text field not string")
 							}
-							subPath := fmt.Sprintf(
+							// remove the path prefix
+							fileName := fmt.Sprintf(
 								"%s[%d]",
-								path.Path,
+								removeDirPath(path.Path),
 								idx,
 							)
 							// Create our rune reader.
 							if sanitize {
 								runeReaders <- namedRuneReader{
-									subPath,
+									fileName,
 									CreateTextSanitizer(
 										strings.NewReader(textString),
 									)}
 							} else {
 								runeReaders <- namedRuneReader{
-									subPath,
+									fileName,
 									strings.NewReader(textString)}
 							}
 							idx++
 						}
 					} else {
+						fileName := removeDirPath(path.Path)
 						if sanitize {
 							runeReaders <- namedRuneReader{
-								path.Path,
+								fileName,
 								CreateTextSanitizer(fileReader)}
 						} else {
 							bufferedReader := bufio.NewReaderSize(
@@ -588,7 +607,7 @@ func ReadTexts(
 							)
 							bufferedReader.Peek(1024 * 1024)
 							runeReaders <- namedRuneReader{
-								path.Path,
+								fileName,
 								bufferedReader}
 						}
 					}
@@ -1034,7 +1053,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 				"looping: %d:%d", idx, numTokens,
 			)
 			if numTokens == 0 {
-				status.PartitionerState = "no_tokens"
+				status.PartitionerState = "done"
 				return nil
 			} else if done && idx == numTokens {
 				// We're completely done and have no more token chunks to
@@ -1428,7 +1447,6 @@ func WriteContexts(
 
 func StatusWatcher(
 	tokenizerStatuses []*TokenizerStatus,
-	prefix string,
 ) (chan bool, *sync.WaitGroup) {
 	done := make(chan bool)
 	statusWg := sync.WaitGroup{}
@@ -1456,19 +1474,29 @@ func StatusWatcher(
 		for i, status := range tokenizerStatuses {
 			if status != nil {
 				currFile := status.CurrFile
-				// Remove the path prefix
-				if strings.HasPrefix(currFile, prefix) {
-					currFile = currFile[len(prefix):]
-					if strings.HasPrefix(currFile, "/") {
-						currFile = currFile[1:]
-					}
-				}
 				timeTokenizing := status.TimeTokenizing.Round(time.Millisecond)
 				sendWait := status.SendWait.Round(time.Millisecond)
 				waitTime := status.WaitTime.Round(time.Millisecond)
+				internalState := ""
+				if status.TokenizerState != "" && status.PartitionerState != "" {
+					internalState = fmt.Sprintf(
+						" [%s, %s],", status.TokenizerState,
+						status.PartitionerState,
+					)
+				} else if status.TokenizerState != "" {
+					internalState = fmt.Sprintf(
+						" [%s],", status.TokenizerState,
+					)
+				} else if status.PartitionerState != "" {
+					internalState = fmt.Sprintf(
+						" [%s],", status.PartitionerState,
+					)
+				}
+
 				log.Printf(
-					"  Thread %d: [%s, %s], %d tokens, %d pad tokens, %d docs, Times: %s tokenizing, %s recv, %s send, File: %s",
-					i, status.TokenizerState, status.PartitionerState,
+					"  Thread %d:%s %d tokens, %d pad tokens, %d docs, Times: %s tokenizing, %s recv, %s send, File: %s",
+					i,
+					internalState,
 					status.NumTokens,
 					status.PadTokens,
 					status.NumFiles,
@@ -1794,7 +1822,7 @@ func main() {
 				wg.Done()
 			}(threadIdx)
 		}
-		done, statusWg := StatusWatcher(tokenizerStatuses, *inputDir)
+		done, statusWg := StatusWatcher(tokenizerStatuses)
 		// Wait for all threads to finish
 		wg.Wait()
 		close(done)
@@ -1816,7 +1844,7 @@ func main() {
 			tokenizerStatuses[i] = status
 		}
 
-		done, statusWg := StatusWatcher(tokenizerStatuses, *inputDir)
+		done, statusWg := StatusWatcher(tokenizerStatuses)
 		var writeErr error
 		contextWg := sync.WaitGroup{}
 		contextWg.Add(1)
