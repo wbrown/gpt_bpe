@@ -867,6 +867,10 @@ func (tt TextsTokenizer) TokenizeTexts(
 
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 256)
 
+	tokenizerStatus.Tokenizer = &tokenizer
+	tokenizerStatus.Tokenized = &tokenizedTexts
+	tokenizerStatus.Texts = &texts
+
 	// Our index handle.
 	indexFile, iErr := os.Create(indexPath)
 	if iErr != nil {
@@ -879,6 +883,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 		for {
 			waitBegin := time.Now()
 			runeReader, more := <-texts
+			numTokens := 0
 			if more {
 				tokenizerStatus.CurrFile = runeReader.path
 				tokenizerStatus.NumFiles += 1
@@ -889,12 +894,13 @@ func (tt TextsTokenizer) TokenizeTexts(
 					tokenized := encodeChunk(tt.ContextSize * 4)
 					if tokenized == nil {
 						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						numTokens += 1
 						tokenizerStatus.NumTokens += 1
 						tokenizerStatus.TimeTokenizing += time.Since(beginTokenize)
 						break
 					} else {
-						numTokens := len(*tokenized)
-						tokenizerStatus.NumTokens += numTokens
+						numTokens += len(*tokenized)
+						tokenizerStatus.NumTokens += len(*tokenized)
 					}
 					sendBegin := time.Now()
 					tokenizedTexts <- *tokenized
@@ -905,10 +911,11 @@ func (tt TextsTokenizer) TokenizeTexts(
 						idxFormat,
 						runeReader.path,
 						currOffset,
-						tokenizerStatus.NumTokens,
+						numTokens,
 					),
 				)
-				currOffset += tokenizerStatus.NumTokens
+				currOffset += numTokens
+				numTokens = 0
 			} else {
 				close(tokenizedTexts)
 				indexFile.Close()
@@ -1486,20 +1493,27 @@ func StatusWatcher(
 				textsCap := cap(*status.Texts)
 				tokenizedWaiting := len(*status.Tokenized)
 				tokenizedCap := cap(*status.Tokenized)
-				contextsWaiting := len(*status.Contexts)
-				contextsCap := cap(*status.Contexts)
+				contextsWaiting := 0
+				contextsCap := 0
+				if status.Contexts != nil {
+					contextsWaiting = len(*status.Contexts)
+					contextsCap = cap(*status.Contexts)
+				}
 				lruHitPercent := 0.0
 				if status.Tokenizer.LruHits+status.Tokenizer.LruMisses > 0 {
 					lruHitPercent = float64(status.Tokenizer.LruHits) /
 						float64(status.Tokenizer.LruHits+status.Tokenizer.LruMisses) * 100
 				}
-				if status.TokenizerState != "" && status.PartitionerState != "" {
-					internalState = fmt.Sprintf(
-						" [tokenizer=%s, lru=%0.2f%%, texts=%d/%d, tokenized=%d/%d] [partitioner=%s (idx=%d, acc_sz=%d), contexts=%d/%d]",
-						status.TokenizerState,
-						lruHitPercent,
-						textsWaiting, textsCap,
-						tokenizedWaiting, tokenizedCap,
+				internalState = fmt.Sprintf(
+					" [tokenizer=%s, lru=%0.2f%%, texts=%d/%d, tokenized=%d/%d]",
+					status.TokenizerState,
+					lruHitPercent,
+					textsWaiting, textsCap,
+					tokenizedWaiting, tokenizedCap,
+				)
+				if status.Contexts != nil {
+					internalState += fmt.Sprintf(
+						" [partitioner=%s (idx=%d, acc_sz=%d), contexts=%d/%d]",
 						status.PartitionerState,
 						status.ChunkerIndex,
 						status.AccumulatorSize,
