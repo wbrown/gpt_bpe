@@ -26,4 +26,4 @@ jobs:
       - name: Test gpt_bpe
         uses: robherley/go-test-action@v0
         with:
-          testArguments: ./
+          testArguments: ./ -timeout 20m
