@@ -818,12 +818,18 @@ func (tt TextsTokenizer) handleExclusions(
 }
 
 type TokenizerStatus struct {
+	Tokenizer        *gpt_bpe.GPTEncoder
 	TokenizerState   string
 	PartitionerState string
 	NumTokens        int
 	PadTokens        int
 	NumFiles         int
 	CurrFile         string
+	Texts            *chan namedRuneReader
+	Tokenized        *chan gpt_bpe.Tokens
+	Contexts         *chan gpt_bpe.Tokens
+	ChunkerIndex     int
+	AccumulatorSize  int
 	TimeTokenizing   time.Duration
 	WaitTime         time.Duration
 	SendWait         time.Duration
@@ -844,6 +850,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	} else {
 		tokenizerPtr = tokenizerPtr.Clone()
 	}
+	tokenizerStatus.Tokenizer = tokenizerPtr
 	tokenizer := *tokenizerPtr
 	var endOfText gpt_bpe.Token
 	if tt.EndOfText == "" {
@@ -920,7 +927,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 func (tt TextsTokenizer) TokenizeTextsToContexts(
 	texts chan namedRuneReader,
 	tokenizerPtr *gpt_bpe.GPTEncoder,
-	providedContexts chan gpt_bpe.Tokens,
+	outputContexts chan gpt_bpe.Tokens,
 	wg *sync.WaitGroup,
 ) (chan gpt_bpe.Tokens, *TokenizerStatus, error) {
 	status := TokenizerStatus{}
@@ -932,6 +939,8 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 		}
 	}
 	tokenizer := *tokenizerPtr.Clone()
+	aligner := *tokenizerPtr.Clone()
+	status.Tokenizer = &tokenizer
 	var padToken, endOfText gpt_bpe.Token
 	if tt.PadToken == "" {
 		padToken = tokenizer.PadToken
@@ -982,14 +991,11 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
 	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
 	var contexts chan gpt_bpe.Tokens
-	if providedContexts != nil {
-		contexts = providedContexts
+	if outputContexts != nil {
+		contexts = outputContexts
 	} else {
 		contexts = make(chan gpt_bpe.Tokens, 32)
 	}
-	textsCap := cap(texts)
-	tokenizedCap := cap(tokenizedTexts)
-	contextsCap := cap(contexts)
 
 	nextTokenized := func() {
 		for {
@@ -997,12 +1003,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			waitBegin := time.Now()
 			runeReader, more := <-texts
 			status.WaitTime += time.Since(waitBegin)
-			inDepth := len(texts)
-			outDepth := len(tokenizedTexts)
-			status.TokenizerState = fmt.Sprintf(
-				"tokenizing: texts=%d/%d, tokenized=%d/%d", inDepth,
-				textsCap, outDepth, tokenizedCap,
-			)
+			status.TokenizerState = "tokenizing"
 			status.CurrFile = runeReader.path
 			status.NumFiles += 1
 			beginTs := time.Now()
@@ -1041,6 +1042,9 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			status.TokenizerState = "done"
 		}
 	}
+	status.Texts = &texts
+	status.Tokenized = &tokenizedTexts
+	status.Contexts = &contexts
 
 	// Prime the pump by initializing the states.
 	moreTokens()
@@ -1056,9 +1060,9 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 		// Loop until we get a full token chunk.
 		for {
 			numTokens := len(tokens)
-			status.PartitionerState = fmt.Sprintf(
-				"looping: %d:%d", idx, numTokens,
-			)
+			status.AccumulatorSize = numTokens
+			status.ChunkerIndex = idx
+			status.PartitionerState = "looping"
 			if numTokens == 0 {
 				status.PartitionerState = "done"
 				return nil
@@ -1081,9 +1085,8 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			}
 			// Iterate until we reach the end of this text's tokens.
 			for idx < numTokens {
-				status.PartitionerState = fmt.Sprintf(
-					"iterating: %d:%d", idx, numTokens,
-				)
+				status.PartitionerState = "iterating"
+				status.ChunkerIndex = idx
 				token := (tokens)[idx]
 				// If this is a 'boundary' token, add it to our list.
 				status.PartitionerState = "boundary"
@@ -1099,7 +1102,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 
 					if doUnitrim {
 						var endAt int
-						chunk, endAt = tokenizer.AlignAndSizeTokens(
+						chunk, endAt = aligner.AlignAndSizeTokens(
 							&chunk,
 							contextSize,
 						)
@@ -1157,16 +1160,13 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					return &chunk
 				}
 				idx += 1
+				status.AccumulatorSize = numTokens
+				status.ChunkerIndex = idx
 				if len(tokens)-idx < contextSize*2 {
-					status.PartitionerState = fmt.Sprintf(
-						"fetching: tokenized=%d/%d",
-						len(tokenizedTexts), tokenizedCap,
-					)
+					status.PartitionerState = "fetching"
 					moreTokens()
+					status.PartitionerState = "got_tokens"
 				}
-				status.PartitionerState = fmt.Sprintf(
-					"idx: %d/%d", idx, numTokens,
-				)
 			}
 		}
 	}
@@ -1178,16 +1178,13 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 				status.CurrFile = ""
 				break
 			} else {
-				status.PartitionerState = fmt.Sprintf(
-					"sending: contexts=%d/%d",
-					len(contexts), contextsCap,
-				)
+				status.PartitionerState = "sending"
 				contexts <- *context
 				status.NumTokens += len(*context)
 				status.PartitionerState = "sent"
 			}
 		}
-		if providedContexts == nil {
+		if outputContexts == nil {
 			close(contexts)
 		}
 		if wg != nil {
@@ -1485,21 +1482,30 @@ func StatusWatcher(
 				sendWait := status.SendWait.Round(time.Millisecond)
 				waitTime := status.WaitTime.Round(time.Millisecond)
 				internalState := ""
+				textsWaiting := len(*status.Texts)
+				textsCap := cap(*status.Texts)
+				tokenizedWaiting := len(*status.Tokenized)
+				tokenizedCap := cap(*status.Tokenized)
+				contextsWaiting := len(*status.Contexts)
+				contextsCap := cap(*status.Contexts)
+				lruHitPercent := 0.0
+				if status.Tokenizer.LruHits+status.Tokenizer.LruMisses > 0 {
+					lruHitPercent = float64(status.Tokenizer.LruHits) /
+						float64(status.Tokenizer.LruHits+status.Tokenizer.LruMisses) * 100
+				}
 				if status.TokenizerState != "" && status.PartitionerState != "" {
 					internalState = fmt.Sprintf(
-						" [%s, %s],", status.TokenizerState,
+						" [tokenizer=%s, lru=%0.2f%%, texts=%d/%d, tokenized=%d/%d] [partitioner=%s (idx=%d, acc_sz=%d), contexts=%d/%d]",
+						status.TokenizerState,
+						lruHitPercent,
+						textsWaiting, textsCap,
+						tokenizedWaiting, tokenizedCap,
 						status.PartitionerState,
-					)
-				} else if status.TokenizerState != "" {
-					internalState = fmt.Sprintf(
-						" [%s],", status.TokenizerState,
-					)
-				} else if status.PartitionerState != "" {
-					internalState = fmt.Sprintf(
-						" [%s],", status.PartitionerState,
+						status.ChunkerIndex,
+						status.AccumulatorSize,
+						contextsWaiting, contextsCap,
 					)
 				}
-
 				log.Printf(
 					"  Thread %d:%s %d tokens, %d pad tokens, %d docs, Times: %s tokenizing, %s recv, %s send, File: %s",
 					i,

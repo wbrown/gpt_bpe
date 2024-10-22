@@ -2,7 +2,7 @@ module github.com/wbrown/gpt_bpe/cmd/dataset_tokenizer
 
 go 1.19
 
-// replace github.com/wbrown/gpt_bpe => ../../
+replace github.com/wbrown/gpt_bpe => ../../
 
 require (
 	github.com/aws/aws-sdk-go v1.45.4

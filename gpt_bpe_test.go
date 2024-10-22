@@ -11,6 +11,8 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -414,12 +416,59 @@ func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	b.ReportMetric(float64(numBytes), "bytes")
 }
 
+func BenchmarkGPTEncoder_ToBPE(b *testing.B) {
+	b.StopTimer()
+
+	// Pre-split words
+	words := *nerdstashV2Encoder.SplitWords(largeCorpus)
+
+	// Pre-calculate tokens for each word
+	tokenLengths := make([]int, len(words))
+	totalTokens := 0
+	for i, word := range words {
+		tokens := nerdstashV2Encoder.ToBPE(word)
+		tokenLengths[i] = len(tokens)
+		totalTokens += tokenLengths[i]
+	}
+	profileHandle, _ := os.Create("tobpe.prof")
+
+	numBytes := len(*largeCorpus)
+	start := time.Now()
+
+	b.StartTimer()
+	runtime.GC()
+	pprof.StartCPUProfile(profileHandle)
+	for i := 0; i < b.N; i++ {
+		for idx := range words {
+			// Just do the ToBPE call without length calculation
+			nerdstashV2Encoder.ToBPE(words[idx])
+		}
+	}
+	pprof.StopCPUProfile()
+	b.StopTimer()
+
+	elapsed := time.Since(start)
+	totalTokens *= b.N
+
+	// Use pre-calculated values for metrics
+	b.ReportMetric(float64(numBytes)/elapsed.Seconds(), "bytes/sec")
+	b.ReportMetric(float64(numBytes), "bytes")
+	b.ReportMetric(float64(totalTokens)/elapsed.Seconds(), "tokens/sec")
+	b.ReportMetric(float64(totalTokens), "tokens")
+	// Report on tokenizer LRU cache
+	b.ReportMetric(float64(nerdstashV2Encoder.LruHits), "lru_hits")
+	b.ReportMetric(float64(nerdstashV2Encoder.LruMisses), "lru_misses")
+	b.ReportMetric(float64(nerdstashV2Encoder.LruEvictions), "lru_evictions")
+
+}
+
 func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 	b.StopTimer()
 	wordCount := 0
 	tokensCount := 0
 	corpusHandle := strings.NewReader(corpus)
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+
 	wordSplitter := nerdstashV2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
 		func(word *string) {
