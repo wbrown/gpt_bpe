@@ -1,11 +1,10 @@
-name: Test gpt_bpe_test.go
+name: Test Commands
 
 on:
   push:
     paths-ignore:
       - "README.md"
       - "LICENSE"
-      - "cmd/**"
   workflow_dispatch:
 
 jobs:
@@ -23,7 +22,8 @@ jobs:
       - name: Build
         run: go build -v ./
 
-      - name: Test gpt_bpe
+      - name: Test dataset_tokenizer
         uses: robherley/go-test-action@v0
         with:
           testArguments: ./
+          moduleDirectory: ./cmd/dataset_tokenizer
