@@ -2,15 +2,15 @@ name: Publish
 
 on:
   workflow_run:
-    workflows: ["Test Commands"]
-    types:
-      - completed
+    workflows: ['Test Commands']
+    types: ['completed']
+    branches: ['main']
 
 jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success'  && github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/setup-go@v2
         with:
