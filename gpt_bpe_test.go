@@ -1382,7 +1382,7 @@ func TestLlama3RemoteDownloadTokenizer(t *testing.T) {
 func TestMistralRemoteDownloadTokenizer(t *testing.T) {
 	// Tests the ability to download a tokenizer from a remote model
 	// and use it to encode and decode strings
-	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	modelId := "openaccess-ai-collective/tiny-mistral"
 	//destPath := "./TestMistralRemoteDownloadTokenizer"
 	//defer os.RemoveAll(destPath)
 	encoderMistral, err := NewEncoder(modelId)
@@ -1530,7 +1530,7 @@ func TestModelDownloadLlama(t *testing.T) {
 
 func TestModelDownloadMistral(t *testing.T) {
 	// Download a downstream mistral model due to mistral being gated
-	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	modelId := "openaccess-ai-collective/tiny-mistral"
 	destPath := "./TestModelDownloadMistral"
 	err := downloadModel(modelId, destPath)
 	if err != nil {
@@ -1545,7 +1545,7 @@ func TestModelDownloadMistral(t *testing.T) {
 	// tokenizer.model
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.model", "config.json", "pytorch_model-00001-of-00002.bin"}
+	metaFiles := []string{"tokenizer.model", "config.json", "pytorch_model.bin"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
