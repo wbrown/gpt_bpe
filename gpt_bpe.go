@@ -1305,16 +1305,15 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				return nil
 			}
 
+			var encodedTokens Tokens
 			if specialToken, isSpecial := encoder.Specials[*word]; isSpecial {
-				accumulator = append(
-					accumulator,
+				encodedTokens = Tokens{
 					encoder.Encoder[string(encoder.Decoder[specialToken[0]])],
-				)
-				continue
+				}
+			} else {
+				fragment := encoder.toUnicode(word)
+				encodedTokens = encoder.ToBPE(fragment)
 			}
-
-			fragment := encoder.toUnicode(word)
-			encodedTokens := encoder.ToBPE(fragment)
 			accumulator = append(accumulator, encodedTokens...)
 
 			if encoder.ignoreMerges {
@@ -1326,9 +1325,13 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 				for idx < len(accumulator)-1 {
 					pair := TokenPair{accumulator[idx], accumulator[idx+1]}
 					if merged, ok := encoder.TokenMerges[pair]; ok && merged != 0 {
-						accumulator[idx] = merged
-						copy(accumulator[idx+1:], accumulator[idx+2:])
-						accumulator = accumulator[:len(accumulator)-1]
+						before := accumulator[:idx]
+						var after Tokens
+						if idx+2 < len(accumulator) {
+							after = accumulator[idx+2:]
+						}
+						accumulator = append(before, merged)
+						accumulator = append(accumulator, after...)
 						if idx > 0 {
 							idx--
 						}
