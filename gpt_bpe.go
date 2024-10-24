@@ -155,11 +155,9 @@ func NewMistralEncoder() GPTEncoder {
 }
 
 func (encoder *GPTEncoder) Clone() *GPTEncoder {
-	// Shallow copy everything but instantiate a new LRU
+	// Shallow copy everything first
 	clone := *encoder
 	clone.Cache, _ = lru.NewARC(BPE_LRU_SZ)
-	// We share the ARC cache, so we copy the pointer over.
-	//clone.TwoTierCache.arc = encoder.TwoTierCache.arc
 	// Copy our maps
 	clone.Encoder = make(map[string]Token)
 	for k, v := range encoder.Encoder {
@@ -177,7 +175,13 @@ func (encoder *GPTEncoder) Clone() *GPTEncoder {
 	for k, v := range encoder.TokenMerges {
 		clone.TokenMerges[k] = v
 	}
-	clone.BytesEncoder = encoder.BytesEncoder
+	if encoder.BytesEncoder != nil {
+		encoderCopy := make(map[byte]Token)
+		for k, v := range *encoder.BytesEncoder {
+			encoderCopy[k] = v
+		}
+		clone.BytesEncoder = &encoderCopy
+	}
 	clone.unitrim = make([]int, len(encoder.unitrim))
 	copy(clone.unitrim, encoder.unitrim)
 	clone.PuncRunes = make([]rune, len(encoder.PuncRunes))
@@ -188,8 +192,7 @@ func (encoder *GPTEncoder) Clone() *GPTEncoder {
 	for k, v := range encoder.Specials {
 		clone.Specials[k] = v
 	}
-	clone.SpecialsTree = encoder.SpecialsTree
-	clone.replacements = make(map[string]string)
+	clone.UpdateSpecialsTree()
 	for k, v := range encoder.replacements {
 		clone.replacements[k] = v
 	}
@@ -676,6 +679,33 @@ func (p *PreallocBGERanks) InsertSorted(v BGERank) {
 	p.len++
 }
 
+func findBestPair(word []string, bpeRanks map[GPTPair]float64) (
+	BGERank,
+	bool,
+) {
+	var bestRank BGERank
+	bestRank.rank = math.Inf(1)
+	found := false
+
+	prev := word[0]
+	pair := GPTPair{}
+	wordLen := len(word) // Calculate once
+
+	for idx := 1; idx < wordLen; idx++ {
+		present := word[idx]
+		pair.Left = prev
+		pair.Right = present
+		if rank, ok := bpeRanks[pair]; ok {
+			if rank < bestRank.rank {
+				bestRank = BGERank{rank, pair}
+				found = true
+			}
+		}
+		prev = present
+	}
+	return bestRank, found
+}
+
 // Standard version with proper duplicate checking
 func insertSortedNoDups(data BGERanks, v BGERank) BGERanks {
 	// Fast path: append to end if it's greater than all existing elements
@@ -825,28 +855,18 @@ func findAllStringsIndexes(text string, strings []string) [][]int {
 	return indexes
 }
 
+var wordBufferPool = sync.Pool{
+	New: func() interface{} {
+		s1 := make([]string, 0, 256)
+		s2 := make([]string, 0, 256)
+		return &[2][]string{s1, s2} // Return pair of buffers
+	},
+}
+
 // ToBPE
 // Given pre-split text, perform bigram ranking and merges, and returns Tokens
 // Add at package level - reusable buffers for common operations
-var wordBufferPool = sync.Pool{
-	New: func() interface{} {
-		// Size for typical word length
-		slice := make([]string, 0, 256)
-		return &slice
-	},
-}
-
-var rankedPairsPool = sync.Pool{
-	New: func() interface{} {
-		// Size for typical number of pairs
-		slice := make(BGERanks, 0, 256)
-		return &slice
-	},
-}
-
-// Optimized ToBPE
 func (encoder *GPTEncoder) ToBPE(text string) Tokens {
-	// Cache check remains the same
 	if lookup, ok := encoder.Cache.Get(text); ok {
 		encoder.LruHits++
 		return lookup.(Tokens)
@@ -862,11 +882,11 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 	}
 
 	// Get word buffer from pool
-	wordPtr := wordBufferPool.Get().(*[]string)
-	word := (*wordPtr)[:0]
-	defer wordBufferPool.Put(wordPtr)
+	bufsPtr := wordBufferPool.Get().(*[2][]string)
+	word := (*bufsPtr)[0][:0]
+	newWord := (*bufsPtr)[1][:0]
+	defer wordBufferPool.Put(bufsPtr)
 
-	// Pre-allocate for split
 	word = append(word, strings.Split(text, "")...)
 	if len(word) > 0 {
 		word[len(word)-1] = word[len(word)-1] + encoder.endOfWord
@@ -890,39 +910,17 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 		return tokens
 	}
 
-	// Get ranked pairs buffer from pool
-	rankedPairsPtr := rankedPairsPool.Get().(*BGERanks)
-	rankedPairs := (*rankedPairsPtr)[:0]
-	defer rankedPairsPool.Put(rankedPairsPtr)
-
-	// Initial ranking of pairs
-	prev := word[0]
-	for idx := 1; idx < len(word); idx++ {
-		present := word[idx]
-		pair := GPTPair{prev, present}
-		if rank, ok := encoder.BpeRanks[pair]; ok {
-			rankedPairs = insertSortedNoDups(rankedPairs, BGERank{rank, pair})
-		} else {
-			rankedPairs = insertSortedNoDups(
-				rankedPairs, BGERank{math.Inf(1), pair},
-			)
-		}
-		prev = present
-	}
-
-	// Main merge loop
-	newWord := make([]string, 0, len(word))
-	for len(rankedPairs) > 0 {
-		bigram := rankedPairs[0].bigram
-		if _, ok := encoder.BpeRanks[bigram]; !ok {
+	// Main merge loop using findBestPair
+	for {
+		bestRank, found := findBestPair(word, encoder.BpeRanks)
+		if !found {
 			break
 		}
 
 		// Reset newWord for reuse
 		newWord = newWord[:0]
-
-		first := bigram.Left
-		second := bigram.Right
+		first := bestRank.bigram.Left
+		second := bestRank.bigram.Right
 
 		for i := 0; i < len(word); {
 			j := pos(word, first, i)
@@ -942,29 +940,10 @@ func (encoder *GPTEncoder) ToBPE(text string) Tokens {
 			}
 		}
 
-		// Swap slices to avoid allocation
 		word, newWord = newWord, word
 
 		if len(word) == 1 {
 			break
-		}
-
-		// Reset and recompute ranked pairs
-		rankedPairs = rankedPairs[:0]
-		prev := word[0]
-		for idx := 1; idx < len(word); idx++ {
-			present := word[idx]
-			pair := GPTPair{prev, present}
-			if rank, ok := encoder.BpeRanks[pair]; ok {
-				rankedPairs = insertSortedNoDups(
-					rankedPairs, BGERank{rank, pair},
-				)
-			} else {
-				rankedPairs = insertSortedNoDups(
-					rankedPairs, BGERank{math.Inf(1), pair},
-				)
-			}
-			prev = present
 		}
 	}
 
