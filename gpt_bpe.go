@@ -1016,15 +1016,15 @@ func (encoder *GPTEncoder) splitWords(
 }
 
 type NextRuneFunc func() (rune, int, error)
-type WordCallback func(*string)
+type WordCallback func([]string)
 
 func (encoder *GPTEncoder) makeWordSplitter(
 	nextRuneFunc NextRuneFunc,
 	wordCallback WordCallback,
 	completeCallback func(),
 ) func() {
-	// Use a larger buffer for batching words
-	const batchSize = 1024
+	// How many words we send on each callback.
+	const batchSize = 256
 	workQueue := make(chan []string, encoder.SplitterThreads*2)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -1033,10 +1033,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	go func() {
 		defer wg.Done()
 		for batch := range workQueue {
-			for i := range batch {
-				word := batch[i]
-				wordCallback(&word)
-			}
+			wordCallback(batch)
 		}
 	}()
 
@@ -1175,26 +1172,35 @@ func (encoder *GPTEncoder) makeWordSplitter(
 }
 
 func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
-	wordsAccumulator := make(chan string, encoder.wordChanSz)
+	moreWords := make(chan []string, encoder.wordChanSz)
 	wordSplitter := encoder.makeWordSplitter(
 		reader.ReadRune,
-		func(word *string) {
-			if word != nil {
-				wordsAccumulator <- *word
+		func(words []string) {
+			if len(words) > 0 {
+				moreWords <- words
 			}
 		},
 		func() {
-			close(wordsAccumulator)
+			close(moreWords)
 		},
 	)
 	go wordSplitter()
 
+	var wordsBuffer []string
+	idx := 1
+
 	return func() *string {
-		word, more := <-wordsAccumulator
-		if more {
-			return &word
+		var more bool
+		if idx >= len(wordsBuffer) {
+			wordsBuffer, more = <-moreWords
+			if !more {
+				return nil
+			}
+			idx = 1
+		} else {
+			idx++
 		}
-		return nil
+		return &wordsBuffer[idx-1]
 	}
 }
 

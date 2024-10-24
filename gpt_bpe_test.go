@@ -397,10 +397,13 @@ func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	gpt2Encoder.SplitterThreads = 8
 	wordCount := 0
 	runeReader := bufio.NewReaderSize(corpusHandle, 8*1024*1024)
+	profileHandle, _ := os.Create("wordsplitter.prof")
+	runtime.GC()
+	pprof.StartCPUProfile(profileHandle)
 	wordSplitter := gpt2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
-		func(*string) {
-			wordCount++
+		func(words []string) {
+			wordCount += len(words)
 		},
 		func() {},
 	)
@@ -408,6 +411,7 @@ func BenchmarkGPTEncoder_WordSplitter(b *testing.B) {
 	b.StartTimer()
 	wordSplitter()
 	b.StopTimer()
+	pprof.StopCPUProfile()
 	elapsed := time.Since(start)
 	numBytes := len(*largeCorpus)
 	b.ReportMetric(float64(wordCount)/elapsed.Seconds(), "words/sec")
@@ -471,9 +475,11 @@ func BenchmarkGPTEncoder_WordSplitterTokens(b *testing.B) {
 
 	wordSplitter := nerdstashV2Encoder.makeWordSplitter(
 		runeReader.ReadRune,
-		func(word *string) {
-			if word != nil {
-				tokensCount += len(gpt2Encoder.ToBPE(*word))
+		func(words []string) {
+			if len(words) > 0 {
+				for _, word := range words {
+					tokensCount += len(nerdstashV2Encoder.ToBPE(word))
+				}
 			}
 			wordCount++
 		},
@@ -617,6 +623,11 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	// correctly
 	start := time.Now()
 	corpusRunes := strings.NewReader(*largeCorpus)
+	// Set our profiler up
+	profileHandle, _ := os.Create("streaming.prof")
+	defer profileHandle.Close()
+	runtime.GC()
+	//pprof.StartCPUProfile(profileHandle)
 	nextTokens := gpt2Encoder.StreamingEncode(corpusRunes)
 	tokenCt := 0
 	for {
@@ -627,6 +638,7 @@ func TestGPTEncoder_StreamingEncode(t *testing.T) {
 		tokenCt += len(*tokens)
 	}
 	duration := time.Since(start)
+	//pprof.StopCPUProfile()
 	t.Logf(
 		"streaming encode: %d tokens/sec",
 		int64(float64(tokenCt)/duration.Seconds()),
