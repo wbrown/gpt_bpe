@@ -539,6 +539,18 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	}
 }
 
+func TestGPTEncode(t *testing.T) {
+	// This test is to check if the GPTEncoder is able to encode the tokens correctly
+	strin := "The quick brown fox jumps over the lazy dog."
+	expected := Tokens{464, 21831, 11687, 625, 262, 387, 260, 25970, 82, 29, 464, 28699, 318, 5443, 621, 262, 387, 260, 13}
+	encoded := gpt2Encoder.Encode(&strin)
+	fmt.Printf("Encoded: with commas:")
+	for _, token := range *encoded {
+		fmt.Printf("%v, ", token)
+	}
+	assert.Equal(t, *encoded, expected)
+}
+
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	// This test is to check if the GPTEncoder is able to encode the tokens correctly
 	start := time.Now()

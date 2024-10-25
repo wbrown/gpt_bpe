@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/stretchr/testify/assert"
 	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 type SanitizerTest struct {
@@ -66,24 +66,11 @@ var sanitizerTests = SanitizerTests{
 
 const corpusPath = "../../resources/frankenstein.txt"
 
-func TokensFromBin(bin *[]byte) *gpt_bpe.Tokens {
-	tokens := make(gpt_bpe.Tokens, 0)
-	buf := bytes.NewReader(*bin)
-	for {
-		var token gpt_bpe.Token
-		if err := binary.Read(buf, binary.LittleEndian, &token); err != nil {
-			break
-		}
-		tokens = append(tokens, token)
-	}
-	return &tokens
-}
-
 // DecodeBuffer
 // Decode Tokens from a byte array into a string.
 func DecodeBuffer(encoded *[]byte) (text string) {
 	// First convert our bytearray into a uint32 `Token` array.
-	tokens := TokensFromBin(encoded)
+	tokens := types.TokensFromBin(encoded)
 	// Decode our tokens into a string.
 	var enc *gpt_bpe.GPTEncoder
 	encoderString := "gpt2"
@@ -735,4 +722,191 @@ func TestListObjectsRecursively(t *testing.T) {
 	}
 
 	wg.Wait() // Wait for all goroutines to finish
+}
+
+func TestUInt16WithNoEnforce(t *testing.T) {
+	// Test if with Uint32 enforce disabled,
+	// using a Uint16 tokenizer works as intended with no padding.
+
+	textsTokenizer := NewTextsTokenizer()
+	textsTokenizer.ContextSize = 2048
+	textsTokenizer.TokenizerId = "gpt2"
+	textsTokenizer.EndOfText = ""
+
+	// Test data
+	testString := "The quick brown fox jumps over the lazy dog."
+	expectedTokens := types.Tokens{464, 2068, 7586, 21831, 18045, 625, 262, 16931, 3290, 13, 50256}
+	// Generate temp directory and test file
+	tempDir := os.TempDir()
+	testFile := tempDir + "/test.txt"
+	f, err := os.Create(testFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Write test string to file
+	_, err = f.WriteString(testString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f.Close()
+	defer os.Remove(testFile)
+
+	reorderPaths := ""
+	sampling := 100
+	outputFile := "base.chunk"
+	defer os.Remove(outputFile)
+
+	enc, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
+		log.Fatal(tokErr)
+	}
+
+	if texts, err := ReadTexts(
+		testFile, false,
+		reorderPaths,
+		1,
+	); err != nil {
+		log.Fatal(err)
+	} else {
+		begin := time.Now()
+		contexts, tokErr := textsTokenizer.TokenizeTexts(
+			texts, "./test", enc,
+		)
+		if tokErr != nil {
+			log.Fatal(tokErr)
+		}
+
+		total, writeErr := WriteContexts(
+			outputFile,
+			contexts,
+			enc,
+			sampling,
+			false,
+			false,
+			false,
+		)
+		if writeErr != nil {
+			log.Fatal(writeErr)
+		}
+		duration := time.Since(begin).Seconds()
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration,
+		)
+	}
+	// Read the encoded tokens from the output file
+	binaryData, err := os.ReadFile(outputFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Convert to Tokens array
+	tokens := types.TokensFromBin(&binaryData)
+
+	if len(*tokens) != len(expectedTokens) {
+		t.Fatalf(
+			"Expected %d tokens, but got %d", len(expectedTokens),
+			len(*tokens),
+		)
+	}
+	if &expectedTokens != tokens {
+		t.Fatalf("Expected tokens: %v, but got: %v", expectedTokens, tokens)
+	}
+
+	// Verify the encoded tokens
+	assert.Equal(t, &expectedTokens, tokens)
+}
+
+func TestUInt16WithEnforce(t *testing.T) {
+	// Test if with Uint32 enforce enabled,
+	// using a Uint16 tokenizer works as intended with padding
+	// ie X, 0 Y, 0, Z, 0
+
+	textsTokenizer := NewTextsTokenizer()
+	textsTokenizer.ContextSize = 2048
+	textsTokenizer.TokenizerId = "gpt2"
+	textsTokenizer.EndOfText = ""
+
+	// Test data
+	testString := "The quick brown fox jumps over the lazy dog."
+	expectedTokens := types.Tokens{464, 0, 2068, 0, 7586, 0, 21831, 0, 18045, 0, 625, 0, 262, 0, 16931, 0, 3290, 0, 13, 0, 50256, 0}
+	// Generate temp directory and test file
+	tempDir := os.TempDir()
+	testFile := tempDir + "/test.txt"
+	f, err := os.Create(testFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Write test string to file
+	_, err = f.WriteString(testString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f.Close()
+	defer os.Remove(testFile)
+
+	reorderPaths := ""
+	sampling := 100
+	outputFile := "base.chunk"
+	defer os.Remove(outputFile)
+
+	enc, tokErr := textsTokenizer.InitTokenizer()
+	if tokErr != nil {
+		log.Fatal(tokErr)
+	}
+
+	if texts, err := ReadTexts(
+		testFile, false,
+		reorderPaths,
+		1,
+	); err != nil {
+		log.Fatal(err)
+	} else {
+		begin := time.Now()
+		contexts, tokErr := textsTokenizer.TokenizeTexts(
+			texts, "./test", enc,
+		)
+		if tokErr != nil {
+			log.Fatal(tokErr)
+		}
+
+		total, writeErr := WriteContexts(
+			outputFile,
+			contexts,
+			enc,
+			sampling,
+			false,
+			true,
+			false,
+		)
+		if writeErr != nil {
+			log.Fatal(writeErr)
+		}
+		duration := time.Since(begin).Seconds()
+		log.Printf(
+			"%d tokens in %0.2fs, %0.2f tokens/s", total,
+			duration, float64(total)/duration,
+		)
+	}
+	// Read the encoded tokens from the output file
+	binaryData, err := os.ReadFile(outputFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Convert to Tokens array
+	tokens := types.TokensFromBin(&binaryData)
+
+	if len(*tokens) != len(expectedTokens) {
+		t.Fatalf(
+			"Expected %d tokens, but got %d", len(expectedTokens),
+			len(*tokens),
+		)
+	}
+	if &expectedTokens != tokens {
+		t.Fatalf("Expected tokens: %v, but got: %v", expectedTokens, tokens)
+	}
+
+	// Verify the encoded tokens
+	assert.Equal(t, &expectedTokens, tokens)
 }
