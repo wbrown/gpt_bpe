@@ -809,8 +809,13 @@ func TestUInt16WithNoEnforce(t *testing.T) {
 			len(*tokens),
 		)
 	}
-	if &expectedTokens != tokens {
-		t.Fatalf("Expected tokens: %v, but got: %v", expectedTokens, tokens)
+	for i, token := range *tokens {
+		if token != expectedTokens[i] {
+			t.Fatalf(
+				"Expected token %d, but got %d", expectedTokens[i],
+				token,
+			)
+		}
 	}
 
 	// Verify the encoded tokens
@@ -903,10 +908,14 @@ func TestUInt16WithEnforce(t *testing.T) {
 			len(*tokens),
 		)
 	}
-	if &expectedTokens != tokens {
-		t.Fatalf("Expected tokens: %v, but got: %v", expectedTokens, tokens)
+	for i, token := range *tokens {
+		if token != expectedTokens[i] {
+			t.Fatalf(
+				"Expected token %d, but got %d", expectedTokens[i],
+				token,
+			)
+		}
 	}
-
 	// Verify the encoded tokens
 	assert.Equal(t, &expectedTokens, tokens)
 }
