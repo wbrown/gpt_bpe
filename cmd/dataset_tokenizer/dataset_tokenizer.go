@@ -506,6 +506,40 @@ func GetJsonObject(jsonlReader *bufio.Reader) (
 	return jsonObjectMap, nil
 }
 
+func ExtractTextsFromJsonObject(jsonObjectMap map[string]interface{}) (
+	[]string, error,
+) {
+	// We do a recursive search for all fields named `text` and extract
+	// the text.
+	texts := make([]string, 0)
+	for key, value := range jsonObjectMap {
+		if key == "text" {
+			text, ok := value.(string)
+			if !ok {
+				return nil, errors.New("text field is not a string")
+			}
+			texts = append(texts, text)
+		} else if subMap, ok := value.(map[string]interface{}); ok {
+			subTexts, err := ExtractTextsFromJsonObject(subMap)
+			if err != nil {
+				return nil, err
+			}
+			texts = append(texts, subTexts...)
+		} else if subArray, ok := value.([]interface{}); ok {
+			for _, subValue := range subArray {
+				if subMap, ok := subValue.(map[string]interface{}); ok {
+					subTexts, err := ExtractTextsFromJsonObject(subMap)
+					if err != nil {
+						return nil, err
+					}
+					texts = append(texts, subTexts...)
+				}
+			}
+		}
+	}
+	return texts, nil
+}
+
 // ReadTexts
 // Consumes a directory path and recursively scans for `.txt` files, producing
 // a TextsIterator function that yields the text file as an io.Reader type.
@@ -569,14 +603,14 @@ func ReadTexts(
 								continue
 							}
 							// Extract the text field.
-							text, ok := jsonObjectMap["text"]
-							if !ok {
-								log.Fatal("JSONL object missing text field")
+							texts, err := ExtractTextsFromJsonObject(
+								jsonObjectMap,
+							)
+							if err != nil {
+								log.Fatal("JSONL object missing text fields")
 							}
-							textString, ok := text.(string)
-							if !ok {
-								log.Fatal("JSONL object text field not string")
-							}
+							// Join the texts with `***\n`
+							textString := strings.Join(texts, "***\n")
 							// remove the path prefix
 							fileName := fmt.Sprintf(
 								"%s[%d]",
