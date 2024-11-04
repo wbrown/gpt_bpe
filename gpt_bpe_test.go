@@ -564,6 +564,18 @@ func TestGPTEncoder_Encode(t *testing.T) {
 	}
 }
 
+func TestGPTEncode(t *testing.T) {
+	// This test is to check if the GPTEncoder is able to encode the tokens correctly
+	strin := "The quick brown fox jumps over the lazy dog."
+	expected := Tokens{464, 21831, 11687, 625, 262, 387, 260, 25970, 82, 29, 464, 28699, 318, 5443, 621, 262, 387, 260, 13}
+	encoded := gpt2Encoder.Encode(&strin)
+	fmt.Printf("Encoded: with commas:")
+	for _, token := range *encoded {
+		fmt.Printf("%v, ", token)
+	}
+	assert.Equal(t, *encoded, expected)
+}
+
 func TestGPTEncoder_StreamingEncode(t *testing.T) {
 	// This test is to check if the GPTEncoder is able to encode the tokens correctly
 	start := time.Now()
@@ -1407,7 +1419,7 @@ func TestLlama3RemoteDownloadTokenizer(t *testing.T) {
 func TestMistralRemoteDownloadTokenizer(t *testing.T) {
 	// Tests the ability to download a tokenizer from a remote model
 	// and use it to encode and decode strings
-	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	modelId := "openaccess-ai-collective/tiny-mistral"
 	//destPath := "./TestMistralRemoteDownloadTokenizer"
 	//defer os.RemoveAll(destPath)
 	encoderMistral, err := NewEncoder(modelId)
@@ -1496,7 +1508,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	// the vocab.json and merges.txt files are stored in the
 	// tokenizer.json file. We want to check if we are able to
 	// download the model and extract the vocab.json and merges.txt
-	modelId := "georgesung/llama2_7b_chat_uncensored"
+	modelId := "Maykeye/TinyLLama-v0"
 	destPath := "./TestModelDownloadLlama"
 	err := downloadModel(modelId, destPath)
 	if err != nil {
@@ -1508,7 +1520,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
 	// config.json, pytorch_model.bin,
-	// tokenizer.json, vocab.json
+	// tokenizer.model, vocab.json
 
 	// Check for pytorch_model.bin
 	singleModelPattern := regexp.MustCompile(`pytorch_model\.bin$`)
@@ -1543,7 +1555,7 @@ func TestModelDownloadLlama(t *testing.T) {
 	}
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json", "config.json"}
+	metaFiles := []string{"tokenizer.model", "vocab.json", "config.json"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
@@ -1555,7 +1567,7 @@ func TestModelDownloadLlama(t *testing.T) {
 
 func TestModelDownloadMistral(t *testing.T) {
 	// Download a downstream mistral model due to mistral being gated
-	modelId := "Open-Orca/Mistral-7B-OpenOrca"
+	modelId := "openaccess-ai-collective/tiny-mistral"
 	destPath := "./TestModelDownloadMistral"
 	err := downloadModel(modelId, destPath)
 	if err != nil {
@@ -1567,10 +1579,10 @@ func TestModelDownloadMistral(t *testing.T) {
 	// Check that the model files are there
 	// We want to check for the presence of the following files:
 	// config.json, pytorch_model.bin,
-	// tokenizer.json, vocab.json
+	// tokenizer.model
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model-00001-of-00002.bin"}
+	metaFiles := []string{"tokenizer.model", "config.json", "pytorch_model.bin"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)
@@ -1599,7 +1611,7 @@ func TestModelDownloadFairseq(t *testing.T) {
 	// vocab, config. merges, pytorch_model
 
 	// Check for additional metadata files
-	metaFiles := []string{"tokenizer.json", "vocab.json, config.json", "pytorch_model.bin", "merges.txt"}
+	metaFiles := []string{"vocab.json", "config.json", "pytorch_model.bin", "merges.txt"}
 	for _, metaFile := range metaFiles {
 		metaPath := destPath + "/" + metaFile
 		assertFileExists(t, metaPath)

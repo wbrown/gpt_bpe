@@ -3,9 +3,11 @@ package main
 //go:generate gopherjs build --minify
 
 import (
+	"log"
+
 	"github.com/gopherjs/gopherjs/js"
 	"github.com/wbrown/gpt_bpe"
-	"log"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 var encoder gpt_bpe.GPTEncoder
@@ -15,7 +17,7 @@ func Tokenize(text string) gpt_bpe.Tokens {
 }
 
 func Decode(arr []byte) string {
-	tokens := gpt_bpe.TokensFromBin(&arr)
+	tokens := types.TokensFromBin(&arr)
 	return encoder.Decode(tokens)
 }
 
