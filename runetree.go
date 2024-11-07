@@ -1,14 +1,18 @@
 package gpt_bpe
 
-import "strings"
+import (
+	"strings"
+)
 
 type RuneNode struct {
-	rune        rune               // The rune this node represents.
-	runes       []rune             // The prior runes that led to this node.
-	terminal    bool               // If this node is an absolute terminal node.
-	replacement *[]rune            // The replacement runes for this node.
-	childs      map[rune]*RuneNode // The child nodes.
-	childsArr   *[]*RuneNode       // The child nodes in an array, for precedence
+	rune              rune               // The rune this node represents.
+	runes             []rune             // The prior runes that led to this node.
+	terminal          bool               // If this node is an absolute terminal node.
+	replacement       *[]rune            // The replacement runes for this node.
+	childs            map[rune]*RuneNode // The child nodes.
+	childsArr         *[]*RuneNode       // The child nodes in an array, for precedence
+	isPrefix          bool               // Whether this node is a valid prefix match
+	isContractionTree bool               // Whether this node is a contraction tree
 }
 
 type RuneNodes []*RuneNode
@@ -26,8 +30,20 @@ func (nodes *RuneNodes) evaluate(r rune) *RuneNode {
 	var idx int
 	var candidate *RuneNode
 	for idx, candidate = range *nodes {
+
+		var isContraction bool
+		if candidate.isContractionTree {
+			isContraction = true
+		}
 		candidate = candidate.evaluate(r)
+		// ' is not a contraction but 's is,
+		// so we don't care about nils if we're in a contraction tree
+		if candidate == nil && isContraction {
+			continue
+		}
+
 		(*nodes)[idx] = candidate
+
 		if candidate != nil && (candidate.terminal || candidate.
 			replacement != nil) {
 			break
@@ -118,11 +134,12 @@ func (runeTree *RuneNode) insertRunes(runes []rune) (node *RuneNode) {
 		if !ok {
 			children := make([]*RuneNode, 0)
 			node.childs[r] = &RuneNode{
-				rune:      r,
-				runes:     runes[:i+1],
-				terminal:  i == keyLen-1,
-				childs:    make(map[rune]*RuneNode, 0),
-				childsArr: &children,
+				rune:              r,
+				runes:             runes[:i+1],
+				terminal:          i == keyLen-1,
+				childs:            make(map[rune]*RuneNode, 0),
+				childsArr:         &children,
+				isContractionTree: node.isContractionTree,
 			}
 		} else if i == keyLen-1 {
 			childNode.terminal = true
@@ -152,6 +169,20 @@ func NewRuneTree() *RuneNode {
 	}
 }
 
+// ContractionsTree creates a specialized RuneTree for handling contractions
+func ContractionsTree() *RuneNode {
+	tree := NewRuneTree()
+	contractions := []string{
+		"'s", "'t", "'re", "'ve", "'m", "'ll", "'d",
+	}
+	// Insert each contraction into the tree
+	for _, c := range contractions {
+		tree.insertRunes([]rune(c))
+	}
+	tree.isContractionTree = true
+	return tree
+}
+
 func (runeTree *RuneNode) InsertReplacementsIntoRuneTree(
 	replacements map[string]string,
 ) {
@@ -165,6 +196,7 @@ func (runeTree *RuneNode) InsertReplacementsIntoRuneTree(
 
 func CreateReplacementsRuneTree(replacements map[string]string) *RuneNode {
 	runeTree := NewRuneTree()
+	runeTree.isContractionTree = false
 	runeTree.InsertReplacementsIntoRuneTree(replacements)
 	return runeTree
 }
@@ -179,6 +211,7 @@ func (runeTree *RuneNode) InsertIntoRuneTree(s []string) {
 // Create a new rune tree from an array of strings to match against.
 func CreateRuneTree(s []string) *RuneNode {
 	runeTree := NewRuneTree()
+	runeTree.isContractionTree = false
 	runeTree.InsertIntoRuneTree(s)
 	return runeTree
 }

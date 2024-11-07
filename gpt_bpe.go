@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"github.com/pkg/errors"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -14,7 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
+
+	"github.com/pkg/errors"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/wbrown/gpt_bpe/resources"
@@ -29,45 +32,51 @@ const defaultPadTokenString = "[PAD]"
 type Token = types.Token
 type Tokens = types.Tokens
 
+type TypedTwoTierCache struct {
+	// Filler
+	filler int
+}
+
 type GPTEncoder struct {
-	Encoder         map[string]Token
-	Decoder         map[Token][]byte
-	BpeRanks        map[GPTPair]float64
-	TokenMerges     map[TokenPair]Token
-	BytesEncoder    *map[byte]Token
-	unitrim         []int
-	pattern         *regexp.Regexp
-	puncPat         *regexp.Regexp
-	specialsPat     *regexp.Regexp
-	byteToRune      [256]rune
-	runeToByte      map[rune]byte
-	Specials        map[string]Tokens
-	SpecialsTree    *RuneNode
-	Cache           *lru.ARCCache
-	TwoTierCache    *TypedTwoTierCache
-	PuncRunes       []rune
-	Normalizer      *strings.Replacer
-	DecodeExtra     *strings.Replacer
-	BosToken        Token
-	EosToken        Token
-	PadToken        Token
-	ignoreMerges    bool
-	encloseEosBos   bool
-	encloseBos      bool
-	encloseEos      bool
-	prefixSpace     bool
-	lowerCase       bool
-	endOfWord       string
-	replacements    map[string]string
-	runeBufSz       int
-	wordChanSz      int
-	LruHits         int
-	LruMisses       int
-	LruEvictions    int
-	LruSize         int
-	SplitterThreads int
-	VocabId         string
-	tokenizerClass  string
+	Encoder             map[string]Token
+	Decoder             map[Token][]byte
+	BpeRanks            map[GPTPair]float64
+	TokenMerges         map[TokenPair]Token
+	BytesEncoder        *map[byte]Token
+	unitrim             []int
+	pattern             *regexp.Regexp
+	puncPat             *regexp.Regexp
+	specialsPat         *regexp.Regexp
+	byteToRune          [256]rune
+	runeToByte          map[rune]byte
+	Specials            map[string]Tokens
+	SpecialsTree        *RuneNode
+	Cache               *lru.ARCCache
+	TwoTierCache        *TypedTwoTierCache
+	PuncRunes           []rune
+	Normalizer          *strings.Replacer
+	DecodeExtra         *strings.Replacer
+	BosToken            Token
+	EosToken            Token
+	PadToken            Token
+	ignoreMerges        bool
+	encloseEosBos       bool
+	encloseBos          bool
+	encloseEos          bool
+	prefixSpace         bool
+	lowerCase           bool
+	endOfWord           string
+	replacements        map[string]string
+	runeBufSz           int
+	wordChanSz          int
+	LruHits             int
+	LruMisses           int
+	LruEvictions        int
+	LruSize             int
+	SplitterThreads     int
+	VocabId             string
+	tokenizerClass      string
+	normalizerStringMap map[string]string
 }
 
 type GPTPair struct {
@@ -187,6 +196,7 @@ func (encoder *GPTEncoder) Clone() *GPTEncoder {
 	clone.PuncRunes = make([]rune, len(encoder.PuncRunes))
 	copy(clone.PuncRunes, encoder.PuncRunes)
 	clone.Normalizer = encoder.Normalizer
+	clone.normalizerStringMap = encoder.normalizerStringMap
 	clone.DecodeExtra = encoder.DecodeExtra
 	clone.Specials = make(map[string]Tokens)
 	for k, v := range encoder.Specials {
@@ -267,10 +277,13 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Create a replacer for normalizing text.
 	normalizer := strings.NewReplacer()
+	norms := make([]string, 0)
+	normsMap := make(map[string]string)
 	if specialConfig.Normalizer != nil {
-		norms := make([]string, 0)
+
 		for k, v := range *specialConfig.Normalizer {
 			norms = append(norms, k, v)
+			normsMap[k] = v
 		}
 		normalizer = strings.NewReplacer(norms...)
 	}
@@ -455,43 +468,44 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Create the encoder
 	encoder := &GPTEncoder{
-		Encoder:         encoderTokens,
-		Decoder:         tokensEncoder,
-		BpeRanks:        bpeRanks,
-		TokenMerges:     tokenMerges,
-		BytesEncoder:    bytesEncoderPtr,
-		unitrim:         unitrimArr,
-		pattern:         pat,
-		puncPat:         puncPat,
-		specialsPat:     specialsPat,
-		byteToRune:      bytesUnicode,
-		runeToByte:      unicodeBytes,
-		Specials:        specials,
-		SpecialsTree:    nil,
-		Cache:           cache,
-		PuncRunes:       puncRunes,
-		Normalizer:      normalizer,
-		DecodeExtra:     decodeExtra,
-		BosToken:        encoderTokens[*hfConfig.BosTokenStr],
-		EosToken:        encoderTokens[*hfConfig.EosTokenStr],
-		PadToken:        encoderTokens[*hfConfig.PadTokenStr],
-		ignoreMerges:    *hfConfig.IgnoreMerges,
-		encloseEosBos:   specialConfig.EncloseEosBos,
-		encloseBos:      *hfConfig.AddBosToken,
-		encloseEos:      *hfConfig.AddEosToken,
-		prefixSpace:     specialConfig.PrefixSpace,
-		lowerCase:       specialConfig.LowerCase,
-		endOfWord:       specialConfig.EndOfWord,
-		replacements:    replacements,
-		runeBufSz:       RUNEBUF_SZ,
-		wordChanSz:      WORDCHAN_SZ,
-		LruHits:         0,
-		LruMisses:       0,
-		LruEvictions:    0,
-		LruSize:         BPE_LRU_SZ,
-		SplitterThreads: 2,
-		VocabId:         vocabId,
-		tokenizerClass:  *hfConfig.TokenizerClass,
+		Encoder:             encoderTokens,
+		Decoder:             tokensEncoder,
+		BpeRanks:            bpeRanks,
+		TokenMerges:         tokenMerges,
+		BytesEncoder:        bytesEncoderPtr,
+		unitrim:             unitrimArr,
+		pattern:             pat,
+		puncPat:             puncPat,
+		specialsPat:         specialsPat,
+		byteToRune:          bytesUnicode,
+		runeToByte:          unicodeBytes,
+		Specials:            specials,
+		SpecialsTree:        nil,
+		Cache:               cache,
+		PuncRunes:           puncRunes,
+		Normalizer:          normalizer,
+		DecodeExtra:         decodeExtra,
+		BosToken:            encoderTokens[*hfConfig.BosTokenStr],
+		EosToken:            encoderTokens[*hfConfig.EosTokenStr],
+		PadToken:            encoderTokens[*hfConfig.PadTokenStr],
+		ignoreMerges:        *hfConfig.IgnoreMerges,
+		encloseEosBos:       specialConfig.EncloseEosBos,
+		encloseBos:          *hfConfig.AddBosToken,
+		encloseEos:          *hfConfig.AddEosToken,
+		prefixSpace:         specialConfig.PrefixSpace,
+		lowerCase:           specialConfig.LowerCase,
+		endOfWord:           specialConfig.EndOfWord,
+		replacements:        replacements,
+		runeBufSz:           RUNEBUF_SZ,
+		wordChanSz:          WORDCHAN_SZ,
+		LruHits:             0,
+		LruMisses:           0,
+		LruEvictions:        0,
+		LruSize:             BPE_LRU_SZ,
+		SplitterThreads:     2,
+		VocabId:             vocabId,
+		tokenizerClass:      *hfConfig.TokenizerClass,
+		normalizerStringMap: normsMap,
 	}
 	encoder.UpdateSpecialsTree()
 	return encoder, nil
@@ -1018,7 +1032,63 @@ func (encoder *GPTEncoder) splitWords(
 type NextRuneFunc func() (rune, int, error)
 type WordCallback func([]string)
 
-func (encoder *GPTEncoder) makeWordSplitter(
+func wordSplitterFlushBatch(
+	wordBatch []string,
+	workQueue chan<- []string,
+	wordCallback WordCallback,
+) {
+	if len(wordBatch) > 0 {
+		// Copy the batch to prevent race conditions
+		batch := make([]string, len(wordBatch))
+		copy(batch, wordBatch)
+		workQueue <- batch
+		wordBatch = wordBatch[:0]
+	}
+}
+
+func wordSplitterProcessLineConcurrent(
+	line string,
+	special bool,
+	node *RuneNode,
+	wordBatch []string,
+	wordCallback WordCallback,
+	encoder *GPTEncoder,
+	workQueue chan<- []string,
+) []string {
+	// Process replacements and normalization
+	for replaced, replacement := range encoder.replacements {
+		line = strings.ReplaceAll(line, replaced, replacement)
+	}
+	line = encoder.Normalizer.Replace(line)
+
+	// Find all words
+	matches := encoder.pattern.FindAllString(line, -1)
+	for _, match := range matches {
+		word := match
+		if encoder.lowerCase {
+			word = strings.ToLower(word)
+		}
+		if !encoder.prefixSpace {
+			word = strings.TrimSpace(word)
+		}
+		if len(word) > 0 {
+			wordBatch = append(wordBatch, word)
+			if len(wordBatch) >= encoder.wordChanSz {
+				wordSplitterFlushBatch(wordBatch, workQueue, wordCallback)
+			}
+		}
+	}
+	if special && node != nil {
+		special := string(node.runes)
+		wordBatch = append(wordBatch, special)
+		if len(wordBatch) >= encoder.wordChanSz {
+			wordSplitterFlushBatch(wordBatch, workQueue, wordCallback)
+		}
+	}
+	return wordBatch
+}
+
+func (encoder *GPTEncoder) makeWordSplitterConcurrent(
 	nextRuneFunc NextRuneFunc,
 	wordCallback WordCallback,
 	completeCallback func(),
@@ -1026,14 +1096,55 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	// How many words we send on each callback.
 	const batchSize = 256
 	workQueue := make(chan []string, encoder.SplitterThreads*2)
+	lineChan := make(chan *string, encoder.SplitterThreads*8)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	for i := 0; i < encoder.SplitterThreads; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wordBatch := make([]string, 0, batchSize)
+			specialToken := false
+			var candidateNode *RuneNode
+			for line := range lineChan {
+
+				wordBatch = wordSplitterProcessLineConcurrent(
+					*line,
+					specialToken,
+					candidateNode,
+					wordBatch,
+					wordCallback,
+					encoder,
+					workQueue,
+				)
+
+				// Break when we have a nil line
+				if line == nil || len(*line) == 0 {
+					break
+				}
+			}
+			// Flush any remaining words
+			wordSplitterFlushBatch(wordBatch, workQueue, wordCallback)
+		}()
+	}
 
 	// Single consumer goroutine that processes batches
 	go func() {
-		defer wg.Done()
-		for batch := range workQueue {
-			wordCallback(batch)
+		d := 1 * time.Second
+		t := time.NewTimer(d)
+		for {
+			select {
+			case batch := <-workQueue:
+				if len(batch) == 0 {
+					continue
+				}
+				wordCallback(batch)
+				t.Reset(d)
+			case <-t.C:
+				t.Stop()
+				close(workQueue)
+				wg.Wait()
+				completeCallback()
+			}
 		}
 	}()
 
@@ -1044,50 +1155,6 @@ func (encoder *GPTEncoder) makeWordSplitter(
 		specialToken := false
 		specialsCandidates := make(RuneNodes, 0, 16)
 		var candidateNode *RuneNode
-
-		flushBatch := func() {
-			if len(wordBatch) > 0 {
-				// Copy the batch to prevent race conditions
-				batch := make([]string, len(wordBatch))
-				copy(batch, wordBatch)
-				workQueue <- batch
-				wordBatch = wordBatch[:0]
-			}
-		}
-
-		processLine := func(line string, special bool, node *RuneNode) {
-			// Process replacements and normalization
-			for replaced, replacement := range encoder.replacements {
-				line = strings.ReplaceAll(line, replaced, replacement)
-			}
-			line = encoder.Normalizer.Replace(line)
-
-			// Find all words
-			matches := encoder.pattern.FindAllString(line, -1)
-			for _, match := range matches {
-				word := match
-				if encoder.lowerCase {
-					word = strings.ToLower(word)
-				}
-				if !encoder.prefixSpace {
-					word = strings.TrimSpace(word)
-				}
-				if len(word) > 0 {
-					wordBatch = append(wordBatch, word)
-					if len(wordBatch) >= batchSize {
-						flushBatch()
-					}
-				}
-			}
-
-			if special && node != nil {
-				special := string(node.runes)
-				wordBatch = append(wordBatch, special)
-				if len(wordBatch) >= batchSize {
-					flushBatch()
-				}
-			}
-		}
 
 		checkAndReplaceNode := func() {
 			matchLen := len(candidateNode.runes)
@@ -1106,6 +1173,12 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			for {
 				r, size, err := nextRuneFunc()
 				if size == 0 || err != nil {
+					if len(runeAccumulator) > 0 {
+						wordSplitterFlushBatch(wordBatch, workQueue, wordCallback)
+					} else {
+						wordCallback(nil)
+						close(lineChan)
+					}
 					break
 				}
 
@@ -1141,7 +1214,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 
 			if len(runeAccumulator) == 0 {
-				flushBatch()
+				wordSplitterFlushBatch(wordBatch, workQueue, wordCallback)
 				wordCallback(nil)
 				break
 			}
@@ -1158,13 +1231,332 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 			runeAccumulator = runeAccumulator[:0]
 
-			processLine(line, specialToken, candidateNode)
+			lineCopy := line
+			lineChan <- &lineCopy
 
 			candidateNode = specialsRuneRoot
 			specialToken = false
 			specialsCandidates = specialsCandidates[:0]
 		}
 
+		wg.Wait()
+	}
+}
+
+func (encoder *GPTEncoder) makeWordSplitter(
+	nextRuneFunc NextRuneFunc,
+	wordCallback WordCallback,
+	completeCallback func(),
+) func() {
+	// How many words we send on each callback.
+	const batchSize = 256
+	workQueue := make(chan []string, encoder.SplitterThreads*2)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	// Single consumer goroutine that processes batches
+	go func() {
+		defer wg.Done()
+		for batch := range workQueue {
+			wordCallback(batch)
+		}
+	}()
+
+	return func() {
+		specialsRuneRoot := encoder.SpecialsTree
+		runeAccumulator := make([]rune, 0, encoder.runeBufSz)
+		wordBatch := make([]string, 0, batchSize)
+		specialToken := false
+		specialsCandidates := make(RuneNodes, 0, 16)
+		var candidateNode *RuneNode
+
+		// Flush the batch
+		flushBatch := func() {
+			if len(wordBatch) > 0 {
+				// Copy the batch to prevent race conditions
+				batch := make([]string, len(wordBatch))
+				copy(batch, wordBatch)
+				workQueue <- batch
+				wordBatch = wordBatch[:0]
+			}
+		}
+
+		// AppendBatch appends a batch of words to the wordBatch and flushes
+		// the batch if it is full.
+		// ForceFlush forces the batch to be flushed.
+		// Useful for ensuring that the last batch is flushed.
+		appendBatch := func(words []string, forceFlush bool) {
+			if len(words) == 0 && (!forceFlush || len(wordBatch) == 0) {
+				return
+			}
+			// If we are appending words, we need to process them
+			for _, word := range words {
+				if encoder.lowerCase {
+					word = strings.ToLower(word)
+				}
+				if !encoder.prefixSpace {
+					word = strings.TrimSpace(word)
+				}
+
+				// After every word, we append it to the wordBatch
+				// We also check if the wordBatch is full and flush it
+				if len(word) > 0 {
+					wordBatch = append(wordBatch, word)
+					if len(wordBatch) >= batchSize {
+						flushBatch()
+					}
+				}
+			}
+			if forceFlush && len(wordBatch) > 0 {
+				// If we are forcing a flush, we flush the batch after processing
+				// the words
+				for i, word := range wordBatch {
+					if encoder.lowerCase {
+						word = strings.ToLower(word)
+					}
+					if !encoder.prefixSpace {
+						word = strings.TrimSpace(word)
+					}
+					wordBatch[i] = word
+				}
+
+				flushBatch()
+			}
+		}
+
+		// Appending one word
+		appendRunes := func(r []rune) {
+			word := string(r)
+			if encoder.lowerCase {
+				word = strings.ToLower(word)
+			}
+			if !encoder.prefixSpace {
+				word = strings.TrimSpace(word)
+			}
+			if len(word) > 0 {
+				wordBatch = append(wordBatch, word)
+				if len(wordBatch) >= batchSize {
+					flushBatch()
+				}
+			}
+		}
+
+		checkAndReplaceNode := func() {
+			matchLen := len(candidateNode.runes)
+			accTruncIdx := len(runeAccumulator) - matchLen
+			runeAccumulator = append(
+				runeAccumulator[:accTruncIdx],
+				*candidateNode.replacement...,
+			)
+			specialsCandidates = specialsCandidates[:0]
+			candidateNode = specialsRuneRoot
+			specialToken = false
+		}
+
+		contractionTree := ContractionsTree()
+
+		// We repeatedly call the nextRuneFunc until it returns an error or other break
+		// condition. This fills the runeAccumulator with runes until we have a full line.
+		for {
+			// Collect runes until newline or special token
+			for {
+				r, size, err := nextRuneFunc()
+				if size == 0 || err != nil {
+					break
+				}
+
+				runeAccumulator = append(runeAccumulator, r)
+
+				if r == '\n' {
+					break
+				}
+
+				// Conduct replacement and special token checks
+				candidateNode = specialsCandidates.evaluate(r)
+				if candidateNode != nil {
+					if candidateNode.replacement != nil {
+						checkAndReplaceNode()
+					} else if candidateNode.terminal {
+						specialToken = true
+						break
+					}
+				}
+
+				candidateNode = specialsRuneRoot.evaluate(r)
+				if candidateNode != nil {
+					specialsCandidates = append(
+						specialsCandidates,
+						candidateNode,
+					)
+					if candidateNode.replacement != nil {
+						checkAndReplaceNode()
+					} else if candidateNode.terminal {
+						specialToken = true
+						break
+					}
+				}
+			}
+
+			// If we have no runes, we are done
+			if len(runeAccumulator) == 0 {
+				appendBatch(nil, true)
+				wordCallback(nil)
+				break
+			}
+
+			maxNumberSize := 3
+			curNumberSize := 0
+			limitNumberSize := false
+
+			var whitespaceBuffer []rune
+
+			// Apply replacements and normalization
+			//var line string
+			var runeLine []rune
+			if specialToken {
+				runeLine =
+					runeAccumulator[:len(runeAccumulator)-len(
+						candidateNode.runes,
+					)]
+			} else {
+				runeLine = runeAccumulator
+			}
+			if len(encoder.replacements) > 0 {
+				runeLine = replaceRunes(runeLine, encoder.replacements)
+			}
+
+			if encoder.Normalizer != nil {
+				if encoder.normalizerStringMap != nil && len(encoder.normalizerStringMap) > 0 {
+					runeLine = replaceRunes(runeLine, encoder.normalizerStringMap)
+				}
+			}
+			runeAccumulator = runeLine
+			// Split the line into words
+			for i := 0; i < len(runeAccumulator); {
+				// Try contraction first
+				// If the whitespace buffer isn't empty, skip as
+				// word1 'theword2' shouldn't trigger 't
+
+				if i > 0 && runeAccumulator[i] == '\'' && len(whitespaceBuffer) == 0 {
+					nodes := make(RuneNodes, 1)
+					nodes[0] = contractionTree
+					matched := false
+					for j := i; j < len(runeAccumulator); j++ {
+						if match := nodes.evaluate(runeAccumulator[j]); match != nil {
+							if match.terminal {
+								appendRunes(match.runes)
+								i += len(match.runes)
+								matched = true
+								break
+							}
+						} else {
+							break
+						}
+					}
+					if matched {
+						continue
+					}
+				}
+
+				// Then try other patterns
+				switch {
+				case isWhitespace(runeAccumulator[i]):
+					// If we find a whitespace, we save it and append it to the next word
+					// However, if its a sequence, we consider it a word on its own
+					whitespaceBuffer = append(whitespaceBuffer, runeAccumulator[i])
+					if len(whitespaceBuffer) > 1 {
+						appendRunes(whitespaceBuffer)
+						whitespaceBuffer = whitespaceBuffer[:0]
+					}
+					i++
+
+				case isLetter(runeAccumulator[i]):
+					start := i
+					for i < len(runeAccumulator) && isLetter(runeAccumulator[i]) {
+						i++
+					}
+					// Check if we have whitespace buffer
+					wordBuf := runeAccumulator[start:i]
+					if len(whitespaceBuffer) > 0 {
+						wordBuf = append(whitespaceBuffer, wordBuf...)
+						whitespaceBuffer = whitespaceBuffer[:0]
+					}
+					appendRunes(wordBuf)
+				case isNewLine(runeAccumulator[i]):
+					// If we have whitespace, append it before
+					if len(whitespaceBuffer) > 0 {
+						appendRunes(whitespaceBuffer)
+						whitespaceBuffer = whitespaceBuffer[:0]
+					}
+
+					appendBatch([]string{"\n"}, false)
+					i++
+				case isNumber(runeAccumulator[i]):
+					start := i
+					for i < len(runeAccumulator) && isNumber(runeAccumulator[i]) {
+						i++
+						curNumberSize++
+						if curNumberSize == maxNumberSize && limitNumberSize {
+							appendRunes(runeAccumulator[start:i])
+							curNumberSize = 0
+							start = i
+						}
+					}
+					// Check if we have whitespace buffer
+					wordBuf := runeAccumulator[start:i]
+					if len(whitespaceBuffer) > 0 {
+						wordBuf = append(whitespaceBuffer, wordBuf...)
+						whitespaceBuffer = whitespaceBuffer[:0]
+					}
+					appendRunes([]rune(wordBuf))
+					curNumberSize = 0
+				default: // symbols
+					start := i
+					for i < len(runeAccumulator) && isSymbol(runeAccumulator[i]) {
+						i++
+					}
+					// Check if we have whitespace buffer
+					wordBuf := runeAccumulator[start:i]
+					if len(whitespaceBuffer) > 0 {
+						wordBuf = append(whitespaceBuffer, wordBuf...)
+						whitespaceBuffer = whitespaceBuffer[:0]
+					}
+					appendRunes(wordBuf)
+				}
+
+				// If we have reached the batch size, flush the batch
+				appendBatch(nil, false)
+
+			}
+			runeAccumulator = runeAccumulator[:0]
+			// Append any remaining whitespace buffer
+			if len(whitespaceBuffer) > 0 {
+				if len(wordBatch) > 0 {
+					lastWord := wordBatch[len(wordBatch)-1]
+					lastWord = lastWord + string(whitespaceBuffer)
+					wordBatch = wordBatch[:len(wordBatch)-1]
+					appendBatch([]string{lastWord}, false)
+				} else {
+					// Or if we only have whitespace, append it as a word
+					appendRunes(whitespaceBuffer)
+				}
+			}
+
+			// If we have a special token, we cap it off.
+			if specialToken && candidateNode != nil {
+				special := string(candidateNode.runes)
+				appendBatch([]string{special}, false)
+			}
+
+			// Flush batch remaining words
+			appendBatch(nil, false)
+
+			candidateNode = specialsRuneRoot
+			specialToken = false
+			specialsCandidates = specialsCandidates[:0]
+		}
+
+		// Close the work queue and wait for all workers to finish
 		close(workQueue)
 		wg.Wait()
 		completeCallback()
@@ -1200,8 +1592,105 @@ func (encoder *GPTEncoder) WordSplitter(reader io.RuneReader) func() *string {
 		} else {
 			idx++
 		}
-		return &wordsBuffer[idx-1]
+		word := wordsBuffer[idx-1]
+		return &word
 	}
+}
+
+// Helper functions
+func replacersToMap(replacers *strings.Replacer) map[string]string {
+	/*
+			Normalizer: ‘ -> '
+		Normalizer: ’ -> '
+		Normalizer: “ -> "
+		Normalizer: ” -> "
+	*/
+	// Dummy for debug
+	replacementMap := make(map[string]string)
+	replacementMap["‘"] = "'"
+	replacementMap["’"] = "'"
+	replacementMap["“"] = "\""
+	replacementMap["”"] = "\""
+
+	/*
+		if replacers == nil {
+			return nil
+		}
+		pairs := replacers.Replace(" ")
+		replacementMap := make(map[string]string)
+		for _, pair := range strings.Split(pairs, " ") {
+			kv := strings.Split(pair, "->")
+			if len(kv) != 2 {
+				continue
+			}
+			replacementMap[kv[0]] = kv[1]
+		}
+	*/
+	return replacementMap
+}
+func replaceRunes(runes []rune, replacements map[string]string) []rune {
+	runeReplacements := make(map[string][]rune, len(replacements))
+	for k, v := range replacements {
+		runeReplacements[k] = []rune(v)
+	}
+
+	for i := 0; i < len(runes); i++ {
+		matchFound := false
+		for k, v := range runeReplacements {
+			if len(v) == 0 {
+				continue
+			}
+			if runes[i] == []rune(k)[0] {
+				matchFound = true
+				if len(v) > 1 {
+					// If we have a multi-rune replacement, we need to check if it matches
+					// the next runes in the sequence
+					if i+len(v) > len(runes) {
+						continue
+					}
+					match := true
+					for j := 1; j < len(v); j++ {
+						if runes[i+j] != v[j] {
+							match = false
+							break
+						}
+					}
+					if match {
+						runes = append(runes[:i], append(v, runes[i+len(v):]...)...)
+						i += len(v) - 1
+					}
+				} else {
+					runes[i] = v[0]
+				}
+			}
+		}
+		if !matchFound {
+			continue
+		}
+	}
+	return runes
+}
+
+func isLetter(r rune) bool {
+	return unicode.IsLetter(r)
+}
+
+func isNumber(r rune) bool {
+	return unicode.IsNumber(r)
+}
+
+func isWhitespace(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\r'
+}
+
+func isSymbol(r rune) bool {
+	return !isLetter(r) && !isNumber(r) && !isWhitespace(r) && !isNewLine(r)
+}
+
+func isNewLine(r rune) bool {
+	// While \n is often considered a whitespace, we treat it as a symbol
+	// to ensure it is always a separate token.
+	return r == '\n'
 }
 
 func (encoder *GPTEncoder) SplitWords(text *string) *[]string {
@@ -1545,4 +2034,206 @@ func (encoder *GPTEncoder) TrimTokens(tokens *Tokens) (trimmed *Tokens) {
 			trimmed = &newTrimmed
 		}
 	}
+}
+
+// TokenType represents the different kinds of tokens we can identify
+type TokenType int
+
+const (
+	Unknown     TokenType = iota
+	Contraction           // 's, 't, 're, etc.
+	Letter                // Letters/words
+	Number                // Numbers
+	Whitespace            // Spaces, tabs, newlines
+	Symbol                // Non-alphanumeric symbols
+)
+
+// State represents the current state of our tokenizer
+type State int
+
+const (
+	Initial State = iota
+	InContraction
+	InWord
+	InNumber
+	InSymbol
+	InSpace
+)
+
+// Token represents a single token with its type and value
+type SplitterToken struct {
+	Type  TokenType
+	Value string
+}
+
+// Tokenizer implements the state machine
+type Tokenizer struct {
+	state    State
+	buffer   []rune
+	tokens   []SplitterToken
+	position int
+	input    []rune
+}
+
+// NewTokenizer creates a new tokenizer instance
+func NewTokenizer(input string) *Tokenizer {
+	return &Tokenizer{
+		state:    Initial,
+		input:    []rune(input),
+		buffer:   make([]rune, 0),
+		tokens:   make([]SplitterToken, 0),
+		position: 0,
+	}
+}
+
+// isContraction checks if the current sequence could be a contraction
+func (t *Tokenizer) isContraction(contractions []string) bool {
+	remainingRunes := t.input[t.position:]
+	if len(remainingRunes) == 0 {
+		return false
+	}
+
+	for _, c := range contractions {
+		cRunes := []rune(c)
+		if len(remainingRunes) < len(c) {
+			return false
+		}
+		for b := range cRunes {
+			if remainingRunes[b] != cRunes[b] {
+				return false
+			}
+		}
+	}
+	return false
+}
+
+// emitToken creates a new token from the current buffer
+func (t *Tokenizer) emitToken(typ TokenType) {
+	if len(t.buffer) > 0 {
+		t.tokens = append(t.tokens, SplitterToken{
+			Type:  typ,
+			Value: string(t.buffer),
+		})
+		t.buffer = t.buffer[:0]
+	}
+}
+
+// printToken prints token, token type and length of token
+// With fixed spacing
+func (t *Tokenizer) printToken(tok SplitterToken) {
+	tokenTypes := []string{"Unknown", "Contraction", "Letter", "Number", "Whitespace", "Symbol"}
+	typeInString := tokenTypes[tok.Type]
+	fmt.Printf("Token: %-15s| Type: %-13s-%d | Length: %d\n", tok.Value, typeInString, tok.Type, len(tok.Value))
+}
+
+// ResetWithInput resets the tokenizer with a new input
+func (t *Tokenizer) ResetWithInput(input string) {
+	t.state = Initial
+	t.input = []rune(input)
+	t.buffer = make([]rune, 0)
+	t.tokens = make([]SplitterToken, 0)
+	t.position = 0
+}
+
+// NextToken processes the next token in the input
+func (t *Tokenizer) NextToken() (SplitterToken, bool) {
+	contractions := []string{"'s", "'t", "'re", "'ve", "'m", "'ll", "'d"}
+	for t.position < len(t.input) {
+		r := t.input[t.position]
+		switch t.state {
+		case Initial:
+			switch {
+
+			case unicode.IsLetter(r):
+				t.state = InWord
+				t.buffer = append(t.buffer, r)
+
+			case unicode.IsNumber(r):
+				t.state = InNumber
+				t.buffer = append(t.buffer, r)
+
+			case unicode.IsSpace(r):
+				t.state = InSpace
+				t.buffer = append(t.buffer, r)
+			case t.isContraction(contractions):
+				t.state = InContraction
+				// Handle contractions specially
+				for i := 0; i < 2; i++ { // Most contractions are 2 chars
+					if t.position < len(t.input) {
+						t.buffer = append(t.buffer, t.input[t.position])
+						t.position++
+					}
+				}
+				t.emitToken(Contraction)
+				t.state = Initial
+				if len(t.tokens) > 0 {
+					return t.tokens[len(t.tokens)-1], true
+				}
+
+			default:
+				t.state = InSymbol
+				t.buffer = append(t.buffer, r)
+			}
+
+		case InWord:
+			if unicode.IsLetter(r) {
+				t.buffer = append(t.buffer, r)
+			} else {
+				t.emitToken(Letter)
+				t.state = Initial
+				continue // Reprocess current rune
+			}
+
+		case InNumber:
+			if unicode.IsNumber(r) {
+				t.buffer = append(t.buffer, r)
+			} else {
+				t.emitToken(Number)
+				t.state = Initial
+				continue // Reprocess current rune
+			}
+
+		case InSymbol:
+			if !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsSpace(r) {
+				t.buffer = append(t.buffer, r)
+			} else {
+				t.emitToken(Symbol)
+				t.state = Initial
+				continue // Reprocess current rune
+			}
+
+		case InSpace:
+			if unicode.IsSpace(r) {
+				t.buffer = append(t.buffer, r)
+			} else {
+				t.emitToken(Whitespace)
+				t.state = Initial
+				continue // Reprocess current rune
+			}
+		}
+
+		t.position++
+	}
+
+	// Emit any remaining token
+	if len(t.buffer) > 0 {
+		switch t.state {
+		case InWord:
+			t.emitToken(Letter)
+		case InNumber:
+			t.emitToken(Number)
+		case InSymbol:
+			t.emitToken(Symbol)
+		case InSpace:
+			t.emitToken(Whitespace)
+		}
+	}
+
+	if len(t.tokens) > 0 {
+		token := t.tokens[0]
+		t.tokens = t.tokens[1:]
+		return token, true
+	}
+
+	return SplitterToken{}, false
 }
