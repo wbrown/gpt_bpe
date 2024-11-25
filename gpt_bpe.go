@@ -213,7 +213,9 @@ func (encoder *GPTEncoder) Clone() *GPTEncoder {
 // id.
 func NewEncoder(vocabId string) (*GPTEncoder, error) {
 	log.Printf("Loading encoder for vocab id: %s\n", vocabId)
-	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(vocabId, "")
+	hfConfig, resourcesPtr, vocabErr := resources.ResolveVocabId(
+		vocabId, "",
+	)
 
 	if vocabErr != nil {
 		return nil, vocabErr
@@ -375,7 +377,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 			specials[specialToken] = Tokens{encoderTokens[specialToken]}
 			specialsArr = append(specialsArr, specialToken)
 			quotedToken := regexp.QuoteMeta(specialToken)
-			specialsRegexTokens = append(specialsRegexTokens, quotedToken)
+			specialsRegexTokens = append(
+				specialsRegexTokens, quotedToken,
+			)
 		}
 	} else if specialsJson, ok := rsrcs["specials.json"]; ok {
 		specialsData := make(map[string]string)
@@ -392,7 +396,9 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 				specials[v] = Tokens{encoderTokens[v]}
 				specialsArr = append(specialsArr, v)
 				quotedToken := regexp.QuoteMeta(v)
-				specialsRegexTokens = append(specialsRegexTokens, quotedToken)
+				specialsRegexTokens = append(
+					specialsRegexTokens, quotedToken,
+				)
 			}
 		}
 	}
@@ -1051,11 +1057,15 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			limitNumberSize = true
 		}
 		// Matches NewLines as part of a word instead of individual words
-		if strings.Contains(encoder.pattern.String(), "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*") {
+		if strings.Contains(
+			encoder.pattern.String(), "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*",
+		) {
 			treatNewLinesAsPartOfWords = true
 		}
 		// Matches letters as part of a word if following symbols if they are following a single symbol
-		if strings.Contains(encoder.pattern.String(), "[^\\r\\n\\p{L}\\p{N}]?\\p{L}+") {
+		if strings.Contains(
+			encoder.pattern.String(), "[^\\r\\n\\p{L}\\p{N}]?\\p{L}+",
+		) {
 			groupLettersFollowingSymbolsIfSingular = true
 		}
 	}
@@ -1152,7 +1162,11 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 		}
 
-		processLine := func(line string, special bool, node *RuneNode) {
+		processLine := func(
+			line string,
+			special bool,
+			node *RuneNode,
+		) {
 			// Find all words
 			matches := encoder.pattern.FindAllString(line, -1)
 			for _, match := range matches {
@@ -1254,18 +1268,25 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				runeLine = runeAccumulator
 			}
 			if len(encoder.replacements) > 0 {
-				runeLine = replaceRunes(runeLine, encoder.replacements)
+				runeLine = replaceRunes(
+					runeLine, encoder.replacements,
+				)
 			}
 
 			if encoder.Normalizer != nil {
 				if encoder.normalizerStringMap != nil && len(encoder.normalizerStringMap) > 0 {
-					runeLine = replaceRunes(runeLine, encoder.normalizerStringMap)
+					runeLine = replaceRunes(
+						runeLine, encoder.normalizerStringMap,
+					)
 				}
 			}
 			runeAccumulator = runeLine
 			// If we don't recognize the regex, we default to using the regex package
 			if useDefaultRegexPackage && encoder.pattern.String() != "" {
-				processLine(string(runeAccumulator), specialToken, candidateNode)
+				processLine(
+					string(runeAccumulator), specialToken,
+					candidateNode,
+				)
 				runeAccumulator = runeAccumulator[:0]
 				candidateNode = specialsRuneRoot
 				specialToken = false
@@ -1305,7 +1326,9 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				case isWhitespace(runeAccumulator[i]):
 					// If we find a whitespace, we save it and append it to the next word
 					// However, if its a sequence, we consider it a word on its own
-					whitespaceBuffer = append(whitespaceBuffer, runeAccumulator[i])
+					whitespaceBuffer = append(
+						whitespaceBuffer, runeAccumulator[i],
+					)
 					if len(whitespaceBuffer) > 1 {
 						appendRunes(whitespaceBuffer)
 						whitespaceBuffer = whitespaceBuffer[:0]
@@ -1542,7 +1565,10 @@ func toLowercaseRunes(runes []rune) []rune {
 	return runes
 }
 
-func replaceRunes(runes []rune, replacements map[string]string) []rune {
+func replaceRunes(
+	runes []rune,
+	replacements map[string]string,
+) []rune {
 	runeReplacements := make(map[string][]rune, len(replacements))
 	for k, v := range replacements {
 		runeReplacements[k] = []rune(v)
@@ -1668,7 +1694,9 @@ func (encoder *GPTEncoder) StreamingEncode(reader io.RuneReader) func(int) *Toke
 			word := nextWord()
 			if word == nil {
 				if (encoder.encloseEosBos || encoder.encloseEos) && !eosReturned {
-					accumulator = append(accumulator, encoder.EosToken)
+					accumulator = append(
+						accumulator, encoder.EosToken,
+					)
 					eosReturned = true
 				}
 
@@ -1738,7 +1766,9 @@ func (encoder *GPTEncoder) EncodeReader(reader io.RuneReader) *Tokens {
 
 // EncodeBuffer takes a byte array and encodes it into Tokens in another
 // byte array.
-func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) (*[]byte, uint64) {
+func (encoder *GPTEncoder) EncodeBuffer(buffer *[]byte) (
+	*[]byte, uint64,
+) {
 	runeReader := bytes.NewReader(*buffer)
 	nextTokens := encoder.StreamingEncode(runeReader)
 	buf := bytes.NewBuffer(make([]byte, 0, 4096))

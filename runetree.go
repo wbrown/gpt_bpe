@@ -154,7 +154,9 @@ func (runeTree *RuneNode) insertRunes(runes []rune) (node *RuneNode) {
 				node.childsArr = &children
 			}
 			if len(node.childs) != len(*node.childsArr) {
-				*node.childsArr = append(*node.childsArr, node.childs[r])
+				*node.childsArr = append(
+					*node.childsArr, node.childs[r],
+				)
 			}
 		}
 		node = node.childs[r]
