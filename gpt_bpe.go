@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
@@ -1046,10 +1047,17 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	limitNumberSize := false
 	treatNewLinesAsPartOfWords := false
 	groupLettersFollowingSymbolsIfSingular := false
+	regexString := encoder.pattern.String()
+	regexAST, err := syntax.Parse(regexString, syntax.Perl)
+	if err != nil {
+		panic(err)
+	}
+	regexAST.Simplify()
+	regexTree := CreateRegexTree(regexAST)
 
 	// This flag should be enabled if you want to bypass the state machine optimization
 	// and use the default golang regex package
-	useDefaultRegexPackage := false
+	useDefaultRegexPackage := true
 
 	if encoder.pattern.String() != SPLIT_REGEX {
 		// Some tokenizers like LLama3 limit the max number of digits in a number to 3
@@ -1163,12 +1171,13 @@ func (encoder *GPTEncoder) makeWordSplitter(
 		}
 
 		processLine := func(
-			line string,
+			line []rune,
 			special bool,
 			node *RuneNode,
 		) {
 			// Find all words
-			matches := encoder.pattern.FindAllString(line, -1)
+			//matches := encoder.pattern.FindAllString(line, -1)
+			matches := regexTree.MatchAllRunes(line)
 			for _, match := range matches {
 				word := match
 				if encoder.lowerCase {
@@ -1284,7 +1293,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			// If we don't recognize the regex, we default to using the regex package
 			if useDefaultRegexPackage && encoder.pattern.String() != "" {
 				processLine(
-					string(runeAccumulator), specialToken,
+					runeAccumulator, specialToken,
 					candidateNode,
 				)
 				runeAccumulator = runeAccumulator[:0]

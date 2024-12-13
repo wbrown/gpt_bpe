@@ -1,6 +1,8 @@
 package gpt_bpe
 
 import (
+	"fmt"
+	"regexp/syntax"
 	"strings"
 )
 
@@ -154,9 +156,7 @@ func (runeTree *RuneNode) insertRunes(runes []rune) (node *RuneNode) {
 				node.childsArr = &children
 			}
 			if len(node.childs) != len(*node.childsArr) {
-				*node.childsArr = append(
-					*node.childsArr, node.childs[r],
-				)
+				*node.childsArr = append(*node.childsArr, node.childs[r])
 			}
 		}
 		node = node.childs[r]
@@ -216,4 +216,570 @@ func CreateRuneTree(s []string) *RuneNode {
 	runeTree.isContractionTree = false
 	runeTree.InsertIntoRuneTree(s)
 	return runeTree
+}
+
+type rangeTuple struct {
+	start int
+	end   int
+}
+
+func ArrayAsRanges(runes []rune) []rangeTuple {
+	// [65 90 97 122 170 170 181 181 186 186 192 214 216 246 248 705 ...
+	// All are pairs of 2, start and end of a range, print as X-Y
+	ranges := make([]rangeTuple, 0)
+	for i := 0; i < len(runes); i += 2 {
+		ranges = append(ranges, rangeTuple{start: int(runes[i]), end: int(runes[i+1])})
+	}
+	return ranges
+}
+
+func searchRangesForChar(r rune, ranges []rangeTuple) bool {
+	// Search a list of ranges for a given rune within the range
+	// Binary search
+	low, high := 0, len(ranges)-1
+	for low <= high {
+		mid := low + (high-low)/2
+		if ranges[mid].start <= int(r) && int(r) <= ranges[mid].end {
+			return true
+		}
+		if int(r) < ranges[mid].start {
+			high = mid - 1
+		} else {
+			low = mid + 1
+		}
+	}
+	// If we didn't find the rune in the ranges, return false
+	return false
+}
+
+type RegexNode struct {
+	runeArray   []rune
+	parent      *RegexNode
+	children    []*RegexNode
+	terminal    bool
+	min         int
+	max         int
+	flags       int
+	lastOp      string
+	thisOp      string
+	pathStrings []string
+	ranges      []rangeTuple // nil if not a char class
+}
+
+func CreateRegexTree(AST *syntax.Regexp) *RegexNode {
+	// Given a syntax.regexp assumed as the root, create a tree of RegexNodes
+	// We want the info nodes to inform the op nodes of their min/max, flags, and last op
+
+	// Create the root node
+	root := &RegexNode{
+		runeArray:   AST.Rune,
+		parent:      nil,
+		children:    make([]*RegexNode, 0),
+		terminal:    false,
+		min:         AST.Min,
+		max:         AST.Max,
+		flags:       int(AST.Flags),
+		lastOp:      AST.Op.String(),
+		thisOp:      AST.Op.String(),
+		pathStrings: make([]string, 0),
+	}
+	root.parent = root
+	root.pathStrings = append(root.pathStrings, "(root)")
+
+	// Create the tree
+	ASTPath := make([]string, 0)
+	ASTPath = append(ASTPath, "(root)")
+	root.createTree(AST, ASTPath)
+
+	return root
+}
+
+func (runeTree *RegexNode) createTree(AST *syntax.Regexp, ASTPath []string) {
+	// Create the tree
+	lastOp := AST.Op.String()
+	ASTPath = append(ASTPath, lastOp)
+	for _, sub := range AST.Sub {
+		// Create a new node
+		newNode := &RegexNode{
+			runeArray:   sub.Rune,
+			parent:      runeTree,
+			children:    make([]*RegexNode, 0),
+			terminal:    sub.Op == syntax.OpCharClass,
+			min:         sub.Min,
+			max:         sub.Max,
+			flags:       int(sub.Flags),
+			lastOp:      lastOp,
+			thisOp:      sub.Op.String(),
+			pathStrings: ASTPath,
+			ranges:      nil,
+		}
+		if len(sub.Sub) > 0 {
+			newNode.createTree(sub, ASTPath)
+		}
+		runeTree.children = append(runeTree.children, newNode)
+	}
+}
+
+func (runeTree *RegexNode) GeneratePathMap() [][]int {
+	var pathMap [][]int
+	generatePathMap(runeTree, 0, []int{}, &pathMap)
+	return pathMap
+}
+
+func generatePathMap(runeTree *RegexNode, parentIndex int, currentPath []int, pathMap *[][]int) {
+	// Generate a map of the tree with dfs
+	currentPath = append(currentPath, parentIndex)
+
+	// If not already in the map, add the current path
+	pathCopy := make([]int, len(currentPath))
+	copy(pathCopy, currentPath)
+	*pathMap = append(*pathMap, pathCopy)
+	for idx, child := range runeTree.children {
+		generatePathMap(child, idx, currentPath, pathMap)
+	}
+
+}
+
+func (runeTree *RegexNode) PrintTree() {
+	// Print the tree
+	sb := strings.Builder{}
+	runeTree.string(0, &sb)
+	fmt.Printf("%s\n", sb.String())
+}
+
+func (runeTree *RegexNode) string(level int, sb *strings.Builder) {
+	if runeTree == nil {
+		return
+	}
+	if len(runeTree.runeArray) > 50 {
+		sb.WriteString(string(runeTree.runeArray[:50]))
+	} else {
+		sb.WriteString(string(runeTree.runeArray))
+	}
+	idx := 0
+	if len(runeTree.children) == 1 {
+		// Get the only element from the map recursively until we find a node
+		// with more than one child.
+		for r := range runeTree.children {
+			runeTree.children[r].string(level, sb)
+		}
+		return
+	}
+	level += 1
+	sb.WriteString(" -> ")
+	sb.WriteString(runeTree.lastOp)
+	sb.WriteByte('\n')
+
+	for r := range runeTree.children {
+		sb.WriteString(strings.Repeat("| ", level-1))
+		// If we're the last child, then we prepend with a tree terminator.
+		if idx == len(runeTree.children)-1 {
+			sb.WriteString("└─")
+		} else {
+			sb.WriteString("├─")
+		}
+		runeTree.children[r].string(level, sb)
+		idx += 1
+	}
+}
+
+func (runeTree *RegexNode) PreOrderTraversalAndPrint() {
+	// Pre-order traversal of the tree
+	runeTree.preOrderTraversal(0)
+}
+
+func (runeTree *RegexNode) preOrderTraversal(level int) {
+	// Pre-order traversal of the tree
+	fmt.Printf("%s\n", strings.Repeat("| ", level)+string(runeTree.thisOp))
+	level += 1
+	for _, child := range runeTree.children {
+		child.preOrderTraversal(level)
+	}
+}
+
+type matchVariables struct {
+	matchedWords                []string
+	subjectRuneArrIndex         int
+	subjectRuneCandidateIndices []int
+	stateMachineIndex           int
+	lastOp                      string
+	lastInfoOp                  string
+	pathMap                     [][]int
+	ParentOp                    string
+	minGroupSize                int
+	maxGroupSize                int
+	candidateRunes              []rune
+	skipUntilNum                int
+	rootNode                    *RegexNode
+	endEval                     bool
+}
+
+// We want to take a string and use pre-order traversal to match the string to the tree, in a regex-like fashion
+func (runeTree *RegexNode) MatchAllRunes(runes []rune) []string {
+	// Init variables
+	var matchVars matchVariables
+	matchVars.matchedWords = make([]string, 0)
+	matchVars.subjectRuneArrIndex = 0
+	matchVars.stateMachineIndex = 0
+	matchVars.lastOp = ""
+	matchVars.lastInfoOp = ""
+	matchVars.minGroupSize = 1
+	matchVars.maxGroupSize = -1
+	matchVars.candidateRunes = make([]rune, 0)
+	matchVars.subjectRuneCandidateIndices = []int{0}
+	matchVars.pathMap = runeTree.GeneratePathMap()
+	matchVars.rootNode = runeTree
+	matchVars.endEval = false
+	// Start the traversal
+	for {
+		//fmt.Printf("Starting at index: %d\n", matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1])
+		//fmt.Printf("Currently matched words: %s\n", strings.Join(matchVars.matchedWords, "|"))
+		runeTree.preOrderTraversalMatchV2(runes, &matchVars, 0)
+		if matchVars.subjectRuneArrIndex >= len(runes) {
+			break
+		}
+		// Reset for next round
+		matchVars.stateMachineIndex = 0
+		matchVars.lastOp = ""
+		matchVars.lastInfoOp = ""
+		matchVars.minGroupSize = 1
+		matchVars.maxGroupSize = -1
+		matchVars.candidateRunes = make([]rune, 0)
+		matchVars.subjectRuneCandidateIndices = []int{matchVars.subjectRuneArrIndex}
+		matchVars.skipUntilNum = 0
+		matchVars.endEval = false
+	}
+
+	//fmt.Printf("Currently matched words: %s\n", strings.Join(matchVars.matchedWords, "|"))
+	return matchVars.matchedWords
+}
+
+func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *matchVariables, level int) {
+	// Pre-order traversal of the tree
+	if matchVars.endEval {
+		return
+	}
+	level += 1
+	thisNodeMap := matchVars.pathMap[matchVars.stateMachineIndex]
+	thisNodeRuneIdx := -1
+	thisNodeRuneParentIdx := 0
+
+	// Check if we are at the root
+	if len(thisNodeMap) == 2 && len(matchVars.candidateRunes) != 0 {
+		strMatched := string(matchVars.candidateRunes)
+		matchVars.matchedWords = append(matchVars.matchedWords, strMatched)
+		matchVars.subjectRuneArrIndex += len(matchVars.candidateRunes)
+
+		// Finish Round
+		matchVars.endEval = true
+		return
+	} else if len(thisNodeMap) == 2 {
+		// Reset candidate indices
+		matchVars.subjectRuneCandidateIndices = []int{matchVars.subjectRuneArrIndex}
+	}
+
+	// Evaluate the current node
+	if matchVars.skipUntilNum == 0 {
+		// if the index isn't of the right length, we append the index to the candidate indices
+		if len(matchVars.subjectRuneCandidateIndices) < len(thisNodeMap) {
+			candidateRuneArray := matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1]
+			matchVars.subjectRuneCandidateIndices = append(matchVars.subjectRuneCandidateIndices, candidateRuneArray)
+		} else {
+			// Trim to the right length
+			matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(thisNodeMap)]
+		}
+		thisNodeRuneIdx = matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1]
+		if len(matchVars.subjectRuneCandidateIndices) > 1 {
+			thisNodeRuneParentIdx = matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-2]
+		}
+
+		switch runeTree.thisOp {
+		case "Alternate":
+			// Skip evaluation
+		case "Concat":
+			// Skip evaluation
+		case "Quest":
+			// Set minmax
+			matchVars.minGroupSize = 0
+			matchVars.maxGroupSize = 1
+		case "Plus":
+			// Set minmax
+			matchVars.minGroupSize = 1
+			matchVars.maxGroupSize = -1
+		case "Repeat":
+			// Set minmax
+			matchVars.minGroupSize = runeTree.min
+			matchVars.maxGroupSize = runeTree.max
+		case "Star":
+			// Set minmax
+			matchVars.minGroupSize = 0
+			matchVars.maxGroupSize = -1
+		case "Capture":
+			// Not Implemented yet
+		case "Literal":
+			// Evaluate the literal
+			matches := 0
+			for i := 0; i < len(runeTree.runeArray); i++ {
+				if thisNodeRuneIdx+i < len(runes) {
+					if runeTree.runeArray[i] == runes[thisNodeRuneIdx+i] {
+						matches += 1
+					} else {
+						break
+					}
+				}
+			}
+			if matchVars.minGroupSize < len(runeTree.runeArray) {
+				matchVars.minGroupSize = len(runeTree.runeArray)
+			}
+			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
+				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
+					// Matched
+					if matches != 0 {
+						matchVars.candidateRunes = append(matchVars.candidateRunes, runeTree.runeArray...)
+						thisNodeRuneIdx += matches
+					}
+				} else if matches > matchVars.maxGroupSize {
+					// Matched, but exceeded max
+					// set matches to max
+					matches = matchVars.maxGroupSize
+					matchVars.candidateRunes = append(matchVars.candidateRunes, runeTree.runeArray...)
+					thisNodeRuneIdx += matches
+				} else {
+					// Not matched
+					// If the parent is a concat, this is an AND statement, we should skip sibings
+					hasConcatParent := false
+					for _, path := range runeTree.pathStrings {
+						if path == "Concat" {
+							hasConcatParent = true
+							break
+						}
+					}
+					if hasConcatParent {
+						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
+						matchVars.candidateRunes = make([]rune, 0)
+						// pop one idx
+						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
+					} else {
+						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, false)
+						// Reset one idx
+						matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
+						thisNodeRuneIdx = thisNodeRuneParentIdx
+					}
+				}
+			} else {
+				// Not matched
+				// If the parent is a concat, this is an AND statement, we should skip sibings
+				hasConcatParent := false
+				parentPtr := runeTree.parent
+				for {
+					if parentPtr == runeTree {
+						break
+					}
+					if parentPtr.thisOp == "Concat" {
+						hasConcatParent = true
+						break
+					} else if parentPtr.thisOp == "Alternate" {
+						break
+					} else {
+						parentPtr = parentPtr.parent
+					}
+
+				}
+				if hasConcatParent {
+					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
+					matchVars.candidateRunes = make([]rune, 0)
+					// pop one idx
+					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
+				} else {
+					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, false)
+					// Reset one idx
+					matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
+					thisNodeRuneIdx = thisNodeRuneParentIdx
+				}
+			}
+		case "CharClass":
+			// Evaluate the char class
+			ranges := make([]rangeTuple, 0)
+			if runeTree.ranges == nil {
+				runeTree.ranges = ArrayAsRanges(runeTree.runeArray)
+				ranges = runeTree.ranges
+			} else {
+				ranges = runeTree.ranges
+			}
+
+			matches := 0
+			for {
+				if thisNodeRuneIdx+matches < len(runes) {
+					if searchRangesForChar(runes[thisNodeRuneIdx+matches], ranges) {
+						matches += 1
+					} else {
+						break
+					}
+				} else {
+					break
+				}
+			}
+
+			// Must be at least min group but can exceed max, will be cut off.
+			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
+				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
+					// Matched
+					if matches != 0 {
+						matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
+						thisNodeRuneIdx += matches
+					}
+				} else if matches > matchVars.maxGroupSize {
+					// Matched, but exceeded max
+					// set matches to max
+					matches = matchVars.maxGroupSize
+					matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
+					thisNodeRuneIdx += matches
+				} else {
+					// Not matched
+					// If the last alt/concat parent was a concat
+					hasConcatParent := false
+					parentPtr := runeTree.parent
+					for {
+						if parentPtr == runeTree {
+							break
+						}
+						if parentPtr.thisOp == "Concat" {
+							hasConcatParent = true
+							break
+						} else if parentPtr.thisOp == "Alternate" {
+							break
+						} else {
+							parentPtr = parentPtr.parent
+						}
+
+					}
+					if hasConcatParent {
+						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
+						matchVars.candidateRunes = make([]rune, 0)
+						// pop one idx
+						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
+					} else {
+						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, false)
+						// Reset one idx
+						matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
+						thisNodeRuneIdx = thisNodeRuneParentIdx
+					}
+				}
+			} else {
+				// Not matched
+				// If the parent is a concat, this is an AND statement, we should skip sibings
+				hasConcatParent := false
+				parentPtr := runeTree.parent
+				for {
+					if parentPtr == runeTree {
+						break
+					}
+					if parentPtr.thisOp == "Concat" {
+						hasConcatParent = true
+						break
+					} else if parentPtr.thisOp == "Alternate" {
+						break
+					} else {
+						parentPtr = parentPtr.parent
+					}
+
+				}
+				if hasConcatParent {
+					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
+					matchVars.candidateRunes = make([]rune, 0)
+					// pop one idx
+					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
+				} else {
+					//fmt.Printf("Parent is not concat, skipping children\n")
+					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, false)
+					// Reset one idx
+					matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
+					thisNodeRuneIdx = thisNodeRuneParentIdx
+				}
+			}
+
+		default:
+			fmt.Printf("Op not found: %s\n", runeTree.thisOp)
+		}
+	} else {
+		matchVars.skipUntilNum -= 1
+	}
+
+	// Reset min/max if there is no path to a min/max setting node
+	found := false
+	if matchVars.minGroupSize == 1 && matchVars.maxGroupSize == -1 {
+		found = true
+	}
+	for _, path := range runeTree.pathStrings {
+		if path == "Quest" || path == "Plus" || path == "Repeat" || path == "Star" {
+			found = true
+			break
+		}
+	}
+	if found == false && (runeTree.thisOp == "Quest" || runeTree.thisOp == "Plus" || runeTree.thisOp == "Repeat" || runeTree.thisOp == "Star") {
+		found = true
+	}
+	if !found {
+		matchVars.minGroupSize = 1
+		matchVars.maxGroupSize = -1
+	}
+
+	// Update the rune candidate idx. If theres not a Alternate,we update the parent
+	if thisNodeRuneIdx != -1 {
+		parentOp := runeTree.parent.thisOp
+		if parentOp == "Quest" || parentOp == "Plus" || parentOp == "Repeat" || parentOp == "Star" {
+			if len(matchVars.subjectRuneCandidateIndices) > 1 {
+				matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-2] = thisNodeRuneIdx
+			}
+		}
+		matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneIdx
+	}
+
+	// Load info from the current node
+	matchVars.lastOp = runeTree.lastOp
+	matchVars.lastInfoOp = runeTree.thisOp
+	matchVars.stateMachineIndex += 1
+
+	for _, child := range runeTree.children {
+		child.preOrderTraversalMatchV2(runes, matchVars, level)
+	}
+}
+
+func calcSkipLength(mapOfTree [][]int, currentPos int, skipSiblings bool) int {
+	// Given current index, find the next index that isn't a child of the current index
+	// If skipSiblings is true, we skip all siblings of the current node as well
+	// Return the number of nodes between the current node and the next node that isn't a child of the current node
+
+	// Get the current path
+	currentPath := mapOfTree[currentPos]
+	lenOfCurrentPath := len(currentPath)
+	skipLength := 0
+	for {
+		// Check if we are at end of map
+		if currentPos == len(mapOfTree)-1 {
+			break
+		}
+		// Check if we are at root
+		if len(mapOfTree[currentPos]) == 1 {
+			break
+		}
+
+		// Siblings are on the same length, if we want to skip siblings, we only check for lesser length
+		if skipSiblings {
+			if len(mapOfTree[currentPos+1]) < lenOfCurrentPath {
+				break
+			} else {
+				currentPos += 1
+			}
+		} else {
+			if len(mapOfTree[currentPos+1]) <= lenOfCurrentPath {
+				break
+			} else {
+				currentPos += 1
+			}
+		}
+
+		skipLength += 1
+	}
+	return skipLength
 }
