@@ -402,8 +402,6 @@ type matchVariables struct {
 	subjectRuneArrIndex         int
 	subjectRuneCandidateIndices []int
 	stateMachineIndex           int
-	lastOp                      string
-	lastInfoOp                  string
 	pathMap                     [][]int
 	ParentOp                    string
 	minGroupSize                int
@@ -421,8 +419,6 @@ func (runeTree *RegexNode) MatchAllRunes(runes []rune) []string {
 	matchVars.matchedWords = make([]string, 0)
 	matchVars.subjectRuneArrIndex = 0
 	matchVars.stateMachineIndex = 0
-	matchVars.lastOp = ""
-	matchVars.lastInfoOp = ""
 	matchVars.minGroupSize = 1
 	matchVars.maxGroupSize = -1
 	matchVars.candidateRunes = make([]rune, 0)
@@ -440,12 +436,11 @@ func (runeTree *RegexNode) MatchAllRunes(runes []rune) []string {
 		}
 		// Reset for next round
 		matchVars.stateMachineIndex = 0
-		matchVars.lastOp = ""
-		matchVars.lastInfoOp = ""
 		matchVars.minGroupSize = 1
 		matchVars.maxGroupSize = -1
-		matchVars.candidateRunes = make([]rune, 0)
-		matchVars.subjectRuneCandidateIndices = []int{matchVars.subjectRuneArrIndex}
+		matchVars.candidateRunes = matchVars.candidateRunes[:0]
+		matchVars.subjectRuneCandidateIndices[0] = matchVars.subjectRuneArrIndex
+		matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:1]
 		matchVars.skipUntilNum = 0
 		matchVars.endEval = false
 	}
@@ -475,7 +470,8 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 		return
 	} else if len(thisNodeMap) == 2 {
 		// Reset candidate indices
-		matchVars.subjectRuneCandidateIndices = []int{matchVars.subjectRuneArrIndex}
+		matchVars.subjectRuneCandidateIndices[0] = matchVars.subjectRuneArrIndex
+		matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:1]
 	}
 
 	// Evaluate the current node
@@ -556,7 +552,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 					}
 					if hasConcatParent {
 						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
-						matchVars.candidateRunes = make([]rune, 0)
+						matchVars.candidateRunes = matchVars.candidateRunes[:0]
 						// pop one idx
 						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 					} else {
@@ -587,7 +583,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 				}
 				if hasConcatParent {
 					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
-					matchVars.candidateRunes = make([]rune, 0)
+					matchVars.candidateRunes = matchVars.candidateRunes[:0]
 					// pop one idx
 					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 				} else {
@@ -655,7 +651,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 					}
 					if hasConcatParent {
 						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
-						matchVars.candidateRunes = make([]rune, 0)
+						matchVars.candidateRunes = matchVars.candidateRunes[:0]
 						// pop one idx
 						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 					} else {
@@ -686,7 +682,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 				}
 				if hasConcatParent {
 					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.stateMachineIndex, true)
-					matchVars.candidateRunes = make([]rune, 0)
+					matchVars.candidateRunes = matchVars.candidateRunes[:0]
 					// pop one idx
 					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 				} else {
@@ -736,8 +732,6 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 	}
 
 	// Load info from the current node
-	matchVars.lastOp = runeTree.lastOp
-	matchVars.lastInfoOp = runeTree.thisOp
 	matchVars.stateMachineIndex += 1
 
 	for _, child := range runeTree.children {
