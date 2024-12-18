@@ -37,45 +37,47 @@ type TypedTwoTierCache struct {
 }
 
 type GPTEncoder struct {
-	Encoder             map[string]Token
-	Decoder             map[Token][]byte
-	BpeRanks            map[GPTPair]float64
-	TokenMerges         map[TokenPair]Token
-	BytesEncoder        *map[byte]Token
-	unitrim             []int
-	pattern             *regexp.Regexp
-	puncPat             *regexp.Regexp
-	specialsPat         *regexp.Regexp
-	byteToRune          [256]rune
-	runeToByte          map[rune]byte
-	Specials            map[string]Tokens
-	SpecialsTree        *RuneNode
-	Cache               *lru.ARCCache
-	TwoTierCache        *TypedTwoTierCache
-	PuncRunes           []rune
-	Normalizer          *strings.Replacer
-	DecodeExtra         *strings.Replacer
-	BosToken            Token
-	EosToken            Token
-	PadToken            Token
-	ignoreMerges        bool
-	encloseEosBos       bool
-	encloseBos          bool
-	encloseEos          bool
-	prefixSpace         bool
-	lowerCase           bool
-	endOfWord           string
-	replacements        map[string]string
-	runeBufSz           int
-	wordChanSz          int
-	LruHits             int
-	LruMisses           int
-	LruEvictions        int
-	LruSize             int
-	SplitterThreads     int
-	VocabId             string
-	tokenizerClass      string
-	normalizerStringMap map[string]string
+	Encoder               map[string]Token
+	Decoder               map[Token][]byte
+	BpeRanks              map[GPTPair]float64
+	TokenMerges           map[TokenPair]Token
+	BytesEncoder          *map[byte]Token
+	unitrim               []int
+	pattern               *regexp.Regexp
+	puncPat               *regexp.Regexp
+	specialsPat           *regexp.Regexp
+	byteToRune            [256]rune
+	runeToByte            map[rune]byte
+	Specials              map[string]Tokens
+	SpecialsTree          *RuneNode
+	Cache                 *lru.ARCCache
+	TwoTierCache          *TypedTwoTierCache
+	PuncRunes             []rune
+	Normalizer            *strings.Replacer
+	DecodeExtra           *strings.Replacer
+	BosToken              Token
+	EosToken              Token
+	PadToken              Token
+	ignoreMerges          bool
+	encloseEosBos         bool
+	encloseBos            bool
+	encloseEos            bool
+	prefixSpace           bool
+	lowerCase             bool
+	endOfWord             string
+	replacements          map[string]string
+	runeBufSz             int
+	wordChanSz            int
+	LruHits               int
+	LruMisses             int
+	LruEvictions          int
+	LruSize               int
+	SplitterThreads       int
+	VocabId               string
+	tokenizerClass        string
+	normalizerStringMap   map[string]string
+	regexWordSplitterTree *RegexNode
+	wordSplitterMap       [][]int
 }
 
 type GPTPair struct {
@@ -206,6 +208,8 @@ func (encoder *GPTEncoder) Clone() *GPTEncoder {
 		clone.replacements[k] = v
 	}
 	clone.runeBufSz = encoder.runeBufSz
+	clone.regexWordSplitterTree = encoder.regexWordSplitterTree
+	clone.wordSplitterMap = encoder.wordSplitterMap
 	return &clone
 }
 
@@ -473,44 +477,46 @@ func NewEncoder(vocabId string) (*GPTEncoder, error) {
 
 	// Create the encoder
 	encoder := &GPTEncoder{
-		Encoder:             encoderTokens,
-		Decoder:             tokensEncoder,
-		BpeRanks:            bpeRanks,
-		TokenMerges:         tokenMerges,
-		BytesEncoder:        bytesEncoderPtr,
-		unitrim:             unitrimArr,
-		pattern:             pat,
-		puncPat:             puncPat,
-		specialsPat:         specialsPat,
-		byteToRune:          bytesUnicode,
-		runeToByte:          unicodeBytes,
-		Specials:            specials,
-		SpecialsTree:        nil,
-		Cache:               cache,
-		PuncRunes:           puncRunes,
-		Normalizer:          normalizer,
-		DecodeExtra:         decodeExtra,
-		BosToken:            encoderTokens[*hfConfig.BosTokenStr],
-		EosToken:            encoderTokens[*hfConfig.EosTokenStr],
-		PadToken:            encoderTokens[*hfConfig.PadTokenStr],
-		ignoreMerges:        *hfConfig.IgnoreMerges,
-		encloseEosBos:       specialConfig.EncloseEosBos,
-		encloseBos:          *hfConfig.AddBosToken,
-		encloseEos:          *hfConfig.AddEosToken,
-		prefixSpace:         specialConfig.PrefixSpace,
-		lowerCase:           specialConfig.LowerCase,
-		endOfWord:           specialConfig.EndOfWord,
-		replacements:        replacements,
-		runeBufSz:           RUNEBUF_SZ,
-		wordChanSz:          WORDCHAN_SZ,
-		LruHits:             0,
-		LruMisses:           0,
-		LruEvictions:        0,
-		LruSize:             BPE_LRU_SZ,
-		SplitterThreads:     2,
-		VocabId:             vocabId,
-		tokenizerClass:      *hfConfig.TokenizerClass,
-		normalizerStringMap: normsMap,
+		Encoder:               encoderTokens,
+		Decoder:               tokensEncoder,
+		BpeRanks:              bpeRanks,
+		TokenMerges:           tokenMerges,
+		BytesEncoder:          bytesEncoderPtr,
+		unitrim:               unitrimArr,
+		pattern:               pat,
+		puncPat:               puncPat,
+		specialsPat:           specialsPat,
+		byteToRune:            bytesUnicode,
+		runeToByte:            unicodeBytes,
+		Specials:              specials,
+		SpecialsTree:          nil,
+		Cache:                 cache,
+		PuncRunes:             puncRunes,
+		Normalizer:            normalizer,
+		DecodeExtra:           decodeExtra,
+		BosToken:              encoderTokens[*hfConfig.BosTokenStr],
+		EosToken:              encoderTokens[*hfConfig.EosTokenStr],
+		PadToken:              encoderTokens[*hfConfig.PadTokenStr],
+		ignoreMerges:          *hfConfig.IgnoreMerges,
+		encloseEosBos:         specialConfig.EncloseEosBos,
+		encloseBos:            *hfConfig.AddBosToken,
+		encloseEos:            *hfConfig.AddEosToken,
+		prefixSpace:           specialConfig.PrefixSpace,
+		lowerCase:             specialConfig.LowerCase,
+		endOfWord:             specialConfig.EndOfWord,
+		replacements:          replacements,
+		runeBufSz:             RUNEBUF_SZ,
+		wordChanSz:            WORDCHAN_SZ,
+		LruHits:               0,
+		LruMisses:             0,
+		LruEvictions:          0,
+		LruSize:               BPE_LRU_SZ,
+		SplitterThreads:       2,
+		VocabId:               vocabId,
+		tokenizerClass:        *hfConfig.TokenizerClass,
+		normalizerStringMap:   normsMap,
+		regexWordSplitterTree: nil,
+		wordSplitterMap:       nil,
 	}
 	encoder.UpdateSpecialsTree()
 	return encoder, nil
@@ -1047,13 +1053,17 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	limitNumberSize := false
 	treatNewLinesAsPartOfWords := false
 	groupLettersFollowingSymbolsIfSingular := false
-	regexString := encoder.pattern.String()
-	regexAST, err := syntax.Parse(regexString, syntax.Perl)
-	if err != nil {
-		panic(err)
+
+	if encoder.regexWordSplitterTree == nil {
+		regexString := encoder.pattern.String()
+		regexAST, err := syntax.Parse(regexString, syntax.Perl)
+		if err != nil {
+			panic(err)
+		}
+		regexAST.Simplify()
+		encoder.regexWordSplitterTree = CreateRegexTree(regexAST)
+		encoder.wordSplitterMap = encoder.regexWordSplitterTree.GeneratePathMap()
 	}
-	regexAST.Simplify()
-	regexTree := CreateRegexTree(regexAST)
 
 	// This flag should be enabled if you want to bypass the state machine optimization
 	// and use the default golang regex package
@@ -1176,8 +1186,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			node *RuneNode,
 		) {
 			// Find all words
-			//matches := encoder.pattern.FindAllString(line, -1)
-			matches := regexTree.MatchAllRunes(line)
+			matches := encoder.regexWordSplitterTree.MatchAllRunes(line, encoder.wordSplitterMap)
 			for _, match := range matches {
 				word := match
 				if encoder.lowerCase {

@@ -410,27 +410,30 @@ type matchVariables struct {
 	skipUntilNum                int
 	rootNode                    *RegexNode
 	endEval                     bool
+	lastInfoOpLocation          int
 }
 
 // We want to take a string and use pre-order traversal to match the string to the tree, in a regex-like fashion
-func (runeTree *RegexNode) MatchAllRunes(runes []rune) []string {
+func (runeTree *RegexNode) MatchAllRunes(runes []rune, pathMap [][]int) []string {
 	// Init variables
 	var matchVars matchVariables
-	matchVars.matchedWords = make([]string, 0)
+	matchVars.matchedWords = make([]string, 64)
 	matchVars.subjectRuneArrIndex = 0
 	matchVars.stateMachineIndex = 0
 	matchVars.minGroupSize = 1
 	matchVars.maxGroupSize = -1
-	matchVars.candidateRunes = make([]rune, 0)
+	matchVars.candidateRunes = make([]rune, 64)
 	matchVars.subjectRuneCandidateIndices = []int{0}
-	matchVars.pathMap = runeTree.GeneratePathMap()
+	matchVars.pathMap = pathMap
 	matchVars.rootNode = runeTree
 	matchVars.endEval = false
+	matchVars.lastInfoOpLocation = 1
+
 	// Start the traversal
 	for {
 		//fmt.Printf("Starting at index: %d\n", matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1])
 		//fmt.Printf("Currently matched words: %s\n", strings.Join(matchVars.matchedWords, "|"))
-		runeTree.preOrderTraversalMatchV2(runes, &matchVars, 0)
+		runeTree.traverseRegexTree(runes, &matchVars, 0)
 		if matchVars.subjectRuneArrIndex >= len(runes) {
 			break
 		}
@@ -443,13 +446,14 @@ func (runeTree *RegexNode) MatchAllRunes(runes []rune) []string {
 		matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:1]
 		matchVars.skipUntilNum = 0
 		matchVars.endEval = false
+		matchVars.lastInfoOpLocation = 1
 	}
 
 	//fmt.Printf("Currently matched words: %s\n", strings.Join(matchVars.matchedWords, "|"))
 	return matchVars.matchedWords
 }
 
-func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *matchVariables, level int) {
+func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, level int) {
 	// Pre-order traversal of the tree
 	if matchVars.endEval {
 		return
@@ -498,18 +502,22 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 			// Set minmax
 			matchVars.minGroupSize = 0
 			matchVars.maxGroupSize = 1
+			matchVars.lastInfoOpLocation = level
 		case "Plus":
 			// Set minmax
 			matchVars.minGroupSize = 1
 			matchVars.maxGroupSize = -1
+			matchVars.lastInfoOpLocation = level
 		case "Repeat":
 			// Set minmax
 			matchVars.minGroupSize = runeTree.min
 			matchVars.maxGroupSize = runeTree.max
+			matchVars.lastInfoOpLocation = level
 		case "Star":
 			// Set minmax
 			matchVars.minGroupSize = 0
 			matchVars.maxGroupSize = -1
+			matchVars.lastInfoOpLocation = level
 		case "Capture":
 			// Not Implemented yet
 		case "Literal":
@@ -595,7 +603,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 			}
 		case "CharClass":
 			// Evaluate the char class
-			ranges := make([]rangeTuple, 0)
+			var ranges []rangeTuple
 			if runeTree.ranges == nil {
 				runeTree.ranges = ArrayAsRanges(runeTree.runeArray)
 				ranges = runeTree.ranges
@@ -703,18 +711,27 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 
 	// Reset min/max if there is no path to a min/max setting node
 	found := false
+	//fmt.Printf("op/level: %d/%d\n", matchVars.lastInfoOpLocation, level)
+	if level > matchVars.lastInfoOpLocation {
+		matchVars.lastInfoOpLocation = level
+	}
+
 	if matchVars.minGroupSize == 1 && matchVars.maxGroupSize == -1 {
 		found = true
-	}
-	for _, path := range runeTree.pathStrings {
-		if path == "Quest" || path == "Plus" || path == "Repeat" || path == "Star" {
-			found = true
-			break
-		}
-	}
-	if found == false && (runeTree.thisOp == "Quest" || runeTree.thisOp == "Plus" || runeTree.thisOp == "Repeat" || runeTree.thisOp == "Star") {
+	} else if matchVars.lastInfoOpLocation != 1 {
 		found = true
 	}
+	/*
+		for _, path := range runeTree.pathStrings {
+			if path == "Quest" || path == "Plus" || path == "Repeat" || path == "Star" {
+				found = true
+				break
+			}
+		}
+		if found == false && (runeTree.thisOp == "Quest" || runeTree.thisOp == "Plus" || runeTree.thisOp == "Repeat" || runeTree.thisOp == "Star") {
+			found = true
+		}
+	*/
 	if !found {
 		matchVars.minGroupSize = 1
 		matchVars.maxGroupSize = -1
@@ -735,7 +752,7 @@ func (runeTree *RegexNode) preOrderTraversalMatchV2(runes []rune, matchVars *mat
 	matchVars.stateMachineIndex += 1
 
 	for _, child := range runeTree.children {
-		child.preOrderTraversalMatchV2(runes, matchVars, level)
+		child.traverseRegexTree(runes, matchVars, level)
 	}
 }
 
