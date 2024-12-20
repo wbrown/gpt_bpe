@@ -1048,14 +1048,11 @@ func (encoder *GPTEncoder) makeWordSplitter(
 	wordCallback WordCallback,
 	completeCallback func(),
 ) func() {
-	// We need to determine possible ReGex settings and coorespond them to options for the splitter
-	maxNumberSize := 3
-	limitNumberSize := false
-	treatNewLinesAsPartOfWords := false
-	groupLettersFollowingSymbolsIfSingular := false
-
 	if encoder.regexWordSplitterTree == nil {
 		regexString := encoder.pattern.String()
+		if regexString == "" {
+			regexString = SPLIT_REGEX
+		}
 		regexAST, err := syntax.Parse(regexString, syntax.Perl)
 		if err != nil {
 			panic(err)
@@ -1063,29 +1060,6 @@ func (encoder *GPTEncoder) makeWordSplitter(
 		regexAST.Simplify()
 		encoder.regexWordSplitterTree = CreateRegexTree(regexAST)
 		encoder.wordSplitterMap = encoder.regexWordSplitterTree.GeneratePathMap()
-	}
-
-	// This flag should be enabled if you want to bypass the state machine optimization
-	// and use the default golang regex package
-	useDefaultRegexPackage := true
-
-	if encoder.pattern.String() != SPLIT_REGEX {
-		// Some tokenizers like LLama3 limit the max number of digits in a number to 3
-		if strings.Contains(encoder.pattern.String(), "{1,3}") {
-			limitNumberSize = true
-		}
-		// Matches NewLines as part of a word instead of individual words
-		if strings.Contains(
-			encoder.pattern.String(), "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*",
-		) {
-			treatNewLinesAsPartOfWords = true
-		}
-		// Matches letters as part of a word if following symbols if they are following a single symbol
-		if strings.Contains(
-			encoder.pattern.String(), "[^\\r\\n\\p{L}\\p{N}]?\\p{L}+",
-		) {
-			groupLettersFollowingSymbolsIfSingular = true
-		}
 	}
 
 	// How many words we send on each callback.
@@ -1164,22 +1138,6 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 		}
 
-		// Appending one word
-		appendRunes := func(r []rune) {
-			if encoder.lowerCase {
-				r = toLowercaseRunes(r)
-			}
-			if !encoder.prefixSpace {
-				r = trimSpacesRunes(r)
-			}
-			if len(r) > 0 {
-				wordBatch = append(wordBatch, string(r))
-				if len(wordBatch) >= batchSize {
-					flushBatch()
-				}
-			}
-		}
-
 		processLine := func(
 			line []rune,
 			special bool,
@@ -1216,9 +1174,6 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			candidateNode = specialsRuneRoot
 			specialToken = false
 		}
-
-		contractionTree := ContractionsTree()
-
 		// We repeatedly call the nextRuneFunc until it returns an error or other break
 		// condition. This fills the runeAccumulator with runes until we have a full line.
 		for {
@@ -1268,13 +1223,6 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				break
 			}
 
-			// For limiting number size
-			curNumberSize := 0
-
-			var whitespaceBuffer []rune
-			previousRuneType := -1
-			previousRuneGroupSize := 0
-
 			// Apply replacements and normalization
 			var runeLine []rune
 			if specialToken && candidateNode != nil {
@@ -1300,219 +1248,11 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 			runeAccumulator = runeLine
 			// If we don't recognize the regex, we default to using the regex package
-			if useDefaultRegexPackage && encoder.pattern.String() != "" {
-				processLine(
-					runeAccumulator, specialToken,
-					candidateNode,
-				)
-				runeAccumulator = runeAccumulator[:0]
-				candidateNode = specialsRuneRoot
-				specialToken = false
-				specialsCandidates = specialsCandidates[:0]
-				continue
-			}
-
-			// Split the line into words
-			for i := 0; i < len(runeAccumulator); {
-				// Try contraction first
-				// If the whitespace buffer isn't empty, skip as
-				// word1 'theword2' shouldn't trigger 't
-
-				if i > 0 && runeAccumulator[i] == '\'' && len(whitespaceBuffer) == 0 {
-					nodes := make(RuneNodes, 1)
-					nodes[0] = contractionTree
-					matched := false
-					for j := i; j < len(runeAccumulator); j++ {
-						if match := nodes.evaluate(runeAccumulator[j]); match != nil {
-							if match.terminal {
-								appendRunes(match.runes)
-								i += len(match.runes)
-								matched = true
-								break
-							}
-						} else {
-							break
-						}
-					}
-					if matched {
-						continue
-					}
-				}
-
-				// Then try other patterns
-				switch {
-				case isWhitespace(runeAccumulator[i]):
-					// If we find a whitespace, we save it and append it to the next word
-					// However, if its a sequence, we consider it a word on its own
-					whitespaceBuffer = append(
-						whitespaceBuffer, runeAccumulator[i],
-					)
-					if len(whitespaceBuffer) > 1 {
-						appendRunes(whitespaceBuffer)
-						whitespaceBuffer = whitespaceBuffer[:0]
-					}
-
-					// If the previous Rune was a whitespace, we add 1 to the group size
-					// Else, we reset the previous Rune type and size
-					if previousRuneType == 0 {
-						previousRuneGroupSize++
-					} else {
-						previousRuneType = 0
-						previousRuneGroupSize = 1
-					}
-					i++
-
-				case unicode.IsLetter(runeAccumulator[i]):
-					start := i
-					for i < len(runeAccumulator) && unicode.IsLetter(runeAccumulator[i]) {
-						i++
-					}
-					// Check if we have whitespace buffer
-					wordBuf := runeAccumulator[start:i]
-					if len(whitespaceBuffer) > 0 {
-						wordBuf = append(whitespaceBuffer, wordBuf...)
-						whitespaceBuffer = whitespaceBuffer[:0]
-					}
-					// If the previous Rune was a symbol and the previous group size was 0-1,
-					// we append it to the previous word
-					if groupLettersFollowingSymbolsIfSingular && previousRuneType == 4 && previousRuneGroupSize < 2 {
-						if len(wordBatch) > 0 {
-							lastWord := wordBatch[len(wordBatch)-1]
-							lastWord = lastWord + string(wordBuf)
-							wordBatch = wordBatch[:len(wordBatch)-1]
-							appendBatch([]string{lastWord}, false)
-						} else {
-							// Or if we only have letters, append it as a word
-							appendRunes(wordBuf)
-						}
-					} else {
-						appendRunes(wordBuf)
-					}
-
-					// If the previous Rune was a letter, we add 1 to the group size
-					// Else, we reset the previous Rune type and size
-					if previousRuneType == 1 {
-						previousRuneGroupSize++
-					} else {
-						previousRuneType = 1
-						previousRuneGroupSize = 1
-					}
-				case isNewLine(runeAccumulator[i]):
-					// If we have whitespace, append it before
-					if len(whitespaceBuffer) > 0 {
-						appendRunes(whitespaceBuffer)
-						whitespaceBuffer = whitespaceBuffer[:0]
-					}
-					if treatNewLinesAsPartOfWords {
-						// Append NewLine to end of previous word
-						if len(wordBatch) > 0 {
-							lastWord := wordBatch[len(wordBatch)-1]
-							lastWord = lastWord + string(runeAccumulator[i])
-							wordBatch = wordBatch[:len(wordBatch)-1]
-							appendBatch([]string{lastWord}, false)
-						} else {
-							// Or if we only have NewLine, append it as a word
-							appendRunes([]rune{runeAccumulator[i]})
-						}
-					} else {
-						appendRunes([]rune{runeAccumulator[i]})
-					}
-
-					// If the previous Rune was a NewLine, we add 1 to the group size
-					// Else, we reset the previous Rune type and size
-					if previousRuneType != 2 {
-						previousRuneType = 2
-						previousRuneGroupSize = 1
-					}
-					i++
-				case unicode.IsNumber(runeAccumulator[i]):
-					start := i
-					currentGroupSize := 0
-					for i < len(runeAccumulator) && unicode.IsNumber(runeAccumulator[i]) {
-						i++
-						curNumberSize++
-						currentGroupSize++
-						if curNumberSize == maxNumberSize && limitNumberSize {
-							break
-						}
-					}
-					// Check if we have whitespace buffer
-					wordBuf := runeAccumulator[start:i]
-					if len(whitespaceBuffer) > 0 {
-						wordBuf = append(whitespaceBuffer, wordBuf...)
-						whitespaceBuffer = whitespaceBuffer[:0]
-					}
-					appendRunes([]rune(wordBuf))
-					curNumberSize = 0
-
-					// We set the previous Rune type and group size
-					if previousRuneType != 3 {
-						previousRuneType = 3
-						previousRuneGroupSize = currentGroupSize
-					}
-
-				default: // symbols
-					start := i
-					currentGroupSize := 0
-					for i < len(runeAccumulator) && isSymbol(runeAccumulator[i]) {
-						i++
-						currentGroupSize++
-					}
-					// Check if we have whitespace buffer
-					wordBuf := runeAccumulator[start:i]
-					if len(whitespaceBuffer) > 0 {
-						wordBuf = append(whitespaceBuffer, wordBuf...)
-						whitespaceBuffer = whitespaceBuffer[:0]
-					}
-					if treatNewLinesAsPartOfWords && previousRuneType == 4 {
-						// Append NewLine to end of previous word
-						if len(wordBatch) > 0 {
-							lastWord := wordBatch[len(wordBatch)-1]
-							lastWord = lastWord + string(wordBuf)
-							wordBatch = wordBatch[:len(wordBatch)-1]
-							appendBatch([]string{lastWord}, false)
-						} else {
-							// Or if we only have NewLine, append it as a word
-							appendRunes(wordBuf)
-						}
-					} else {
-						appendRunes(wordBuf)
-					}
-
-					// Set the previous Rune type and group size
-					if previousRuneType != 4 {
-						previousRuneType = 4
-						previousRuneGroupSize = currentGroupSize
-					}
-				}
-
-				// If we have reached the batch size, flush the batch
-				appendBatch(nil, false)
-
-			}
+			processLine(
+				runeAccumulator, specialToken,
+				candidateNode,
+			)
 			runeAccumulator = runeAccumulator[:0]
-			// Append any remaining whitespace buffer
-			if len(whitespaceBuffer) > 0 {
-				if len(wordBatch) > 0 {
-					lastWord := wordBatch[len(wordBatch)-1]
-					lastWord = lastWord + string(whitespaceBuffer)
-					wordBatch = wordBatch[:len(wordBatch)-1]
-					appendBatch([]string{lastWord}, false)
-				} else {
-					// Or if we only have whitespace, append it as a word
-					appendRunes(whitespaceBuffer)
-				}
-			}
-
-			// If we have a special token, we cap it off.
-			if specialToken && candidateNode != nil {
-				special := string(candidateNode.runes)
-				appendBatch([]string{special}, false)
-			}
-
-			// Flush batch remaining words
-			appendBatch(nil, false)
-
 			candidateNode = specialsRuneRoot
 			specialToken = false
 			specialsCandidates = specialsCandidates[:0]
