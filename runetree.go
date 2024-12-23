@@ -172,7 +172,7 @@ func NewRuneTree() *RuneNode {
 }
 
 // ContractionsTree creates a specialized RuneTree for handling contractions
-func ContractionsTree() *RuneNode {
+func CreateContractionsTree() *RuneNode {
 	tree := NewRuneTree()
 	contractions := []string{
 		"'s", "'t", "'re", "'ve", "'m", "'ll", "'d",
@@ -434,7 +434,7 @@ type matchVariables struct {
 // This is much faster than using the regex package.
 // The input is a pathmap generate from the regex tree, and the runes to match
 // The output is a list of strings that have been matched
-func (runeTree *RegexNode) MatchAllRunes(runes []rune, pathMap [][]int) []string {
+func (runeTree *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
 	// Init variables
 	var matchVars matchVariables
 	matchVars.matchedWords = make([]string, 0)

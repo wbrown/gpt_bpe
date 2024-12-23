@@ -1144,9 +1144,8 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			node *RuneNode,
 		) {
 			// Find all words
-			matches := encoder.regexWordSplitterTree.MatchAllRunes(line, encoder.wordSplitterMap)
-			for _, match := range matches {
-				word := match
+			matches := encoder.regexWordSplitterTree.EvaluateRegexTree(line, encoder.wordSplitterMap)
+			for _, word := range matches {
 				if encoder.lowerCase {
 					word = strings.ToLower(word)
 				}
@@ -1224,29 +1223,25 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 
 			// Apply replacements and normalization
-			var runeLine []rune
 			if specialToken && candidateNode != nil {
-				runeLine =
+				runeAccumulator =
 					runeAccumulator[:len(runeAccumulator)-len(
 						candidateNode.runes,
 					)]
-			} else {
-				runeLine = runeAccumulator
 			}
 			if len(encoder.replacements) > 0 {
-				runeLine = replaceRunes(
-					runeLine, encoder.replacements,
+				runeAccumulator = replaceRunes(
+					runeAccumulator, encoder.replacements,
 				)
 			}
 
 			if encoder.Normalizer != nil {
 				if encoder.normalizerStringMap != nil && len(encoder.normalizerStringMap) > 0 {
-					runeLine = replaceRunes(
-						runeLine, encoder.normalizerStringMap,
+					runeAccumulator = replaceRunes(
+						runeAccumulator, encoder.normalizerStringMap,
 					)
 				}
 			}
-			runeAccumulator = runeLine
 			// If we don't recognize the regex, we default to using the regex package
 			processLine(
 				runeAccumulator, specialToken,
