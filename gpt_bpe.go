@@ -1143,7 +1143,7 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			special bool,
 			node *RuneNode,
 		) {
-			// Find all words
+			// Find all words by using the regexWordSplitterTree
 			matches := encoder.regexWordSplitterTree.EvaluateRegexTree(line, encoder.wordSplitterMap)
 			for _, word := range matches {
 				if encoder.lowerCase {
@@ -1155,6 +1155,9 @@ func (encoder *GPTEncoder) makeWordSplitter(
 				appendBatch([]string{word}, false)
 			}
 
+			// Re-add the special token if it was removed
+			// This is done after the regex splitting to ensure that the special
+			// token is not split by the regex
 			if special && node != nil {
 				special := string(node.runes)
 				appendBatch([]string{special}, false)

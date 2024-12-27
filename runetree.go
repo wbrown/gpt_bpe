@@ -574,6 +574,8 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 							break
 						}
 					}
+
+					// Calculate skip length here
 					if hasConcatParent {
 						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
 						matchVars.candidateRunes = matchVars.candidateRunes[:0]
@@ -621,6 +623,8 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 			}
 		case "CharClass":
 			// Evaluate the char class
+			// We generate and use a LUT for the char class as an optimization over directly
+			// checking the ranges.
 			var lut *RangeLUT
 			if runeTree.rangeLUT == nil {
 				rangesArray := ArrayAsRanges(runeTree.runeArray)
@@ -709,6 +713,8 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 					}
 
 				}
+
+				// Calculate skip length here
 				if hasConcatParent {
 					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
 					matchVars.candidateRunes = matchVars.candidateRunes[:0]
@@ -728,6 +734,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 
 		}
 	} else {
+		// Decrement the skip until num
 		matchVars.skipUntilNum -= 1
 	}
 
