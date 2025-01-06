@@ -577,9 +577,14 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 					}
 				}
 			}
-			if matchVars.minGroupSize > len(runeTree.runeArray) {
+
+			// If we are expecting a non-zero match, set the min group size
+			// to the length of the rune array (literal	length)
+			if matchVars.minGroupSize > 0 {
 				matchVars.minGroupSize = len(runeTree.runeArray)
 			}
+
+			// Matches must be at least min group but can exceed max, will be cut off.
 			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
 				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
 					// Matched
