@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp/syntax"
 	"strings"
+	"unicode"
 )
 
 type RuneNode struct {
@@ -480,6 +481,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 	thisNodeMap := matchVars.pathMap[matchVars.currentNodeIdx]
 	thisNodeRuneIdx := -1
 	thisNodeRuneParentIdx := 0
+	validMatchThisNode := false
 
 	// Check if we are at the root
 	if len(thisNodeMap) == 2 && len(matchVars.candidateRunes) != 0 {
@@ -538,32 +540,56 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 			matchVars.lastInfoOpLevel = level
 		case "Literal":
 			// Evaluate the literal
+			caseInsensitiveFlag := false
+			if runeTree.flags&int(syntax.FoldCase) != 0 {
+				caseInsensitiveFlag = true
+			}
 			matches := 0
+			matchArr := make([]rune, 0)
 			for i := 0; i < len(runeTree.runeArray); i++ {
 				if thisNodeRuneIdx+i < len(runes) {
 					if runeTree.runeArray[i] == runes[thisNodeRuneIdx+i] {
 						matches += 1
+						matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
 					} else {
-						break
+						if caseInsensitiveFlag && unicode.IsLetter(runeTree.runeArray[i]) && unicode.IsLetter(runes[thisNodeRuneIdx+i]) {
+							if runeTree.runeArray[i] == runes[thisNodeRuneIdx+i]+32 {
+								matches += 1
+								matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
+							} else if runeTree.runeArray[i] == runes[thisNodeRuneIdx+i]-32 {
+								matches += 1
+								matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
+							} else {
+								break
+							}
+						} else {
+							break
+
+						}
 					}
 				}
 			}
-			if matchVars.minGroupSize < len(runeTree.runeArray) {
+			if matchVars.minGroupSize > len(runeTree.runeArray) {
 				matchVars.minGroupSize = len(runeTree.runeArray)
 			}
 			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
 				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
 					// Matched
+					validMatchThisNode = true
 					if matches != 0 {
-						matchVars.candidateRunes = append(matchVars.candidateRunes, runeTree.runeArray...)
+						matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
 						thisNodeRuneIdx += matches
 					}
 				} else if matches > matchVars.maxGroupSize {
 					// Matched, but exceeded max
 					// set matches to max
 					matches = matchVars.maxGroupSize
-					matchVars.candidateRunes = append(matchVars.candidateRunes, runeTree.runeArray...)
+					if len(matchArr) > matches {
+						matchArr = matchArr[:matches]
+					}
+					matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
 					thisNodeRuneIdx += matches
+					validMatchThisNode = true
 				} else {
 					// Not matched
 					// If the parent is a concat, this is an AND statement, we should skip sibings
@@ -650,6 +676,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
 				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
 					// Matched
+					validMatchThisNode = true
 					if matches != 0 {
 						matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
 						thisNodeRuneIdx += matches
@@ -660,6 +687,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 					matches = matchVars.maxGroupSize
 					matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
 					thisNodeRuneIdx += matches
+					validMatchThisNode = true
 				} else {
 					// Not matched
 					// If the last alt/concat parent was a concat
@@ -768,10 +796,21 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 
 	// Load info from the current node
 	matchVars.currentNodeIdx += 1
-
+	// If next node is a branch root, and this node is a failed match, we want to actively clear the candidate runes
+	flagNextNodeIsBranchRoot := false
+	if matchVars.currentNodeIdx < len(matchVars.pathMap) && len(matchVars.pathMap[matchVars.currentNodeIdx]) == 2 {
+		flagNextNodeIsBranchRoot = true
+	}
+	if flagNextNodeIsBranchRoot && len(matchVars.candidateRunes) != 0 && !validMatchThisNode {
+		//	matchVars.candidateRunes = matchVars.candidateRunes[:0]
+		//fmt.Printf("would have here")
+		//fmt.Printf("%v", string(matchVars.candidateRunes))
+	}
+	// Traverse the children
 	for _, child := range runeTree.children {
 		child.traverseRegexTree(runes, matchVars, level)
 	}
+
 }
 
 // Given current index, find the next index that isn't a child of the current index
