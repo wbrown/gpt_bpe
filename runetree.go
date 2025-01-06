@@ -429,6 +429,7 @@ type matchVariables struct {
 	rootNode                    *RegexNode // The root node of the tree
 	endEval                     bool       // Whether we should end the evaluation
 	lastInfoOpLevel             int        // The level of the last info op, used for resetting group sizes
+	parentMatched               bool       // The direct parent of the current node has at least one match
 }
 
 // We want to take a string and use pre-order traversal to match the string to the tree, in a regex-like fashion
@@ -479,11 +480,14 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 	}
 	level += 1
 	thisNodeMap := matchVars.pathMap[matchVars.currentNodeIdx]
+	lastNodeMap := make([]int, 0)
+	if matchVars.currentNodeIdx > 0 {
+		lastNodeMap = matchVars.pathMap[matchVars.currentNodeIdx-1]
+	}
 	thisNodeRuneIdx := -1
 	thisNodeRuneParentIdx := 0
-	validMatchThisNode := false
 
-	// Check if we are at the root
+	// Check if we are at the branch root and have a accumulated split
 	if len(thisNodeMap) == 2 && len(matchVars.candidateRunes) != 0 {
 		strMatched := string(matchVars.candidateRunes)
 		matchVars.matchedWords = append(matchVars.matchedWords, strMatched)
@@ -493,9 +497,13 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 		matchVars.endEval = true
 		return
 	} else if len(thisNodeMap) == 2 {
-		// Reset candidate indices
+		// Reset candidate indices if we are bach at the branch root
 		matchVars.subjectRuneCandidateIndices[0] = matchVars.subjectRuneArrIndex
 		matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:1]
+	} else if len(thisNodeMap) != len(lastNodeMap) && len(lastNodeMap) != 0 {
+		// We have either traversed up or down the tree
+		// Reset parent match variable
+		matchVars.parentMatched = false
 	}
 
 	// Evaluate the current node
@@ -575,7 +583,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
 				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
 					// Matched
-					validMatchThisNode = true
+					matchVars.parentMatched = true
 					if matches != 0 {
 						matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
 						thisNodeRuneIdx += matches
@@ -589,7 +597,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 					}
 					matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
 					thisNodeRuneIdx += matches
-					validMatchThisNode = true
+					matchVars.parentMatched = true
 				} else {
 					// Not matched
 					// If the parent is a concat, this is an AND statement, we should skip sibings
@@ -676,7 +684,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 			if matchVars.minGroupSize == -1 || matches >= matchVars.minGroupSize {
 				if matchVars.maxGroupSize == -1 || matches <= matchVars.maxGroupSize {
 					// Matched
-					validMatchThisNode = true
+					matchVars.parentMatched = true
 					if matches != 0 {
 						matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
 						thisNodeRuneIdx += matches
@@ -687,7 +695,7 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 					matches = matchVars.maxGroupSize
 					matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
 					thisNodeRuneIdx += matches
-					validMatchThisNode = true
+					matchVars.parentMatched = true
 				} else {
 					// Not matched
 					// If the last alt/concat parent was a concat
@@ -801,10 +809,8 @@ func (runeTree *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVaria
 	if matchVars.currentNodeIdx < len(matchVars.pathMap) && len(matchVars.pathMap[matchVars.currentNodeIdx]) == 2 {
 		flagNextNodeIsBranchRoot = true
 	}
-	if flagNextNodeIsBranchRoot && len(matchVars.candidateRunes) != 0 && !validMatchThisNode {
-		//	matchVars.candidateRunes = matchVars.candidateRunes[:0]
-		//fmt.Printf("would have here")
-		//fmt.Printf("%v", string(matchVars.candidateRunes))
+	if flagNextNodeIsBranchRoot && len(matchVars.candidateRunes) != 0 && !matchVars.parentMatched {
+		matchVars.candidateRunes = matchVars.candidateRunes[:0]
 	}
 	// Traverse the children
 	for _, child := range runeTree.children {
