@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -220,9 +219,9 @@ func resolveSortSpec(matches []PathInfo, sortSpec string) (err error) {
 		SortPathInfoBySize(matches, true)
 	} else if sortSpec == "size_descending" {
 		SortPathInfoBySize(matches, false)
-	} else if sortSpec == "path_ascending" {
+	} else if sortSpec == "name_ascending" {
 		SortPathInfoByPath(matches, true)
-	} else if sortSpec == "path_descending" {
+	} else if sortSpec == "name_descending" {
 		SortPathInfoByPath(matches, false)
 	} else {
 		return fmt.Errorf("invalid sort spec: %s", sortSpec)
@@ -860,8 +859,8 @@ type TokenizerStatus struct {
 	NumFiles         int
 	CurrFile         string
 	Texts            *chan namedRuneReader
-	Tokenized        *chan gpt_bpe.Tokens
-	Contexts         *chan gpt_bpe.Tokens
+	Tokenized        *chan indexContext
+	Contexts         *chan indexContext
 	ChunkerIndex     int
 	AccumulatorSize  int
 	TimeTokenizing   time.Duration
@@ -873,7 +872,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	texts chan namedRuneReader,
 	indexPath string,
 	tokenizerPtr *gpt_bpe.GPTEncoder,
-) (chan gpt_bpe.Tokens, *TokenizerStatus, error) {
+) (chan indexContext, *TokenizerStatus, error) {
 	tokenizerStatus := TokenizerStatus{}
 	var tokErr error
 	if tokenizerPtr == nil {
@@ -899,7 +898,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 256)
+	tokenizedTexts := make(chan indexContext, 256)
 
 	tokenizerStatus.Tokenizer = &tokenizer
 	tokenizerStatus.Tokenized = &tokenizedTexts
@@ -927,7 +926,13 @@ func (tt TextsTokenizer) TokenizeTexts(
 				for {
 					tokenized := encodeChunk(tt.ContextSize * 4)
 					if tokenized == nil {
-						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						tokenizedTexts <- indexContext{
+							path:   runeReader.path,
+							offset: currOffset,
+							context: gpt_bpe.Tokens{
+								endOfText,
+							},
+						}
 						numTokens += 1
 						tokenizerStatus.NumTokens += 1
 						tokenizerStatus.TimeTokenizing += time.Since(beginTokenize)
@@ -937,7 +942,11 @@ func (tt TextsTokenizer) TokenizeTexts(
 						tokenizerStatus.NumTokens += len(*tokenized)
 					}
 					sendBegin := time.Now()
-					tokenizedTexts <- *tokenized
+					tokenizedTexts <- indexContext{
+						path:    runeReader.path,
+						offset:  currOffset,
+						context: *tokenized,
+					}
 					tokenizerStatus.SendWait += time.Since(sendBegin)
 				}
 				indexFile.WriteString(
@@ -968,9 +977,9 @@ func (tt TextsTokenizer) TokenizeTexts(
 func (tt TextsTokenizer) TokenizeTextsToContexts(
 	texts chan namedRuneReader,
 	tokenizerPtr *gpt_bpe.GPTEncoder,
-	outputContexts chan gpt_bpe.Tokens,
+	outputContexts chan indexContext,
 	wg *sync.WaitGroup,
-) (chan gpt_bpe.Tokens, *TokenizerStatus, error) {
+) (chan indexContext, *TokenizerStatus, error) {
 	status := TokenizerStatus{}
 	var tokErr error
 	if tokenizerPtr == nil {
@@ -982,6 +991,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	tokenizer := *tokenizerPtr.Clone()
 	aligner := *tokenizerPtr.Clone()
 	status.Tokenizer = &tokenizer
+
 	var padToken, endOfText gpt_bpe.Token
 	if tt.PadToken == "" {
 		padToken = tokenizer.PadToken
@@ -1024,18 +1034,20 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	contextSize := tt.ContextSize
 	doUnitrim := tt.Unitrim
 
-	var tokens gpt_bpe.Tokens
+	var lastCtxSize int
+	var lastCtxWasEnd bool
+	var tokenizedBuffer []indexContext
 	var done bool
 	var idx, begin int
 	boundaryIdxes := make([]int, 0)
 
 	// Consume texts from `nextText()` and tokenize as a `goroutine`.
-	tokenizedTexts := make(chan gpt_bpe.Tokens, 16)
-	var contexts chan gpt_bpe.Tokens
+	tokenizedTexts := make(chan indexContext, 16)
+	var contexts chan indexContext
 	if outputContexts != nil {
 		contexts = outputContexts
 	} else {
-		contexts = make(chan gpt_bpe.Tokens, 32)
+		contexts = make(chan indexContext, 32)
 	}
 
 	nextTokenized := func() {
@@ -1043,25 +1055,35 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			status.TokenizerState = "waiting"
 			waitBegin := time.Now()
 			runeReader, more := <-texts
-			status.WaitTime += time.Since(waitBegin)
-			status.TokenizerState = "tokenizing"
-			status.CurrFile = runeReader.path
-			status.NumFiles += 1
+
 			beginTs := time.Now()
 			if more {
+				status.CurrFile = runeReader.path
+				status.NumFiles += 1
+				status.TokenizerState = "tokenizing"
 				status.WaitTime += time.Since(waitBegin)
 				encodeChunk := tokenizer.StreamingEncode(runeReader.reader)
 				for {
 					tokenized := encodeChunk(contextSize * 4)
 					if tokenized == nil {
 						duration := time.Since(beginTs)
-						tokenizedTexts <- gpt_bpe.Tokens{endOfText}
+						tokenizedTexts <- indexContext{
+							path:   runeReader.path,
+							offset: begin,
+							context: gpt_bpe.Tokens{
+								endOfText,
+							},
+						}
 						status.NumTokens += 1
 						status.TimeTokenizing += duration
 						break
 					}
 					status.TokenizerState = "sending"
-					tokenizedTexts <- *tokenized
+					tokenizedTexts <- indexContext{
+						path:    runeReader.path,
+						offset:  begin,
+						context: *tokenized,
+					}
 					status.TokenizerState = "sent"
 				}
 			} else {
@@ -1075,8 +1097,11 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 	// Consumes tokenized texts and resets closured states for token blocks.
 	moreTokens := func() {
 		moreTokens, more := <-tokenizedTexts
-		tokens = append(tokens, moreTokens...)
-		if more {
+		moreTokens.remainingTokens = len(moreTokens.context)
+		if moreTokens.remainingTokens > 0 {
+			tokenizedBuffer = append(tokenizedBuffer, moreTokens)
+		}
+		if more || moreTokens.remainingTokens > 0 {
 			done = false
 		} else {
 			done = true
@@ -1092,15 +1117,25 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 
 	// Return an iterator function that returns token chunks that are always
 	// `contextSize` tokens.
-	nextContext := func() *gpt_bpe.Tokens {
-		if len(tokens)-idx < contextSize*4 {
+	nextContext := func() *indexContext {
+		sumBufferedTokens := 0
+		for _, text := range tokenizedBuffer {
+			sumBufferedTokens += len(text.context)
+		}
+		status.AccumulatorSize = sumBufferedTokens
+		if len(tokenizedBuffer) < 8 || sumBufferedTokens < contextSize*3 {
 			status.PartitionerState = "waiting"
 			moreTokens()
+			sumBufferedTokens = 0
+			for _, text := range tokenizedBuffer {
+				sumBufferedTokens += len(text.context)
+			}
+			status.AccumulatorSize = sumBufferedTokens
 			status.PartitionerState = "got_tokens"
 		}
 		// Loop until we get a full token chunk.
 		for {
-			numTokens := len(tokens)
+			numTokens := sumBufferedTokens
 			status.AccumulatorSize = numTokens
 			status.ChunkerIndex = idx
 			status.PartitionerState = "looping"
@@ -1110,7 +1145,7 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 			} else if done && idx == numTokens {
 				// We're completely done and have no more token chunks to
 				// return, so we flush out and pad the last chunk.
-				chunk := tokens[begin:]
+				chunk := tokenizedBuffer[0].context[begin:]
 				padSize := contextSize - len(chunk)
 				if padSize > 0 {
 					for padIdx := 0; padIdx < padSize; padIdx += 1 {
@@ -1118,17 +1153,32 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					}
 					status.PadTokens += padSize
 				}
-				tokens = tokens[:0]
+				tokenizedBuffer[0].context = tokenizedBuffer[0].context[:0]
 				idx = 0
 				begin = 0
 				status.PartitionerState = "done"
-				return &chunk
+				return &indexContext{
+					path:    tokenizedBuffer[0].path,
+					offset:  begin,
+					context: chunk,
+				}
 			}
-			// Iterate until we reach the end of this text's tokens.
-			for idx < numTokens {
+
+			var currWindow int
+			// We want to repay our debt in the next context, to align the contexts
+			maxSizeNextContext := contextSize
+			if lastCtxSize != contextSize && lastCtxSize > 1 && lastCtxWasEnd {
+				maxSizeNextContext = int(math.Min(float64(contextSize), float64(contextSize-lastCtxSize)))
+			} else {
+				maxSizeNextContext = contextSize
+			}
+
+			// Iterate through the tokens in the current text.
+			for tokenizedBuffer[0].remainingTokens > 0 {
 				status.PartitionerState = "iterating"
 				status.ChunkerIndex = idx
-				token := (tokens)[idx]
+				tokenizedBuffer[0].remainingTokens -= 1
+				token := (tokenizedBuffer[0].context)[idx]
 				// If this is a 'boundary' token, add it to our list.
 				status.PartitionerState = "boundary"
 				if token == boundary {
@@ -1136,11 +1186,42 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 				}
 				// Determine if we're at least `contextSize` yet, and if so
 				// we do the finalization of this context.
-				currWindow := idx - begin
-				if currWindow >= contextSize {
-					status.PartitionerState = "chunking"
-					chunk := (tokens)[begin:]
+				currWindow = idx - begin
 
+				// Check if next context is a continuation of current context
+				// If we have less than `contextSize`
+				if tokenizedBuffer[0].remainingTokens == 0 && currWindow < contextSize {
+					flagSamePath := false
+					if len(tokenizedBuffer) > 1 && len(tokenizedBuffer[1].context) > 0 {
+						flagSamePath = tokenizedBuffer[1].path == tokenizedBuffer[0].path
+					}
+					flagNotEmpty := len(tokenizedBuffer) > 1 && len(tokenizedBuffer[1].context) > 0
+					if flagSamePath && flagNotEmpty {
+						// Append next context to current context
+						tokenizedBuffer[0].context = append(tokenizedBuffer[0].context, tokenizedBuffer[1].context...)
+						tokenizedBuffer[0].remainingTokens += len(tokenizedBuffer[1].context)
+						newChannel := []indexContext{}
+						newChannel = append(newChannel, tokenizedBuffer[0])
+						newChannel = append(newChannel, tokenizedBuffer[2:]...)
+						tokenizedBuffer = newChannel
+					}
+				}
+
+				// Reduce buffer by ContextSize once parsed and if we have more than 2x contextSize
+				if len(tokenizedBuffer[0].context) > contextSize*2 && idx > contextSize {
+					tokenizedBuffer[0].context = tokenizedBuffer[0].context[contextSize:]
+					idx -= contextSize
+				}
+
+				if currWindow >= maxSizeNextContext && len(tokenizedBuffer[0].context[begin:]) > 0 {
+					status.PartitionerState = "chunking"
+					var chunk gpt_bpe.Tokens
+					if len((tokenizedBuffer[0].context)[begin:]) > currWindow {
+						chunk = (tokenizedBuffer[0].context)[begin : begin+currWindow]
+						tokenizedBuffer[0].remainingTokens = 0
+					} else {
+						chunk = (tokenizedBuffer[0].context)[begin:]
+					}
 					if doUnitrim {
 						var endAt int
 						chunk, endAt = aligner.AlignAndSizeTokens(
@@ -1148,27 +1229,25 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 							contextSize,
 						)
 						idx = begin + endAt
-					} else if len(chunk) > contextSize {
-						chunk = (tokens)[:contextSize]
+					} else if len(chunk) >= maxSizeNextContext {
+						chunk = (tokenizedBuffer[0].context)[:maxSizeNextContext]
 					} else {
 						idx = begin + len(chunk)
 					}
 
-					// If we have less than `contextSize`, we need to pad out
-					// the tokens in this context.
-					padSize := contextSize - len(chunk)
-					if padSize > 0 {
-						for padIdx := 0; padIdx < padSize; padIdx += 1 {
-							chunk = append(chunk, padToken)
-						}
-						status.PadTokens += padSize
-					}
 					// We had one or more boundary tokens in our last context,
 					// so depending on the BoundaryOverlap, use the last
 					// boundary or the boundary closest to the BounderOverlap
 					// index. This effectively copies the chunk from that point
 					// on into the next returned context.
+					begin1 := idx
 					idx = tt.PartitionBoundary(&boundaryIdxes, begin, idx)
+					diff := begin1 - idx
+					if diff > 0 {
+						diff += 1 // Include overlapping boundary overlap token into count, unsure if correct
+
+						tokenizedBuffer[0].remainingTokens += diff
+					}
 
 					// We were given a hard index to use as the chunk boundary,
 					// and it may not be a complete unicode character, so we
@@ -1181,47 +1260,137 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 							idx-begin,
 						)
 						idx = begin + offset
-						if offset != tt.BoundaryOverlap {
-							println("idx: ", idx, " offset:", offset)
-						}
 					}
 
 					boundaryIdxes = boundaryIdxes[:0]
-
 					// Reset the `begin` offsets, move idx, to set up the
 					// state for the next invocation of this function.
-					if idx > contextSize*6 {
-						tokens = tokens[idx:]
-						begin = 0
-						idx = 0
-					} else {
-						begin = idx
+					tokenizedBuffer[0].context = tokenizedBuffer[0].context[idx:]
+					tokenizedBuffer[0].remainingTokens = len(tokenizedBuffer[0].context)
+					begin = 0
+					idx = 0
+					lastCtxSize = len(chunk)
+					lastCtxWasEnd = false
+
+					return &indexContext{
+						path:    tokenizedBuffer[0].path,
+						offset:  begin,
+						context: chunk,
 					}
-					numTokens = len(tokens)
-					return &chunk
+				} else if tokenizedBuffer[0].remainingTokens == 0 {
+					chunk := (tokenizedBuffer[0].context)[begin:]
+					if doUnitrim {
+						var endAt int
+						chunk, endAt = aligner.AlignAndSizeTokens(
+							&chunk,
+							contextSize,
+						)
+						idx = begin + endAt
+					} else if len(chunk) > contextSize {
+						chunk = (tokenizedBuffer[0].context)[:contextSize]
+					} else {
+						idx = begin + len(chunk)
+					}
+
+					// We had one or more boundary tokens in our last context,
+					// so depending on the BoundaryOverlap, use the last
+					// boundary or the boundary closest to the BounderOverlap
+					// index. This effectively copies the chunk from that point
+					// on into the next returned context.
+					begin1 := idx
+					idx = tt.PartitionBoundary(&boundaryIdxes, begin, idx)
+					diff := begin1 - idx
+					if diff > 0 {
+						diff += 1 // Include overlapping boundary overlap token into count, unsure if correct
+					}
+
+					// We were given a hard index to use as the chunk boundary,
+					// and it may not be a complete unicode character, so we
+					// need to align it to a valid unicode character.
+					if boundary == 0xFFFFFFFF && doUnitrim {
+						// Ensure that our next chunk is aligned to valid
+						// unicode.
+						_, offset := tokenizer.AlignAndSizeTokens(
+							&chunk,
+							idx-begin,
+						)
+						idx = begin + offset
+					}
+
+					boundaryIdxes = boundaryIdxes[:0]
+					// Reset the `begin` offsets, move idx, to set up the
+					// state for the next invocation of this function.
+					begin = 0
+					idx = 0
+					lastCtxSize = len(chunk)
+					lastCtxWasEnd = true
+
+					// Check the number of texts remaining, if we are at the very end, we need to pad til size
+					if len(tokenizedBuffer) == 1 && len(chunk) < contextSize {
+						padSize := contextSize - len(chunk)
+						if padSize > 0 {
+							for padIdx := 0; padIdx < padSize; padIdx += 1 {
+								chunk = append(chunk, padToken)
+							}
+							status.PadTokens += padSize
+						}
+
+						status.PartitionerState = "done"
+
+					}
+					returnedContext := &indexContext{
+						path:    tokenizedBuffer[0].path,
+						offset:  begin,
+						context: chunk,
+					}
+
+					if len(tokenizedBuffer) > 0 && tokenizedBuffer[0].remainingTokens == 0 {
+						tokenizedBuffer = tokenizedBuffer[1:]
+					}
+
+					begin = 0
+					idx = 0
+
+					// Return the chunk.
+					return returnedContext
+
 				}
 				idx += 1
 				status.AccumulatorSize = numTokens
 				status.ChunkerIndex = idx
-				if len(tokens)-idx < contextSize*2 {
+				if len(tokenizedBuffer) < 8 || sumBufferedTokens < contextSize*3 {
 					status.PartitionerState = "fetching"
 					moreTokens()
+					sumBufferedTokens = 0
+					for _, text := range tokenizedBuffer {
+						sumBufferedTokens += len(text.context)
+					}
+					status.AccumulatorSize = sumBufferedTokens
 					status.PartitionerState = "got_tokens"
 				}
+			}
+			// Done with text, update the text channel and expected next first chunk
+			begin = 0
+			idx = 0
+
+			sumBufferedTokens = 0
+			for _, text := range tokenizedBuffer {
+				sumBufferedTokens += len(text.context)
 			}
 		}
 	}
 
 	go func() {
 		for {
+			//context := nextContext()
 			context := nextContext()
-			if context == nil || len(*context) == 0 {
+			if context == nil || len(context.context) == 0 {
 				status.CurrFile = ""
 				break
 			} else {
 				status.PartitionerState = "sending"
 				contexts <- *context
-				status.NumTokens += len(*context)
+				status.NumTokens += len(context.context)
 				status.PartitionerState = "sent"
 			}
 		}
@@ -1251,9 +1420,9 @@ func GCD(a, b int) int {
 // aligned binary file.
 func WriteContexts(
 	outPath string,
-	contexts chan gpt_bpe.Tokens,
+	indexPath string,
+	contexts chan indexContext,
 	encoder *gpt_bpe.GPTEncoder,
-	sampling int,
 	shuffle bool,
 	enforceUint32 bool,
 	showContexts bool,
@@ -1281,6 +1450,18 @@ func WriteContexts(
 		log.Println("warning: no encoder info, cannot show contexts")
 	}
 
+	// We need to create an index file if we are not using streaming encode as well.
+	var indexFile *os.File
+	var iErr error
+	// Our index handle.
+	if err := os.MkdirAll(filepath.Dir(indexPath), os.ModePerm); err != nil {
+		return 0, err
+	}
+	indexFile, iErr = os.OpenFile(indexPath, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0755)
+	if iErr != nil {
+		return 0, iErr
+	}
+
 	// create file AND filepath if not exists
 	if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil {
 		return 0, err
@@ -1293,41 +1474,19 @@ func WriteContexts(
 		return 0, err
 	}
 
-	var sampledContexts chan gpt_bpe.Tokens
+	var sampledContexts chan indexContext
 
-	if sampling == 100 {
-		sampledContexts = contexts
-	} else {
-		sampledContexts = make(chan gpt_bpe.Tokens, 16)
-		go func() {
-			samplingIdx := 0
-			for context := range contexts {
-				// Ignore every `sampling` percent context (rounded to int)
-				// If sampling is 80, GCD is 20, LCD is 5, 80% of 5 is 4
-				// So we keep 4 and skip 5th
-				gcdOfSampling := GCD(sampling, 100)
-				lcd := 100 / gcdOfSampling
-				samplingFloat := float64(sampling) / 100.0
-				skipEveryX := int(math.Round(samplingFloat * float64(lcd)))
-				doKeepSampling := sampling == 100 || (samplingIdx%lcd < skipEveryX)
-				if doKeepSampling {
-					sampledContexts <- context
-					if showContexts {
-						fmt.Println(len(context))
-						fmt.Println("=================================")
-						fmt.Println(encoder.Decode(&context))
-					}
-				}
-				samplingIdx += 1
-			}
-		}()
-	}
+	sampledContexts = contexts
 
 	endpos := 0
 	var buf []byte
 	var contextSize int
 	var target int64
 	var prevTarget int64
+	var lastPath string
+	var lastTokens int
+	var lastOffset int
+	var currentContextSize int
 
 	// Sometimes it is requested that we shuffle all contexts as they are
 	// written to the file. This is useful for training data, as it can help
@@ -1342,7 +1501,10 @@ func WriteContexts(
 	}
 	idxes := make([]paddingTuple, 0)
 	for context := range sampledContexts {
-		binContext, err := context.ToBin(useUint32)
+		if currentContextSize == 0 {
+			currentContextSize = len(context.context)
+		}
+		binContext, err := context.context.ToBin(useUint32)
 		if err != nil {
 			return totalTokens, err
 		}
@@ -1419,9 +1581,41 @@ func WriteContexts(
 				return totalTokens, err
 			}
 		}
+		// Update index file
 
-		totalTokens += len(context)
+		// Will keep a running total of the number of tokens in the current
+		// Index in order to write them once all contexts for that index have
+		// been written
+		if lastPath == "" {
+			lastPath = context.path
+		}
+		if lastPath == context.path {
+			// update the current context size
+			currentContextSize += lastTokens
+		} else {
+			indexFile.WriteString(
+				fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
+					lastPath, lastOffset, currentContextSize),
+			)
+			lastOffset += currentContextSize
+			currentContextSize = 0
+			lastPath = context.path
+
+		}
+
+		totalTokens += len(context.context)
 		endpos += len(*binContext)
+		lastTokens = len(context.context)
+
+	}
+
+	// Write the last index
+	if currentContextSize > 0 {
+		lastOffset += currentContextSize
+		indexFile.WriteString(
+			fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
+				lastPath, lastOffset, currentContextSize),
+		)
 	}
 
 	// TODO: This is unnecessary, as golang has a Truncate method
@@ -1585,6 +1779,13 @@ func StatusWatcher(
 	return done, &statusWg
 }
 
+type indexContext struct {
+	path            string
+	offset          int
+	context         gpt_bpe.Tokens
+	remainingTokens int
+}
+
 func main() {
 	tokenizerId := flag.String(
 		"tokenizer", "gpt2",
@@ -1647,11 +1848,6 @@ func main() {
 			"size_descending, name_ascending, name_descending, random, "+
 			"shuffle, none]",
 	)
-	sampling_str := flag.String(
-		"sampling", "100", "a integer value from "+
-			"0-100 which tells the tokenizer how many chunks to discard in"+
-			" %, 60 keeps 60%% chunks",
-	)
 	streaming_encode := flag.Bool(
 		"streaming_encode", false,
 		"use streaming encode, which writes to disk as it encodes, "+
@@ -1690,23 +1886,10 @@ func main() {
 		log.Fatal("Must provide -input for directory source")
 	}
 
-	sampling, err := strconv.Atoi(*sampling_str)
-	if err != nil {
-		log.Fatal("Sampling parameter must be an integer")
-	}
-
-	if sampling > 100 || sampling < 0 {
-		log.Fatal("Sampling parameter out of the 0-100 bounds")
-	}
-
 	log.Printf("Tokenizer definition: %s\n", *tokenizerId)
 	log.Printf("Tokenizer input source: %s\n", *inputDir)
 	log.Printf("Tokenizer output: %s\n", *outputFile)
 	log.Printf("Tokenizer reordering method: %s\n", *reorderPaths)
-	log.Printf(
-		"Sampling amount (in %s tokens kept): %d%s\n",
-		"%", sampling, "%",
-	)
 
 	if *reorderPaths != "" {
 		if *reorderPaths != "size_ascending" &&
@@ -1792,7 +1975,7 @@ func main() {
 
 	// Declare textReaders
 	var textReaders chan namedRuneReader
-
+	var err error
 	if hasS3Prefix && *s3Endpoint != "" {
 		defaultResolver := endpoints.DefaultResolver()
 		s3CustResolverFn := func(
@@ -1849,7 +2032,7 @@ func main() {
 			wg.Add(1)
 			var tokenizerStatus *TokenizerStatus
 			go func(threadId int) {
-				var contexts chan gpt_bpe.Tokens
+				var contexts chan indexContext
 				var tokErr error
 				indexFilePath := fmt.Sprintf(
 					"%s.%d.index",
@@ -1870,9 +2053,9 @@ func main() {
 				}
 				total, writeErr := WriteContexts(
 					outputFilePath,
+					strings.ReplaceAll(outputFilePath, ".tokens", ".index"),
 					contexts,
 					encoder,
-					sampling,
 					false,
 					*enforceUint32,
 					*showContexts,
@@ -1892,43 +2075,49 @@ func main() {
 	} else {
 		wg := sync.WaitGroup{}
 		tokenizerStatuses := make([]*TokenizerStatus, *numThreads)
-		contexts := make(chan gpt_bpe.Tokens, 16)
-		for i := 0; i < *numThreads; i++ {
+		for threadIdx := 0; threadIdx < *numThreads; threadIdx++ {
 			var status *TokenizerStatus
 			var tokErr error
 			wg.Add(1)
-			contexts, status, tokErr = textsTokenizer.TokenizeTextsToContexts(
-				textReaders, encoder, contexts, &wg,
-			)
-			if tokErr != nil {
-				log.Fatal(tokErr)
-			}
-			tokenizerStatuses[i] = status
+			go func(threadId int) {
+				contexts := make(chan indexContext, 32)
+				outputFilePath := fmt.Sprintf(
+					"%s.%d.tokens",
+					*outputFile, threadId,
+				)
+				indexFilePath := strings.ReplaceAll(outputFilePath, ".tokens", ".index")
+				contexts, status, tokErr = textsTokenizer.TokenizeTextsToContexts(
+					textReaders, encoder, contexts, &wg,
+				)
+				if tokErr != nil {
+					log.Fatal(tokErr)
+				}
+				tokenizerStatuses[threadId] = status
+				if tokErr != nil {
+					log.Fatal(tokErr)
+				}
+
+				total, writeErr := WriteContexts(
+					outputFilePath,
+					indexFilePath,
+					contexts,
+					encoder,
+					false,
+					*enforceUint32,
+					*showContexts,
+				)
+				if writeErr != nil {
+					log.Fatal(writeErr)
+				}
+				contextTokens += total
+				wg.Done()
+			}(threadIdx)
 		}
 
 		done, statusWg := StatusWatcher(tokenizerStatuses)
-		var writeErr error
-		contextWg := sync.WaitGroup{}
-		contextWg.Add(1)
-		go func() {
-			contextTokens, writeErr = WriteContexts(
-				*outputFile,
-				contexts,
-				encoder,
-				sampling,
-				*reorderPaths == "shuffle",
-				*enforceUint32,
-				*showContexts,
-			)
-			contextWg.Done()
-		}()
 
-		if writeErr != nil {
-			log.Fatal(writeErr)
-		}
+		// Wait for all threads to finish
 		wg.Wait()
-		close(contexts)
-		contextWg.Wait()
 		close(done)
 		statusWg.Wait()
 	}

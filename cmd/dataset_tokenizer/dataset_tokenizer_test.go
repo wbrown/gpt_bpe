@@ -228,7 +228,6 @@ func TestEncodeText1(t *testing.T) {
 	textsTokenizer.BoundaryBegin = false
 	var enc *gpt_bpe.GPTEncoder
 
-	sampling := 100
 	outputFile := "base.chunk"
 
 	enc, tokErr := textsTokenizer.InitTokenizer()
@@ -257,9 +256,9 @@ func TestEncodeText1(t *testing.T) {
 
 	total, writeErr := WriteContexts(
 		outputFile,
+		strings.ReplaceAll(outputFile, ".tokens", ".index"),
 		contexts,
 		enc,
-		sampling,
 		false,
 		false,
 		false,
@@ -310,7 +309,6 @@ func TestSampling50(t *testing.T) {
 
 	inputDir := "../../resources/test_references"
 	reorderPaths := ""
-	sampling := 100
 	outputFile := "base.chunk"
 
 	enc, tokErr := textsTokenizer.InitTokenizer()
@@ -337,9 +335,9 @@ func TestSampling50(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".tokens", ".index"),
 			contexts,
 			enc,
-			sampling,
 			false,
 			false,
 			false,
@@ -366,7 +364,6 @@ func TestSampling50(t *testing.T) {
 
 	inputDir = "../../resources/test_references"
 	reorderPaths = ""
-	sampling = 50
 	outputFile = "samp50.chunk"
 
 	enc, tokErr = textsTokenizer.InitTokenizer()
@@ -392,9 +389,9 @@ func TestSampling50(t *testing.T) {
 
 		total2, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".tokens", ".index"),
 			contexts,
 			enc,
-			sampling,
 			reorderPaths == "shuffle",
 			false,
 			false,
@@ -440,7 +437,6 @@ func TestShuffle(t *testing.T) {
 
 	inputDir := "../../resources/test_references"
 	reorderPaths := ""
-	sampling := 100
 	outputFile := "noshuffle.chunk"
 
 	enc, tokErr := textsTokenizer.InitTokenizer()
@@ -465,9 +461,9 @@ func TestShuffle(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".tokens", ".index"),
 			contexts,
 			enc,
-			sampling,
 			false,
 			false,
 			false,
@@ -494,7 +490,6 @@ func TestShuffle(t *testing.T) {
 
 	inputDir = "../../resources/test_references"
 	reorderPaths = "shuffle"
-	sampling = 100
 	outputFile = "shuffle.chunk"
 
 	enc2, tokErr := textsTokenizer.InitTokenizer()
@@ -519,9 +514,9 @@ func TestShuffle(t *testing.T) {
 
 		total2, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".tokens", ".index"),
 			contexts2,
 			enc2,
-			sampling,
 			true,
 			false,
 			false,
