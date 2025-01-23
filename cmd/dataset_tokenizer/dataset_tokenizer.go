@@ -870,15 +870,14 @@ type TokenizerStatus struct {
 
 func (tt TextsTokenizer) TokenizeTexts(
 	texts chan namedRuneReader,
-	indexPath string,
 	tokenizerPtr *gpt_bpe.GPTEncoder,
-) (chan indexContext, *TokenizerStatus, []string, error) {
+) (chan indexContext, *TokenizerStatus, error) {
 	tokenizerStatus := TokenizerStatus{}
 	var tokErr error
 	if tokenizerPtr == nil {
 		tokenizerPtr, tokErr = tt.InitTokenizer()
 		if tokErr != nil {
-			return nil, nil, nil, tokErr
+			return nil, nil, tokErr
 		}
 	} else {
 		tokenizerPtr = tokenizerPtr.Clone()
@@ -894,7 +893,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 			&tokenizer,
 			tt.EndOfText, "EndOfText",
 		); eotErr != nil {
-			return nil, nil, nil, eotErr
+			return nil, nil, eotErr
 		}
 	}
 
@@ -905,8 +904,6 @@ func (tt TextsTokenizer) TokenizeTexts(
 	tokenizerStatus.Texts = &texts
 
 	currOffset := 0
-	idxFormat := "{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n"
-	indexLines := []string{}
 	nextTokenized := func() {
 		for {
 			waitBegin := time.Now()
@@ -944,13 +941,6 @@ func (tt TextsTokenizer) TokenizeTexts(
 					}
 					tokenizerStatus.SendWait += time.Since(sendBegin)
 				}
-				indexLine := fmt.Sprintf(
-					idxFormat,
-					runeReader.path,
-					currOffset,
-					numTokens,
-				)
-				indexLines = append(indexLines, indexLine)
 				currOffset += numTokens
 				numTokens = 0
 			} else {
@@ -960,7 +950,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 		}
 	}
 	go nextTokenized()
-	return tokenizedTexts, &tokenizerStatus, indexLines, nil
+	return tokenizedTexts, &tokenizerStatus, nil
 }
 
 // TokenizeTextsToContexts
@@ -1438,7 +1428,6 @@ func WriteContexts(
 	indexPath string,
 	contexts chan indexContext,
 	encoder *gpt_bpe.GPTEncoder,
-	indexLines []string,
 	shuffle bool,
 	enforceUint32 bool,
 	showContexts bool,
@@ -1490,12 +1479,6 @@ func WriteContexts(
 		return 0, err
 	}
 
-	if indexLines != nil {
-		for _, line := range indexLines {
-			indexFile.WriteString(line)
-		}
-	}
-
 	var sampledContexts chan indexContext
 
 	sampledContexts = contexts
@@ -1522,6 +1505,7 @@ func WriteContexts(
 		end          int
 	}
 	idxes := make([]paddingTuple, 0)
+	idxFormat := "{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d, \"context_index\": %d}\n"
 	for context := range sampledContexts {
 		if currentContextSize == 0 {
 			currentContextSize = len(context.context)
@@ -1613,7 +1597,7 @@ func WriteContexts(
 		}
 
 		indexFile.WriteString(
-			fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d, \"context_index\": %d}\n",
+			fmt.Sprintf(idxFormat,
 				lastPath, lastOffset, currentContextSize, contextIdx),
 		)
 
@@ -1636,8 +1620,8 @@ func WriteContexts(
 	if currentContextSize > 0 {
 		lastOffset += currentContextSize
 		indexFile.WriteString(
-			fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
-				lastPath, lastOffset, currentContextSize),
+			fmt.Sprintf(idxFormat,
+				lastPath, lastOffset, currentContextSize, contextIdx),
 		)
 	}
 
@@ -2056,7 +2040,6 @@ func main() {
 			var tokenizerStatus *TokenizerStatus
 			go func(threadId int) {
 				var contexts chan indexContext
-				var indexLines []string
 				var tokErr error
 				indexFilePath := fmt.Sprintf(
 					"%s.%d.index",
@@ -2066,9 +2049,8 @@ func main() {
 					"%s.%d.tokens",
 					*outputFile, threadId,
 				)
-				contexts, tokenizerStatus, indexLines, tokErr = textsTokenizer.TokenizeTexts(
+				contexts, tokenizerStatus, tokErr = textsTokenizer.TokenizeTexts(
 					textReaders,
-					indexFilePath,
 					encoder,
 				)
 				tokenizerStatuses[threadId] = tokenizerStatus
@@ -2077,10 +2059,9 @@ func main() {
 				}
 				total, writeErr := WriteContexts(
 					outputFilePath,
-					strings.ReplaceAll(outputFilePath, ".tokens", ".index"),
+					indexFilePath,
 					contexts,
 					encoder,
-					indexLines,
 					false,
 					*enforceUint32,
 					*showContexts,
@@ -2127,7 +2108,6 @@ func main() {
 					indexFilePath,
 					contexts,
 					encoder,
-					nil,
 					false,
 					*enforceUint32,
 					*showContexts,
