@@ -870,7 +870,6 @@ type TokenizerStatus struct {
 
 func (tt TextsTokenizer) TokenizeTexts(
 	texts chan namedRuneReader,
-	indexPath string,
 	tokenizerPtr *gpt_bpe.GPTEncoder,
 ) (chan indexContext, *TokenizerStatus, error) {
 	tokenizerStatus := TokenizerStatus{}
@@ -904,14 +903,7 @@ func (tt TextsTokenizer) TokenizeTexts(
 	tokenizerStatus.Tokenized = &tokenizedTexts
 	tokenizerStatus.Texts = &texts
 
-	// Our index handle.
-	indexFile, iErr := os.Create(indexPath)
-	if iErr != nil {
-		return nil, nil, iErr
-	}
-
 	currOffset := 0
-	idxFormat := "{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n"
 	nextTokenized := func() {
 		for {
 			waitBegin := time.Now()
@@ -949,19 +941,10 @@ func (tt TextsTokenizer) TokenizeTexts(
 					}
 					tokenizerStatus.SendWait += time.Since(sendBegin)
 				}
-				indexFile.WriteString(
-					fmt.Sprintf(
-						idxFormat,
-						runeReader.path,
-						currOffset,
-						numTokens,
-					),
-				)
 				currOffset += numTokens
 				numTokens = 0
 			} else {
 				close(tokenizedTexts)
-				indexFile.Close()
 				break
 			}
 		}
@@ -1263,6 +1246,28 @@ func (tt TextsTokenizer) TokenizeTextsToContexts(
 					}
 
 					boundaryIdxes = boundaryIdxes[:0]
+
+					// Trim any broken unicode characters from the end of the
+					// chunk, replacing them with a pad token. Normally, this
+					// would only occur on the last rune in the chunk, due to
+					// the way we align the chunk to a valid rune.
+					if doUnitrim {
+						trimmed := *tokenizerPtr.TrimTokens(&chunk)
+						if len(trimmed) != len(chunk) {
+							padSize := contextSize - len(trimmed)
+							if padSize > 0 {
+								for padIdx := 0; padIdx < padSize; padIdx += 1 {
+									trimmed = append(trimmed, padToken)
+								}
+								// Since we are substituting tokens, we probably
+								// need to subtract the number of tokens we added,
+								// while also accounting for the padding tokens.
+								status.PadTokens += padSize
+								status.NumTokens -= padSize
+							}
+						}
+					}
+
 					// Reset the `begin` offsets, move idx, to set up the
 					// state for the next invocation of this function.
 					tokenizedBuffer[0].context = tokenizedBuffer[0].context[idx:]
@@ -1484,9 +1489,9 @@ func WriteContexts(
 	var target int64
 	var prevTarget int64
 	var lastPath string
-	var lastTokens int
 	var lastOffset int
 	var currentContextSize int
+	var contextIdx int
 
 	// Sometimes it is requested that we shuffle all contexts as they are
 	// written to the file. This is useful for training data, as it can help
@@ -1500,6 +1505,7 @@ func WriteContexts(
 		end          int
 	}
 	idxes := make([]paddingTuple, 0)
+	idxFormat := "{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d, \"context_index\": %d}\n"
 	for context := range sampledContexts {
 		if currentContextSize == 0 {
 			currentContextSize = len(context.context)
@@ -1583,29 +1589,30 @@ func WriteContexts(
 		}
 		// Update index file
 
-		// Will keep a running total of the number of tokens in the current
-		// Index in order to write them once all contexts for that index have
-		// been written
+		// We write the index file in a way where each context represents
+		// an index into its respective tokenized file. This is useful for
+		// quickly seeking to a specific context if we wanted to.
 		if lastPath == "" {
 			lastPath = context.path
 		}
-		if lastPath == context.path {
-			// update the current context size
-			currentContextSize += lastTokens
-		} else {
-			indexFile.WriteString(
-				fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
-					lastPath, lastOffset, currentContextSize),
-			)
-			lastOffset += currentContextSize
-			currentContextSize = 0
-			lastPath = context.path
 
+		indexFile.WriteString(
+			fmt.Sprintf(idxFormat,
+				lastPath, lastOffset, currentContextSize, contextIdx),
+		)
+
+		if lastPath == context.path {
+			contextIdx += 1
+		} else {
+			contextIdx = 0
 		}
+
+		lastOffset += currentContextSize
+		currentContextSize = 0
+		lastPath = context.path
 
 		totalTokens += len(context.context)
 		endpos += len(*binContext)
-		lastTokens = len(context.context)
 
 	}
 
@@ -1613,8 +1620,8 @@ func WriteContexts(
 	if currentContextSize > 0 {
 		lastOffset += currentContextSize
 		indexFile.WriteString(
-			fmt.Sprintf("{\"path\": \"%s\", \"offset\": %d, \"tokens\": %d}\n",
-				lastPath, lastOffset, currentContextSize),
+			fmt.Sprintf(idxFormat,
+				lastPath, lastOffset, currentContextSize, contextIdx),
 		)
 	}
 
@@ -2044,7 +2051,6 @@ func main() {
 				)
 				contexts, tokenizerStatus, tokErr = textsTokenizer.TokenizeTexts(
 					textReaders,
-					indexFilePath,
 					encoder,
 				)
 				tokenizerStatuses[threadId] = tokenizerStatus
@@ -2053,7 +2059,7 @@ func main() {
 				}
 				total, writeErr := WriteContexts(
 					outputFilePath,
-					strings.ReplaceAll(outputFilePath, ".tokens", ".index"),
+					indexFilePath,
 					contexts,
 					encoder,
 					false,
