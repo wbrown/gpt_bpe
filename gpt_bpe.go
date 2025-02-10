@@ -1095,10 +1095,8 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			}
 		}
 
-		// AppendBatch appends a batch of words to the wordBatch and flushes
+		// appendBatch appends a batch of words to the wordBatch and flushes
 		// the batch if it is full.
-		// ForceFlush forces the batch to be flushed.
-		// Useful for ensuring that the last batch is flushed.
 		appendBatch := func(words []string, forceFlush bool) {
 			if len(words) == 0 && (!forceFlush || len(wordBatch) == 0) {
 				return
@@ -1121,6 +1119,8 @@ func (encoder *GPTEncoder) makeWordSplitter(
 					}
 				}
 			}
+			// forceFlush forces the batch to be flushed.
+			// Useful for ensuring that the last batch is flushed.
 			if forceFlush && len(wordBatch) > 0 {
 				// If we are forcing a flush, we flush the batch after processing
 				// the words
@@ -1366,12 +1366,13 @@ func replaceRunes(
 	return runes
 }
 
-func isWhitespace(r rune) bool {
+// Excludes new line whitespaces. Thus is horizontal whitespace.
+func isHorizontalWhitespace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\r'
 }
 
 func isSymbol(r rune) bool {
-	return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !isWhitespace(r) && !isNewLine(r)
+	return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !isHorizontalWhitespace(r) && !isNewLine(r)
 }
 
 func isNewLine(r rune) bool {
