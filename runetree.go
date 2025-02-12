@@ -320,7 +320,7 @@ func CreateRegexTree(AST *syntax.Regexp) *RegexNode {
 	return root
 }
 
-func (rt *RegexNode) createTree(AST *syntax.Regexp, ASTPath []string) {
+func (rn *RegexNode) createTree(AST *syntax.Regexp, ASTPath []string) {
 	// Create the tree
 	lastOp := AST.Op.String()
 	ASTPath = append(ASTPath, lastOp)
@@ -329,7 +329,7 @@ func (rt *RegexNode) createTree(AST *syntax.Regexp, ASTPath []string) {
 		// Create a new node
 		newNode := &RegexNode{
 			runeArray:   sub.Rune,
-			parent:      rt,
+			parent:      rn,
 			children:    make([]*RegexNode, 0),
 			min:         sub.Min,
 			max:         sub.Max,
@@ -341,18 +341,18 @@ func (rt *RegexNode) createTree(AST *syntax.Regexp, ASTPath []string) {
 		if len(sub.Sub) > 0 {
 			newNode.createTree(sub, ASTPath)
 		}
-		rt.children = append(rt.children, newNode)
+		rn.children = append(rn.children, newNode)
 	}
 }
 
 // We need a path map to know where we are in the tree
-func (rt *RegexNode) GeneratePathMap() [][]int {
+func (rn *RegexNode) GeneratePathMap() [][]int {
 	var pathMap [][]int
-	generatePathMap(rt, 0, []int{}, &pathMap)
+	generatePathMap(rn, 0, []int{}, &pathMap)
 	return pathMap
 }
 
-func generatePathMap(rt *RegexNode, parentIndex int, currentPath []int, pathMap *[][]int) {
+func generatePathMap(rn *RegexNode, parentIndex int, currentPath []int, pathMap *[][]int) {
 	// Generate a map of the tree with dfs
 	currentPath = append(currentPath, parentIndex)
 
@@ -360,51 +360,51 @@ func generatePathMap(rt *RegexNode, parentIndex int, currentPath []int, pathMap 
 	pathCopy := make([]int, len(currentPath))
 	copy(pathCopy, currentPath)
 	*pathMap = append(*pathMap, pathCopy)
-	for idx, child := range rt.children {
+	for idx, child := range rn.children {
 		generatePathMap(child, idx, currentPath, pathMap)
 	}
 
 }
 
-func (rt *RegexNode) String() string {
+func (rn *RegexNode) String() string {
 	// Print the tree
 	sb := strings.Builder{}
-	rt.string(0, &sb)
+	rn.string(0, &sb)
 	return sb.String()
 }
 
-func (rt *RegexNode) string(level int, sb *strings.Builder) {
-	if rt == nil {
+func (rn *RegexNode) string(level int, sb *strings.Builder) {
+	if rn == nil {
 		return
 	}
-	if len(rt.runeArray) > 50 {
-		sb.WriteString(string(rt.runeArray[:50]))
+	if len(rn.runeArray) > 50 {
+		sb.WriteString(string(rn.runeArray[:50]))
 	} else {
-		sb.WriteString(string(rt.runeArray))
+		sb.WriteString(string(rn.runeArray))
 	}
 	idx := 0
-	if len(rt.children) == 1 {
+	if len(rn.children) == 1 {
 		// Get the only element from the map recursively until we find a node
 		// with more than one child.
-		for r := range rt.children {
-			rt.children[r].string(level, sb)
+		for r := range rn.children {
+			rn.children[r].string(level, sb)
 		}
 		return
 	}
 	level += 1
 	sb.WriteString(" -> ")
-	sb.WriteString(rt.lastOp)
+	sb.WriteString(rn.lastOp)
 	sb.WriteByte('\n')
 
-	for r := range rt.children {
+	for r := range rn.children {
 		sb.WriteString(strings.Repeat("| ", level-1))
 		// If we're the last child, then we prepend with a tree terminator.
-		if idx == len(rt.children)-1 {
+		if idx == len(rn.children)-1 {
 			sb.WriteString("└─")
 		} else {
 			sb.WriteString("├─")
 		}
-		rt.children[r].string(level, sb)
+		rn.children[r].string(level, sb)
 		idx += 1
 	}
 }
@@ -431,7 +431,7 @@ type matchVariables struct {
 // This is much faster than using the regex package.
 // The input is a pathmap generate from the regex tree, and the runes to match
 // The output is a list of strings that have been matched
-func (rt *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
+func (rn *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
 	// Init variables
 	var matchVars matchVariables
 	matchVars.matchedWords = make([]string, 0)
@@ -442,13 +442,13 @@ func (rt *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
 	matchVars.candidateRunes = make([]rune, 0, 64)
 	matchVars.subjectRuneCandidateIndices = []int{0}
 	matchVars.pathMap = pathMap
-	matchVars.rootNode = rt
+	matchVars.rootNode = rn
 	matchVars.endEval = false
 	matchVars.lastInfoOpLevel = 1
 
 	// Start the traversal
 	for {
-		rt.traverseRegexTree(runes, &matchVars, 0)
+		rn.traverseRegexTree(runes, &matchVars, 0)
 		if matchVars.subjectRuneArrIndex >= len(runes) {
 			break
 		}
@@ -468,7 +468,7 @@ func (rt *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
 }
 
 // The recursive function that traverses the tree
-func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, level int) {
+func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, level int) {
 	// Pre-order traversal of the tree
 	if matchVars.endEval {
 		return
@@ -516,7 +516,7 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 			thisNodeRuneParentIdx = matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-2]
 		}
 
-		switch rt.thisOp {
+		switch rn.thisOp {
 		case "Alternate":
 			// Nothing needs to happen if we have these nodes here
 		case "Concat":
@@ -533,8 +533,8 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 			matchVars.lastInfoOpLevel = level
 		case "Repeat":
 			// Set minmax for the next nodes
-			matchVars.minGroupSize = rt.min
-			matchVars.maxGroupSize = rt.max
+			matchVars.minGroupSize = rn.min
+			matchVars.maxGroupSize = rn.max
 			matchVars.lastInfoOpLevel = level
 		case "Star":
 			// Set minmax for the next nodes
@@ -544,22 +544,22 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 		case "Literal":
 			// Evaluate the literal
 			caseInsensitiveFlag := false
-			if rt.flags&int(syntax.FoldCase) != 0 {
+			if rn.flags&int(syntax.FoldCase) != 0 {
 				caseInsensitiveFlag = true
 			}
 			matches := 0
 			matchArr := make([]rune, 0)
-			for i := 0; i < len(rt.runeArray); i++ {
+			for i := 0; i < len(rn.runeArray); i++ {
 				if thisNodeRuneIdx+i < len(runes) {
-					if rt.runeArray[i] == runes[thisNodeRuneIdx+i] {
+					if rn.runeArray[i] == runes[thisNodeRuneIdx+i] {
 						matches += 1
 						matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
 					} else {
-						if caseInsensitiveFlag && unicode.IsLetter(rt.runeArray[i]) && unicode.IsLetter(runes[thisNodeRuneIdx+i]) {
-							if rt.runeArray[i] == runes[thisNodeRuneIdx+i]+32 {
+						if caseInsensitiveFlag && unicode.IsLetter(rn.runeArray[i]) && unicode.IsLetter(runes[thisNodeRuneIdx+i]) {
+							if rn.runeArray[i] == runes[thisNodeRuneIdx+i]+32 {
 								matches += 1
 								matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
-							} else if rt.runeArray[i] == runes[thisNodeRuneIdx+i]-32 {
+							} else if rn.runeArray[i] == runes[thisNodeRuneIdx+i]-32 {
 								matches += 1
 								matchArr = append(matchArr, runes[thisNodeRuneIdx+i])
 							} else {
@@ -576,7 +576,7 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 			// If we are expecting a non-zero match, set the min group size
 			// to the length of the rune array (literal	length)
 			if matchVars.minGroupSize > 0 {
-				matchVars.minGroupSize = len(rt.runeArray)
+				matchVars.minGroupSize = len(rn.runeArray)
 			}
 
 			// Matches must be at least min group but can exceed max, will be cut off.
@@ -602,7 +602,7 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					// Not matched
 					// If the parent is a concat, this is an AND statement, we should skip sibings
 					hasConcatParent := false
-					for _, path := range rt.pathStrings {
+					for _, path := range rn.pathStrings {
 						if path == "Concat" {
 							hasConcatParent = true
 							break
@@ -626,9 +626,9 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 				// Not matched
 				// If the parent is a concat, this is an AND statement, we should skip sibings
 				hasConcatParent := false
-				parentPtr := rt.parent
+				parentPtr := rn.parent
 				for {
-					if parentPtr == rt {
+					if parentPtr == rn {
 						break
 					}
 					if parentPtr.thisOp == "Concat" {
@@ -660,11 +660,11 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 			// We generate and use a LUT for the char class as an optimization over directly
 			// checking the ranges.
 			var lut *RangeLUT
-			if rt.rangeLUT == nil {
-				rangesArray := ArrayAsRanges(rt.runeArray)
-				rt.rangeLUT = newRangeLUT(rangesArray)
+			if rn.rangeLUT == nil {
+				rangesArray := ArrayAsRanges(rn.runeArray)
+				rn.rangeLUT = newRangeLUT(rangesArray)
 			} else {
-				lut = rt.rangeLUT
+				lut = rn.rangeLUT
 			}
 
 			matches := 0
@@ -700,9 +700,9 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					// Not matched
 					// If the last alt/concat parent was a concat
 					hasConcatParent := false
-					parentPtr := rt.parent
+					parentPtr := rn.parent
 					for {
-						if parentPtr == rt {
+						if parentPtr == rn {
 							break
 						}
 						if parentPtr.thisOp == "Concat" {
@@ -734,9 +734,9 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 				// Not matched
 				// If the parent is a concat, this is an AND statement, we should skip sibings
 				hasConcatParent := false
-				parentPtr := rt.parent
+				parentPtr := rn.parent
 				for {
-					if parentPtr == rt {
+					if parentPtr == rn {
 						break
 					}
 					if parentPtr.thisOp == "Concat" {
@@ -793,7 +793,7 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 
 	// Update the rune candidate idx. If theres not a Alternate,we update the parent
 	if thisNodeRuneIdx != -1 {
-		parentOp := rt.parent.thisOp
+		parentOp := rn.parent.thisOp
 		if parentOp == "Quest" || parentOp == "Plus" || parentOp == "Repeat" || parentOp == "Star" {
 			if len(matchVars.subjectRuneCandidateIndices) > 1 {
 				matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-2] = thisNodeRuneIdx
@@ -813,7 +813,7 @@ func (rt *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 		matchVars.candidateRunes = matchVars.candidateRunes[:0]
 	}
 	// Traverse the children
-	for _, child := range rt.children {
+	for _, child := range rn.children {
 		child.traverseRegexTree(runes, matchVars, level)
 	}
 
