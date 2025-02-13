@@ -1432,7 +1432,8 @@ func WriteContexts(
 		}
 
 		_, err = indexFile.WriteString(
-			fmt.Sprintf(idxFormat, totalTokens, len(context)))
+			fmt.Sprintf(idxFormat, totalTokens, len(context)),
+		)
 
 		if err != nil {
 			return totalTokens, err

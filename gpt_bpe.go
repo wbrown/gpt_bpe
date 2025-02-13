@@ -1144,7 +1144,9 @@ func (encoder *GPTEncoder) makeWordSplitter(
 			node *RuneNode,
 		) {
 			// Find all words by using the regexWordSplitterTree
-			matches := encoder.regexWordSplitterTree.EvaluateRegexTree(line, encoder.wordSplitterMap)
+			matches := encoder.regexWordSplitterTree.EvaluateRegexTree(
+				line, encoder.wordSplitterMap,
+			)
 			for _, word := range matches {
 				if encoder.lowerCase {
 					word = strings.ToLower(word)

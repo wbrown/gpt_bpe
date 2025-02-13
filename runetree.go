@@ -352,7 +352,12 @@ func (rn *RegexNode) GeneratePathMap() [][]int {
 	return pathMap
 }
 
-func generatePathMap(rn *RegexNode, parentIndex int, currentPath []int, pathMap *[][]int) {
+func generatePathMap(
+	rn *RegexNode,
+	parentIndex int,
+	currentPath []int,
+	pathMap *[][]int,
+) {
 	// Generate a map of the tree with dfs
 	currentPath = append(currentPath, parentIndex)
 
@@ -468,7 +473,11 @@ func (rn *RegexNode) EvaluateRegexTree(runes []rune, pathMap [][]int) []string {
 }
 
 // The recursive function that traverses the tree
-func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, level int) {
+func (rn *RegexNode) traverseRegexTree(
+	runes []rune,
+	matchVars *matchVariables,
+	level int,
+) {
 	// Pre-order traversal of the tree
 	if matchVars.endEval {
 		return
@@ -506,7 +515,9 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 		// if the index isn't of the right length, we append the index to the candidate indices
 		if len(matchVars.subjectRuneCandidateIndices) < len(thisNodeMap) {
 			candidateRuneArray := matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1]
-			matchVars.subjectRuneCandidateIndices = append(matchVars.subjectRuneCandidateIndices, candidateRuneArray)
+			matchVars.subjectRuneCandidateIndices = append(
+				matchVars.subjectRuneCandidateIndices, candidateRuneArray,
+			)
 		} else {
 			// Trim to the right length
 			matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(thisNodeMap)]
@@ -585,7 +596,9 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					// Matched
 					matchVars.parentMatched = true
 					if matches != 0 {
-						matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
+						matchVars.candidateRunes = append(
+							matchVars.candidateRunes, matchArr...,
+						)
 						thisNodeRuneIdx += matches
 					}
 				} else if matches > matchVars.maxGroupSize {
@@ -595,7 +608,9 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					if len(matchArr) > matches {
 						matchArr = matchArr[:matches]
 					}
-					matchVars.candidateRunes = append(matchVars.candidateRunes, matchArr...)
+					matchVars.candidateRunes = append(
+						matchVars.candidateRunes, matchArr...,
+					)
 					thisNodeRuneIdx += matches
 					matchVars.parentMatched = true
 				} else {
@@ -611,12 +626,16 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 
 					// Calculate skip length here
 					if hasConcatParent {
-						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
+						matchVars.skipUntilNum = calcSkipLength(
+							matchVars.pathMap, matchVars.currentNodeIdx, true,
+						)
 						matchVars.candidateRunes = matchVars.candidateRunes[:0]
 						// pop one idx
 						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 					} else {
-						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, false)
+						matchVars.skipUntilNum = calcSkipLength(
+							matchVars.pathMap, matchVars.currentNodeIdx, false,
+						)
 						// Reset one idx
 						matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
 						thisNodeRuneIdx = thisNodeRuneParentIdx
@@ -644,12 +663,16 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 				// If not matched, we don't care about evaluating the
 				// children of the current node (and potentially siblings)
 				if hasConcatParent {
-					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
+					matchVars.skipUntilNum = calcSkipLength(
+						matchVars.pathMap, matchVars.currentNodeIdx, true,
+					)
 					matchVars.candidateRunes = matchVars.candidateRunes[:0]
 					// pop one idx
 					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 				} else {
-					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, false)
+					matchVars.skipUntilNum = calcSkipLength(
+						matchVars.pathMap, matchVars.currentNodeIdx, false,
+					)
 					// Reset one idx
 					matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
 					thisNodeRuneIdx = thisNodeRuneParentIdx
@@ -686,14 +709,20 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					// Matched
 					matchVars.parentMatched = true
 					if matches != 0 {
-						matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
+						matchVars.candidateRunes = append(
+							matchVars.candidateRunes,
+							runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...,
+						)
 						thisNodeRuneIdx += matches
 					}
 				} else if matches > matchVars.maxGroupSize {
 					// Matched, but exceeded max
 					// set matches to max
 					matches = matchVars.maxGroupSize
-					matchVars.candidateRunes = append(matchVars.candidateRunes, runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...)
+					matchVars.candidateRunes = append(
+						matchVars.candidateRunes,
+						runes[thisNodeRuneIdx:thisNodeRuneIdx+matches]...,
+					)
 					thisNodeRuneIdx += matches
 					matchVars.parentMatched = true
 				} else {
@@ -719,12 +748,16 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 					// If not matched, we don't care about evaluating the
 					// children of the current node (and potentially siblings)
 					if hasConcatParent {
-						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
+						matchVars.skipUntilNum = calcSkipLength(
+							matchVars.pathMap, matchVars.currentNodeIdx, true,
+						)
 						matchVars.candidateRunes = matchVars.candidateRunes[:0]
 						// pop one idx
 						matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 					} else {
-						matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, false)
+						matchVars.skipUntilNum = calcSkipLength(
+							matchVars.pathMap, matchVars.currentNodeIdx, false,
+						)
 						// Reset one idx
 						matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
 						thisNodeRuneIdx = thisNodeRuneParentIdx
@@ -752,13 +785,17 @@ func (rn *RegexNode) traverseRegexTree(runes []rune, matchVars *matchVariables, 
 
 				// Calculate skip length here
 				if hasConcatParent {
-					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, true)
+					matchVars.skipUntilNum = calcSkipLength(
+						matchVars.pathMap, matchVars.currentNodeIdx, true,
+					)
 					matchVars.candidateRunes = matchVars.candidateRunes[:0]
 					// pop one idx
 					matchVars.subjectRuneCandidateIndices = matchVars.subjectRuneCandidateIndices[:len(matchVars.subjectRuneCandidateIndices)-1]
 				} else {
 					//fmt.Printf("Parent is not concat, skipping children\n")
-					matchVars.skipUntilNum = calcSkipLength(matchVars.pathMap, matchVars.currentNodeIdx, false)
+					matchVars.skipUntilNum = calcSkipLength(
+						matchVars.pathMap, matchVars.currentNodeIdx, false,
+					)
 					// Reset one idx
 					matchVars.subjectRuneCandidateIndices[len(matchVars.subjectRuneCandidateIndices)-1] = thisNodeRuneParentIdx
 					thisNodeRuneIdx = thisNodeRuneParentIdx

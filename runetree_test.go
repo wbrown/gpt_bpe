@@ -147,7 +147,8 @@ func TestRuneReplacement(t *testing.T) {
 	rr := io.RuneReader(strings.NewReader(s))
 	nerdstashV2Encoder = *CacheLoadEncoder("nerdstash_v2-tokenizer")
 	nerdstashV2Encoder.SpecialsTree.InsertReplacementsIntoRuneTree(
-		sanitizeTable)
+		sanitizeTable,
+	)
 	print(nerdstashV2Encoder.SpecialsTree.String())
 	nextWord := nerdstashV2Encoder.WordSplitter(rr)
 	for {
