@@ -238,13 +238,14 @@ func TestEncodeText1(t *testing.T) {
 	}()
 
 	begin := time.Now()
-	contexts, tokErr := textsTokenizer.TokenizeTexts(reader, "./test", enc)
+	contexts, _, tokErr := textsTokenizer.TokenizeTexts(reader, "./test", enc)
 	if tokErr != nil {
 		log.Fatal("Error tokenizing texts: ", tokErr)
 	}
 
 	total, writeErr := WriteContexts(
 		outputFile,
+		strings.ReplaceAll(outputFile, ".chunk", ".index"),
 		contexts,
 		enc,
 		sampling,
@@ -314,7 +315,7 @@ func TestSampling50(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
+		contexts, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts, "./test", enc,
 		)
 		if tokErr != nil {
@@ -325,6 +326,7 @@ func TestSampling50(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".chunk", ".index"),
 			contexts,
 			enc,
 			sampling,
@@ -370,7 +372,7 @@ func TestSampling50(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
+		contexts, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts2, "./test", enc,
 		)
 		if tokErr != nil {
@@ -380,6 +382,7 @@ func TestSampling50(t *testing.T) {
 
 		total2, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".chunk", ".index"),
 			contexts,
 			enc,
 			sampling,
@@ -443,7 +446,7 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
+		contexts, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts, "./test", enc,
 		)
 		if tokErr != nil {
@@ -453,6 +456,7 @@ func TestShuffle(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".chunk", ".index"),
 			contexts,
 			enc,
 			sampling,
@@ -497,7 +501,7 @@ func TestShuffle(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts2, tokErr := textsTokenizer.TokenizeTexts(
+		contexts2, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts2, "./test", enc2,
 		)
 		if tokErr != nil {
@@ -507,6 +511,7 @@ func TestShuffle(t *testing.T) {
 
 		total2, writeErr := WriteContexts(
 			outputFile,
+			strings.ReplaceAll(outputFile, ".chunk", ".index"),
 			contexts2,
 			enc2,
 			sampling,
