@@ -1027,8 +1027,8 @@ func (rsrcs *Resources) ResolveHF(hfConfig *HFConfig) (err error) {
 
 	// Llama 3 and other larger models will enclose eos and bos by default
 	if *hfConfig.VocabSize > math.MaxUint16+1 {
-		var addEosToken = true
-		var addBosToken = true
+		var addEosToken = false
+		var addBosToken = false
 
 		hfConfig.AddEosToken = &addEosToken
 		hfConfig.AddBosToken = &addBosToken
