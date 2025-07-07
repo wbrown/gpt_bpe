@@ -1,0 +1,1 @@
+GOOS=wasip1 GOARCH=wasm go build -o tok.wasm -buildmode=c-shared

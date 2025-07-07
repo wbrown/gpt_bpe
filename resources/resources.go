@@ -1,5 +1,4 @@
-//go:build !js
-// +build !js
+//go:build !wasip1 && !js
 
 package resources
 

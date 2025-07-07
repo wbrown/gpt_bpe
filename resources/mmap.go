@@ -1,10 +1,11 @@
-//go:build !js
+//go:build !wasip1 && !js
 
 package resources
 
 import (
-	"github.com/edsrzf/mmap-go"
 	"os"
+
+	"github.com/edsrzf/mmap-go"
 )
 
 func readMmap(file *os.File) (*[]byte, error) {
