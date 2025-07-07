@@ -1,11 +1,12 @@
-//go:build !js
+//go:build !wasip1 && !js
 
 package gpt_bpe
 
 import (
-	"github.com/jdkato/prose/v2"
 	"strings"
 	"unicode"
+
+	"github.com/jdkato/prose/v2"
 )
 
 func (encoder *GPTEncoder) TrimIncompleteSentence(tokens *Tokens) (
