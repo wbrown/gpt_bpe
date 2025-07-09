@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/extism/go-pdk"
-	msgpack "github.com/wapc/tinygo-msgpack"
+	msgpack "github.com/vmihailenco/msgpack/v5"
 	"github.com/wbrown/gpt_bpe"
+	"github.com/wbrown/gpt_bpe/types"
 )
 
 var encoder gpt_bpe.GPTEncoder
@@ -15,40 +16,13 @@ func init() {
 	encoder = gpt_bpe.NewGPT2Encoder()
 }
 
-type TokenizeResult gpt_bpe.Tokens
-
-func (t *TokenizeResult) Encode(encoder msgpack.Writer) error {
-	encoder.WriteMapSize(1)
-	encoder.WriteString("tokens")
-	encoder.WriteArraySize(uint32(len(*t)))
-	for _, token := range *t {
-		encoder.WriteUint32(uint32(token))
-	}
-	return nil
-}
-
-func (t *TokenizeResult) Decode(decoder msgpack.Reader) error {
-	_, _ = decoder.ReadMapSize()
-	_, _ = decoder.ReadString()
-	arr_size, err :=decoder.ReadArraySize()
-	if err != nil {
-		return err
-	}
-	for i := 0; i < int(arr_size); i++ {
-		token, err := decoder.ReadUint32()
-		if err != nil {
-			return err
-		}
-		*t = append(*t, gpt_bpe.Token(token))
-	}
-	return nil
-}
+type TokenizeResult = gpt_bpe.Tokens
 
 //go:wasmexport tokenize
 func Tokenize() int32 {
 	text := pdk.InputString()
 	tokens := TokenizeResult(*encoder.Encode(&text))
-	bytes, err := msgpack.ToBytes(&tokens)
+	bytes, err := msgpack.Marshal(&tokens)
 	if err != nil {
 		return 1
 	}
@@ -60,23 +34,30 @@ func Tokenize() int32 {
 func TokenizeAndBack() int32 {
 	text := pdk.InputString()
 	tokens := TokenizeResult(*encoder.Encode(&text))
-	tokens_ptr := gpt_bpe.Tokens(tokens)
-	textAgain := encoder.Decode(&tokens_ptr)
+	textAgain := encoder.Decode(&tokens)
 	pdk.OutputString(textAgain)
 	return 0
 }
 
-//go:wasmexport decode
-func Decode() int32 {
+//go:wasmexport decode_array
+func DecodeArray() int32 {
 	bytes := pdk.Input()
 	var tokens TokenizeResult
 	err := msgpack.Unmarshal(bytes, &tokens)
 	if err != nil {
 		return 1
 	}
-	tokens_ptr := gpt_bpe.Tokens(tokens)
-	text := encoder.Decode(&tokens_ptr)
+	text := encoder.Decode(&tokens)
 	pdk.OutputString(text)
+	return 0
+}
+
+//go:wasmexport decode
+func Decode() int32 {
+	bytes := pdk.Input()
+	tokens := types.TokensFromBin(&bytes)
+	out := encoder.Decode(tokens)
+	pdk.OutputString(out)
 	return 0
 }
 
@@ -84,7 +65,7 @@ func TokenizeAndBackFull() error {
 	// Mostly for debugging
 	text := "Hello, world! This is a test."
 	tokens := TokenizeResult(*encoder.Encode(&text))
-	bytes, err := msgpack.ToBytes(&tokens)
+	bytes, err := msgpack.Marshal(&tokens)
 	if err != nil {
 		return err
 	}
@@ -95,8 +76,7 @@ func TokenizeAndBackFull() error {
 		return err
 	}
 
-	tokens_ptr := gpt_bpe.Tokens(tokens2)
-	textBack := encoder.Decode(&tokens_ptr)
+	textBack := encoder.Decode(&tokens2)
 	fmt.Println(textBack)
 	return nil
 }
