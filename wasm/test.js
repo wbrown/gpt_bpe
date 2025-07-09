@@ -1,27 +1,21 @@
 import fs from 'fs';
-import createPlugin from '@extism/extism';
-import msgpack from "msgpack-lite";
+import { createTokenizer } from './bindings.js';
 
 const corpus = fs.readFileSync("../resources/frankenstein.txt", 'utf8');
 
 async function main() {
   try {
-    const plugin = await createPlugin(
-      'tok.wasm',
-      { useWasi: true }
-    );
+    const tokenizer = await createTokenizer();
+    console.log("Tokenizer created");
 
-    console.log("Tokenizing sample text...");
     const sampleText = "Hello, world! This is a test.";
-    const sampleResult = await plugin.call("tokenize", sampleText);
     
-    const decodedSample = msgpack.decode(sampleResult.bytes());
-    console.log("Sample tokens:", decodedSample);
+    const tokens = await tokenizer.tokenize(sampleText);
+    console.log("Sample tokens:", tokens);
     
-    if (decodedSample.tokens && decodedSample.tokens.length > 0) {
-      const tokenBytes = msgpack.encode(decodedSample);
-      const decodedText = await plugin.call("decode", tokenBytes);
-      console.log("Decoded text:", decodedText.text());
+    if (tokens && tokens.length > 0) {
+      const decodedText = await tokenizer.decode(tokens);
+      console.log("Decoded text:", decodedText);
     }
 
     console.log("\nRunning benchmark...");
@@ -29,15 +23,14 @@ async function main() {
     for (let i = 0; i < 100; i++) {
       const start = process.hrtime.bigint();
       
-      const result = await plugin.call("tokenize", corpus);
+      const result = await tokenizer.tokenize(corpus);
       
       const end = process.hrtime.bigint();
       const duration = Number(end - start) / 1000000;
       times.push(duration);
       
       if (i === 0) {
-        const decoded = msgpack.decode(result.bytes());
-        console.log(`Corpus tokenized into ${decoded.tokens.length} tokens`);
+        console.log(`Corpus tokenized into ${result.length} tokens`);
       }
     }
     
@@ -56,4 +49,4 @@ async function main() {
   }
 }
 
-main()
+main(); 
