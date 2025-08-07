@@ -252,6 +252,7 @@ func TestEncodeText1(t *testing.T) {
 		false,
 		false,
 		false,
+		nil,
 	)
 	if writeErr != nil {
 		log.Fatal("Error writing contexts: ", writeErr)
@@ -333,6 +334,7 @@ func TestSampling50(t *testing.T) {
 			false,
 			false,
 			false,
+			nil,
 		)
 		all1 += total
 		if writeErr != nil {
@@ -389,6 +391,7 @@ func TestSampling50(t *testing.T) {
 			reorderPaths == "shuffle",
 			false,
 			false,
+			nil,
 		)
 		all2 += total2
 		if writeErr != nil {
@@ -463,6 +466,7 @@ func TestShuffle(t *testing.T) {
 			false,
 			false,
 			false,
+			nil,
 		)
 		all1 += total
 		if writeErr != nil {
@@ -518,6 +522,7 @@ func TestShuffle(t *testing.T) {
 			true,
 			false,
 			false,
+			nil,
 		)
 		all2 += total2
 		if writeErr != nil {
@@ -774,7 +779,7 @@ func TestUInt16WithNoEnforce(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
+		contexts, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts, "./test", enc,
 		)
 		if tokErr != nil {
@@ -783,12 +788,14 @@ func TestUInt16WithNoEnforce(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			"",
 			contexts,
 			enc,
 			sampling,
 			false,
 			false,
 			false,
+			nil,
 		)
 		if writeErr != nil {
 			log.Fatal(writeErr)
@@ -873,7 +880,7 @@ func TestUInt16WithEnforce(t *testing.T) {
 		log.Fatal(err)
 	} else {
 		begin := time.Now()
-		contexts, tokErr := textsTokenizer.TokenizeTexts(
+		contexts, _, tokErr := textsTokenizer.TokenizeTexts(
 			texts, "./test", enc,
 		)
 		if tokErr != nil {
@@ -882,12 +889,14 @@ func TestUInt16WithEnforce(t *testing.T) {
 
 		total, writeErr := WriteContexts(
 			outputFile,
+			"",
 			contexts,
 			enc,
 			sampling,
 			false,
 			true,
 			false,
+			nil,
 		)
 		if writeErr != nil {
 			log.Fatal(writeErr)
