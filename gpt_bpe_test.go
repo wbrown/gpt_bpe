@@ -30,6 +30,7 @@ var nerdstashV2Encoder GPTEncoder
 var llama2Encoder GPTEncoder
 var llama3Encoder GPTEncoder
 var mistralEncoder GPTEncoder
+var glm45Encoder GPTEncoder
 var corpus string
 var clipCorpus string
 var largeCorpus *string
@@ -42,6 +43,7 @@ var nerdstashEncoded *Tokens
 var llama2Encoded *Tokens
 var llama3Encoded *Tokens
 var mistralEncoded *Tokens
+var glm45Encoded *Tokens
 var unicodeTrimTests []*Tokens
 
 var benchmarkPrefix string
@@ -137,6 +139,7 @@ func init() {
 		"llama-tokenizer":        &llama2Encoder,
 		"llama3-tokenizer":       &llama3Encoder,
 		"mistral-tokenizer":      &mistralEncoder,
+		"glm45-tokenizer":        &glm45Encoder,
 	}
 
 	// Load all encoders up front, as this is desirable for benchmarking
@@ -148,6 +151,7 @@ func init() {
 		llama2Encoder = *CacheLoadEncoder("llama-tokenizer")
 		llama3Encoder = *CacheLoadEncoder("llama3-tokenizer")
 		mistralEncoder = *CacheLoadEncoder("mistral-tokenizer")
+		glm45Encoder = *CacheLoadEncoder("glm45-tokenizer")
 	}
 
 	textBytes := handleRead("resources/frankenstein.txt")

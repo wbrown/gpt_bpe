@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/url"
 	"os"
 	"path"
@@ -900,14 +899,16 @@ type HFConfig struct {
 // SpecialConfig contains the special tokens and special token configuration
 // that gpt_bpe uses.
 type SpecialConfig struct {
-	PuncRunes     []*string          `json:"punc_runes"`
-	Normalizer    *map[string]string `json:"normalizer"`
-	EncloseEosBos bool               `json:"enclose_eos_bos"`
-	PrefixSpace   bool               `json:"prefix_space"`
-	LowerCase     bool               `json:"lower_case"`
-	EndOfWord     string             `json:"end_of_word"`
-	DecodeExtra   *map[string]string `json:"decode_extra"`
-	SplitRegex    *string            `json:"split_regex"`
+	PuncRunes       []*string          `json:"punc_runes"`
+	Normalizer      *map[string]string `json:"normalizer"`
+	EncloseEosBos   bool               `json:"enclose_eos_bos"`
+	PrefixSpace     bool               `json:"prefix_space"`
+	LowerCase       bool               `json:"lower_case"`
+	EndOfWord       string             `json:"end_of_word"`
+	DecodeExtra     *map[string]string `json:"decode_extra"`
+	SplitRegex      *string            `json:"split_regex"`
+	SpaceMerge      bool               `json:"space_merge"`
+	ShiftWhitespace bool               `json:"shift_whitespace"`
 }
 
 // NewHFConfig creates a new HFConfig object with default values.
@@ -1023,15 +1024,6 @@ func (rsrcs *Resources) ResolveHF(hfConfig *HFConfig) (err error) {
 		}
 	} else {
 		return errors.New("could not resolve HFConfig")
-	}
-
-	// Llama 3 and other larger models will enclose eos and bos by default
-	if *hfConfig.VocabSize > math.MaxUint16+1 {
-		var addEosToken = true
-		var addBosToken = true
-
-		hfConfig.AddEosToken = &addEosToken
-		hfConfig.AddBosToken = &addBosToken
 	}
 
 	return nil

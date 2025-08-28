@@ -1608,7 +1608,7 @@ func main() {
 	tokenizerId := flag.String(
 		"tokenizer", "gpt2",
 		"tokenizer to use [gpt2, pile, nerdstash_v1, "+
-			"nerdstash_v2, llama, llama3, mistral, huggingface-id]",
+			"nerdstash_v2, llama, llama3, mistral, glm45, huggingface-id]",
 	)
 	contextSize := flag.Int("context", 8192, "context size")
 	showContexts := flag.Bool(
